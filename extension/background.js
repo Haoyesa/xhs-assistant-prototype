@@ -112,12 +112,13 @@ let nextTimer = null;            // 「开下一篇」的一次性定时器（SW
 // ---- 调度状态持久化：MV3 的 Service Worker 会随时被回收，内存里的 schedulerActive / paused /
 // nextAllowedAt 都会重置，导致「发布完一篇后队列停住、不再自动发下一篇」。把这些状态落盘到
 // chrome.storage.local，SW 重启时恢复，并用 pump 闹钟(每分钟)持续推进，保证自动发布不中断。
-const SCHED_KEYS = { sched_running: false, sched_paused: false, nextPublishAt: 0 };
+const SCHED_KEYS = { sched_running: false, sched_paused: false, nextPublishAt: 0, lastDelayMs: 500 * 1000 + 200 * 1000 };
 function persistSched() {
   chrome.storage.local.set({
     sched_running: schedulerActive,
     sched_paused: paused,
     nextPublishAt: nextAllowedAt,
+    lastDelayMs: lastDelayMs,
   }).catch(() => {});
 }
 (async () => {
@@ -126,6 +127,7 @@ function persistSched() {
     schedulerActive = !!s.sched_running;
     paused = !!s.sched_paused;
     nextAllowedAt = s.nextPublishAt || 0;
+    lastDelayMs = Number(s.lastDelayMs) || lastDelayMs;
     // SW 重启后：若之前在跑队列且已到/接近发布时刻，重新挂定时器推进下一篇
     if (schedulerActive && !paused && nextAllowedAt) armNextTimer();
   } catch (e) {}
@@ -242,7 +244,8 @@ function startPolling(taskId) {
 
 // 结束当前任务并推进队列（one-time，由轮询或 content script 消息触发）
 // reportTabId：content script 回报时所在标签 id（手动拉取路径后台未跟踪 current，用它兜底）
-function resolveCurrent(kind, detail, reportTabId) {
+// delayMs：content script 回报时携带的真实间隔（手动拉取路径没走 fillTab，用它覆盖默认 lastDelayMs）
+function resolveCurrent(kind, detail, reportTabId, delayMs) {
   const hadCurrent = !!current && !current.resolved;
   if (!hadCurrent) {
     // 手动拉取路径：后台未通过 fillTab 跟踪 current，但只要调度器在跑（或发布成功）就继续下一篇
@@ -255,6 +258,8 @@ function resolveCurrent(kind, detail, reportTabId) {
   }
   const tabId = hadCurrent ? current.tabId : (reportTabId || null);
   if (hadCurrent) current = null;
+  // 手动拉取路径未走 fillTab，用 content script 回报的真实间隔覆盖默认 lastDelayMs
+  if (delayMs && Number(delayMs) > 0) lastDelayMs = Number(delayMs);
 
   if (kind === 'published') {
     paused = false; // 若之前因人工恢复，解除暂停
@@ -419,9 +424,9 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     const s = (sender.tab && sender.tab.url || '');
     if (/creator\.xiaohongshu\.com/.test(s)) {
       const rid = sender.tab && sender.tab.id;
-      if (msg.status === 'published') resolveCurrent('published', msg.detail, rid);
-      else if (msg.status === 'manual_hold') resolveCurrent('manual_hold', msg.detail, rid);
-      else if (msg.status === 'failed') resolveCurrent('failed', msg.detail, rid);
+      if (msg.status === 'published') resolveCurrent('published', msg.detail, rid, msg.delayMs);
+      else if (msg.status === 'manual_hold') resolveCurrent('manual_hold', msg.detail, rid, msg.delayMs);
+      else if (msg.status === 'failed') resolveCurrent('failed', msg.detail, rid, msg.delayMs);
     }
   }
 });
@@ -431,7 +436,12 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (!msg || !msg.type) return;
   (async () => {
     try {
-      if (msg.type === 'pushProducts') {
+      if (msg.type === 'reportDelay') {
+        const d = Number(msg.delayMs);
+        if (d > 0) { lastDelayMs = d; persistSched(); }
+        sendResponse({ ok: true });
+        return;
+      } else if (msg.type === 'pushProducts') {
         const r = await pushProducts(msg.products || []);
         sendResponse({ ok: true, data: r });
       } else if (msg.type === 'ping') {
