@@ -1,0 +1,109 @@
+/* panel.css — 注入到千帆页面的悬浮选品面板 */
+[id^="xhs-"][data-xhs-helper] {
+  position: fixed !important;
+  right: 16px !important;
+  bottom: 16px !important;
+  z-index: 2147483647 !important;
+  width: 268px !important;
+  max-height: 78vh !important;
+  display: flex !important;
+  flex-direction: column !important;
+  background: rgba(15,17,21,.96) !important;
+  color: #e6e8eb !important;
+  border: 1px solid #2a2f37 !important;
+  border-radius: 14px !important;
+  font-family: system-ui, "PingFang SC", "Microsoft YaHei", sans-serif !important;
+  font-size: 13px !important;
+  box-shadow: 0 10px 34px #000a !important;
+  overflow: hidden !important;
+}
+[id^="xhs-"][data-xhs-helper] * { box-sizing: border-box !important; }
+
+.xh-head {
+  display: flex !important; align-items: center !important; gap: 8px !important;
+  padding: 10px 12px !important; background: #171a21 !important; border-bottom: 1px solid #2a2f37 !important;
+}
+.xh-title { font-weight: 600 !important; font-size: 14px !important; flex: 1 !important; }
+.xh-collapse {
+  width: 24px !important; height: 24px !important; padding: 0 !important; flex: 0 0 auto !important;
+  border: 0 !important; border-radius: 6px !important; background: #2a2f37 !important; color: #e6e8eb !important; cursor: pointer !important;
+}
+.xh-dot { width: 9px !important; height: 9px !important; border-radius: 50% !important; flex: 0 0 auto !important; background: #6b7280 !important; box-shadow: 0 0 0 2px #0006 !important; }
+.xh-dot.ok { background: #36c275 !important; }
+.xh-dot.wait { background: #e0a83a !important; }
+.xh-dot.bad { background: #e2554b !important; }
+
+.xh-body { padding: 10px 12px 12px !important; overflow-y: auto !important; display: flex !important; flex-direction: column !important; gap: 10px !important; }
+/* 折叠态：用 !important 盖过 .xh-body 的 display:flex !important（否则 inline display:none 会被覆盖，折叠无反应） */
+.xh-body.xh-collapsed { display: none !important; }
+.xh-connrow { display: flex !important; gap: 8px !important; }
+
+.xh-btn {
+  flex: 1 !important; padding: 8px 10px !important; border: 0 !important; border-radius: 9px !important;
+  background: #ff2e4d !important; color: #fff !important; font-size: 13px !important; font-weight: 600 !important; cursor: pointer !important;
+}
+.xh-btn:hover { filter: brightness(1.08) !important; }
+.xh-btn.sm { background: #2a2f37 !important; color: #e6e8eb !important; font-weight: 500 !important; }
+
+.xh-sec { border: 1px solid #2a2f37 !important; border-radius: 10px !important; padding: 8px !important; }
+.xh-sechead { display: flex !important; align-items: center !important; justify-content: space-between !important; font-size: 12px !important; color: #9aa3b2 !important; margin-bottom: 6px !important; }
+.xh-sechead b { color: #e6e8eb !important; }
+.xh-all { display: flex !important; align-items: center !important; gap: 4px !important; color: #9aa3b2 !important; font-size: 12px !important; }
+
+.xh-list { max-height: 220px !important; overflow-y: auto !important; display: flex !important; flex-direction: column !important; gap: 6px !important; margin-bottom: 8px !important; }
+.xh-item { display: flex !important; align-items: center !important; gap: 8px !important; padding: 6px !important; border: 1px solid #232833 !important; border-radius: 8px !important; cursor: pointer !important; }
+.xh-item img { width: 38px !important; height: 38px !important; object-fit: cover !important; border-radius: 6px !important; background: #000 !important; flex: 0 0 auto !important; }
+.xh-item .xh-noimg { width: 38px !important; height: 38px !important; display: flex !important; align-items: center !important; justify-content: center !important; color: #6b7280 !important; background: #171a21 !important; border-radius: 6px !important; font-size: 10px !important; flex: 0 0 auto !important; }
+.xh-meta { display: flex !important; flex-direction: column !important; min-width: 0 !important; flex: 1 !important; }
+.xh-name { font-size: 12px !important; color: #e6e8eb !important; white-space: nowrap !important; overflow: hidden !important; text-overflow: ellipsis !important; }
+.xh-sub { font-size: 11px !important; color: #9aa3b2 !important; white-space: nowrap !important; overflow: hidden !important; text-overflow: ellipsis !important; }
+.xh-empty { font-size: 12px !important; color: #9aa3b2 !important; line-height: 1.5 !important; }
+.xh-ignore { flex: 0 0 auto !important; align-self: center !important; margin-left: auto !important; padding: 2px 8px !important; font-size: 11px !important; line-height: 1.4 !important; color: #9aa3b2 !important; background: #1b1f27 !important; border: 1px solid #2a2f37 !important; border-radius: 6px !important; cursor: pointer !important; }
+.xh-ignore:hover { color: #e6e8eb !important; border-color: #3a4150 !important; }
+.xh-clear { display: inline-block !important; margin: 2px 0 6px !important; font-size: 11px !important; color: #4f8cff !important; cursor: pointer !important; text-decoration: none !important; }
+
+.xh-manual { font-size: 12px !important; color: #9aa3b2 !important; }
+.xh-manual summary { cursor: pointer !important; color: #4f8cff !important; }
+.xh-manual input {
+  width: 100% !important; margin-top: 6px !important; padding: 7px 9px !important; border-radius: 8px !important;
+  border: 1px solid #2a2f37 !important; background: #171a21 !important; color: #e6e8eb !important; font-size: 12px !important; font-family: inherit !important;
+}
+.xh-batch { margin-top: 10px !important; border-top: 1px dashed #2a2f37 !important; padding-top: 8px !important; }
+.xh-batch-hint { font-size: 11px !important; color: #8b98a8 !important; line-height: 1.5 !important; margin-bottom: 6px !important; }
+.xh-batch textarea {
+  width: 100% !important; padding: 7px 9px !important; border-radius: 8px !important; resize: vertical !important;
+  border: 1px solid #2a2f37 !important; background: #171a21 !important; color: #e6e8eb !important; font-size: 12px !important; font-family: inherit !important;
+}
+
+.xh-status { font-size: 11px !important; color: #8b98a8 !important; line-height: 1.5 !important; word-break: break-all !important; min-height: 14px !important; }
+
+/* 识别进度 / 计数反馈 */
+.xh-count { display: inline-block !important; min-width: 18px !important; text-align: center !important; padding: 1px 6px !important; border-radius: 999px !important; background: #ff2e4d !important; color: #fff !important; font-size: 11px !important; transition: transform .2s ease, background .2s ease !important; }
+.xh-count.xh-count-pop { animation: xhPop .45s ease !important; }
+@keyframes xhPop { 0% { transform: scale(.6); } 55% { transform: scale(1.35); background: #36d07a !important; } 100% { transform: scale(1); } }
+.xh-count.xh-count-scan { background: #2a6cff !important; animation: xhBlink 1s steps(2, jump-none) infinite !important; }
+@keyframes xhBlink { 0%,100% { opacity: 1; } 50% { opacity: .35; } }
+.xh-secact { display: flex !important; align-items: center !important; gap: 8px !important; }
+.xh-iconbtn { position: relative !important; width: 24px !important; height: 24px !important; padding: 0 !important; border: 0 !important; border-radius: 6px !important; background: #2a2f37 !important; color: #e6e8eb !important; cursor: pointer !important; font-size: 13px !important; line-height: 1 !important; transition: transform .15s ease, background .15s ease !important; }
+/* 重新识别按钮上的「新商品」角标 */
+.xh-badge { position: absolute !important; top: -6px !important; right: -6px !important; min-width: 16px !important; height: 16px !important; padding: 0 4px !important; border-radius: 999px !important; background: #ff2e4d !important; color: #fff !important; font-size: 10px !important; line-height: 16px !important; text-align: center !important; box-shadow: 0 0 0 2px #171a21 !important; display: none !important; }
+.xh-badge.show { display: inline-block !important; animation: xhPop .45s ease !important; }
+.xh-iconbtn:hover { background: #343b46 !important; transform: rotate(-25deg); }
+.xh-iconbtn:active { transform: rotate(0) scale(.9); }
+.xh-btn.xh-busy { opacity: .6 !important; cursor: progress !important; }
+
+/* 采集成功 / 失败 / 提示 Toast（独立于面板，固定在面板左侧滑入） */
+#xh-ark-toasts {
+  position: fixed !important; right: 300px !important; bottom: 22px !important; z-index: 2147483646 !important;
+  display: flex !important; flex-direction: column !important; align-items: flex-end !important; gap: 8px !important;
+  pointer-events: none !important; font-family: system-ui, "PingFang SC", "Microsoft YaHei", sans-serif !important;
+}
+.xh-toast {
+  max-width: 240px !important; padding: 9px 13px !important; border-radius: 10px !important; font-size: 13px !important; font-weight: 500 !important;
+  color: #fff !important; background: #1b1f27 !important; border: 1px solid #2a2f37 !important; box-shadow: 0 8px 24px #000a !important;
+  opacity: 0 !important; transform: translateY(8px) !important; transition: opacity .25s ease, transform .25s ease !important; pointer-events: auto !important;
+}
+.xh-toast.xh-toast-in { opacity: 1 !important; transform: translateY(0) !important; }
+.xh-toast.xh-toast-ok { background: #1d3a2a !important; border-color: #36c275 !important; color: #c9f5da !important; }
+.xh-toast.xh-toast-err { background: #3a1d1d !important; border-color: #e2554b !important; color: #f5c9c9 !important; }
+.xh-toast.xh-toast-info { background: #1d2a3a !important; border-color: #4f8cff !important; color: #c9def5 !important; }

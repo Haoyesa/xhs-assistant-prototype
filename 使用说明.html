@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>小红书发布助手 · 使用说明 (v0.2.17)</title>
+<style>
+  :root{
+    --bg:#f6f7fb; --card:#fff; --ink:#1f2330; --sub:#6b7280;
+    --brand:#ff2e4d; --brand2:#ff7a8a; --ok:#1f9d55; --warn:#d97706; --line:#eceef3;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:-apple-system,"PingFang SC","Microsoft YaHei",Segoe UI,sans-serif;line-height:1.7}
+  .wrap{max-width:920px;margin:0 auto;padding:28px 20px 60px}
+  header{background:linear-gradient(120deg,var(--brand),var(--brand2));color:#fff;border-radius:16px;padding:26px 28px;box-shadow:0 8px 30px rgba(255,46,77,.25)}
+  header h1{margin:0 0 6px;font-size:24px}
+  header p{margin:0;opacity:.95;font-size:14px}
+  .tag{display:inline-block;background:rgba(255,255,255,.22);border-radius:999px;padding:2px 10px;font-size:12px;margin-right:6px}
+  section{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:22px 24px;margin-top:18px}
+  h2{font-size:19px;margin:0 0 12px;display:flex;align-items:center;gap:10px}
+  h2 .n{background:var(--brand);color:#fff;width:28px;height:28px;border-radius:8px;display:inline-flex;align-items:center;justify-content:center;font-size:15px;flex:0 0 auto}
+  h3{font-size:15px;margin:18px 0 8px;color:var(--ink)}
+  ol,ul{margin:8px 0;padding-left:22px}
+  li{margin:7px 0}
+  code{background:#f1f2f6;padding:2px 7px;border-radius:6px;font-size:13px;color:#c0392b}
+  .path{display:block;background:#0f172a;color:#e2e8f0;border-radius:10px;padding:12px 14px;font-size:13px;margin:8px 0;white-space:pre-wrap;word-break:break-all;font-family:ui-monospace,Consolas,monospace}
+  .note{border-left:4px solid var(--warn);background:#fff7ed;padding:10px 14px;border-radius:8px;margin:12px 0;font-size:13.5px;color:#7c3a06}
+  .ok{border-left-color:var(--ok);background:#ecfdf5;color:#065f46}
+  .step{background:#fafbff;border:1px solid var(--line);border-radius:10px;padding:14px 16px;margin:12px 0}
+  .step b{color:var(--brand)}
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+  @media(max-width:680px){.grid{grid-template-columns:1fr}}
+  .pill{display:inline-block;border:1px solid var(--line);border-radius:999px;padding:3px 10px;font-size:12px;color:var(--sub);margin:2px 4px 2px 0}
+  footer{color:var(--sub);font-size:12.5px;text-align:center;margin-top:24px}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <h1>小红书发布助手 · 使用说明</h1>
+  <p>适用版本 v0.2.17 · 自动填表 + 自动发布 + 自动连发</p>
+  <div style="margin-top:10px">
+    <span class="tag">本地图片文件夹</span>
+    <span class="tag">AI 生成笔记</span>
+    <span class="tag">浏览器插件发布</span>
+    <span class="tag">CDP 真实发布</span>
+  </div>
+</header>
+
+<!-- ============ 1 ============ -->
+<section>
+  <h2><span class="n">1</span>安装与启动</h2>
+  <ol>
+    <li>运行安装包 <code>小红书发布助手-0.2.17-setup.exe</code>，一路下一步完成安装。</li>
+    <li>默认安装目录：<span class="path">C:\Users\25147\AppData\Local\Programs\小红书发布助手\</span>若你自定义了路径，请记住它，第 4 步加载插件要用。</li>
+    <li>从开始菜单或桌面快捷方式打开「小红书发布助手」，会自动弹出主窗口（含选品 / 笔记生成 / 批量发布 / 历史 / 设置 ��标签页）。</li>
+    <li>首次启动会在 <code>AppData\Roaming\xhs-assistant-prototype\data</code> 生成数据目录（图片、笔记、设置都存这）。</li>
+  </ol>
+  <div class="note">若打开后主窗口空白，先确认端口 5199 没被其它程序占用；关闭重开即可。</div>
+</section>
+
+<!-- ============ 2 ============ -->
+<section>
+  <h2><span class="n">2</span>准备内容（三种图片来源，任选其一）</h2>
+
+  <h3>方式 A：本地图片文件夹（按 id 读图发布，推荐）</h3>
+  <div class="step">
+    <b>①</b> 在软件数据目录的 <code>images/</code> 下，给每篇笔记建一个<b>文件夹</b>，文件夹名就是这篇笔记的 id：
+    <span class="path">…\xhs-assistant-prototype\data\images\我的穿搭01\   ← 里面放这组笔记的图片
+…\xhs-assistant-prototype\data\images\美食探店02\   ← 里面放图片</span>
+    <b>②</b> 每个文件夹里放图片（jpg / png / webp 均可）。可选放 <code>name.txt</code> 作为文案灵感（标题/正文参考）。
+    <div class="note">图片根目录可在「设置 → 发布方式 → 图片根目录」改成任意本地图库路径（如 <code>D:\我的图库</code>），软件只读取不移动。</div>
+    <b>③</b> 回到软件「选品」页，点 <b>📁 扫描图片文件夹</b>，会列出所有待发组（显示张数、缩略图、文案种子）。
+    <b>④</b> 勾选要发的组 → 点 <b>导入选中</b> 或 <b>导入全部并生成笔记</b>。标题/正文/话题由 AI 按文件夹名（或 name.txt）自动生成。
+  </div>
+
+  <h3>方式 B：千帆选品（商品 URL 抓取）</h3>
+  <div class="step">
+    <b>①</b> 在「设置 → 发布方式」填好「千帆 URL」。
+    <b>②</b> 「选品」页点「抓取」，把商品图与信息拉进商品库。
+  </div>
+
+  <h3>方式 C：手动录入商品</h3>
+  <div class="step">
+    在「选品」页手动新增商品，填写商品图 URL 等，进入商品库后走同样的笔记生成流程。
+  </div>
+</section>
+
+<!-- ============ 3 ============ -->
+<section>
+  <h2><span class="n">3</span>生成笔记文案</h2>
+  <ol>
+    <li>切到「笔记生成」页，你会看到已导入的笔记草稿（标题 / 正文 / 话题 由 AI 生成）。</li>
+    <li>在「设置 → 发布设置」里可勾选要生成哪些项：<span class="pill">生成标题</span><span class="pill">生成正文</span><span class="pill">生成话题</span>。</li>
+    <li>需要的话手动微调文案，确认无误后进入发布。</li>
+  </ol>
+</section>
+
+<!-- ============ 4 ============ -->
+<section>
+  <h2><span class="n">4</span>发布方式一：浏览器插件（你正在用的，推荐）</h2>
+  <h3>① 加载插件（只需做一次）</h3>
+  <div class="step">
+    <b>1.</b> 打开浏览器（Chrome 或 Edge），地址栏输入：<code>chrome://extensions</code> 或 <code>edge://extensions</code>。
+    <b>2.</b> 右上角打开 <b>开发者模式</b> 开关。
+    <b>3.</b> 点 <b>加载已解压的扩展程序</b>，选择插件文件夹：
+    <span class="path">C:\Users\25147\AppData\Local\Programs\小红书发布助手\resources\app.asar.unpacked\extension</span>
+    <b>4.</b> 加载成功后，扩展列表会出现「小红书发布助手」。以后软件升级，回到这里点 <b>重新加载</b> 即可。
+  </div>
+
+  <h3>② 开始自动发布</h3>
+  <div class="step">
+    <b>1.</b> 浏览器登录小红书账号，打开 <b>创作者中心</b> <code>creator.xiaohongshu.com</code>，进入「发布笔记」创作页。
+    <b>2.</b> 页面右侧会出现 <b>🚀 发布助手</b> 侧栏（也可点扩展图标）。
+    <b>3.</b> 点 <b>拉取下一篇</b> → 插件自动从队列取一篇 → 填入标题/正文/话题 → 注入图片 → 自动点「发布」→ 自动连发下一篇。
+    <b>4.</b> 想中途停下：切到别的标签或关掉创作页即可。
+  </div>
+
+  <div class="note ok">
+    <b>自动提交已默认开启</b>（v0.2.17 起）。若你想每篇自己核对再发：在插件 popup 把「自动提交」关掉——此时插件会<b>填好停住等你点发布</b>，你点完「发布」成功后会<b>自动拉下一篇</b>。
+  </div>
+</section>
+
+<!-- ============ 5 ============ -->
+<section>
+  <h2><span class="n">5</span>发布方式二：CDP 真实发布（无需手动开网页）</h2>
+  <ol>
+    <li>「设置 → 发布方式」填好 <b>Chrome 路径</b>（本机只有 Edge 就填 Edge 路径，如 <code>C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe</code>）。</li>
+    <li>切到「批量发布」页，选择模式：<span class="pill">真实发布(CDP)</span> 或 <span class="pill">dry-run 预览</span>。</li>
+    <li>点「开始」，软件会驱动浏览器自动逐篇发布；dry-run 只预览不真正发出，方便先验证。</li>
+  </ol>
+  <div class="note">CDP 模式需要浏览器支持远程调试（Chrome/Edge ≥ 111，已自动加 <code>--remote-allow-origins=*</code>）。</div>
+</section>
+
+<!-- ============ 6 ============ -->
+<section>
+  <h2><span class="n">6</span>常用开关与数据管理</h2>
+  <ul>
+    <li><b>自动提交 / 自动发布</b>：插件 popup 或「设置 → 发布设置 → 自动提交」切换。</li>
+    <li><b>模拟真人打字</b>：默认开，发布时逐字输入更像人工；可在设置关闭。</li>
+    <li><b>清除发布数据</b>：「设置 → 数据管理 → 清除发布数据」（红色按钮）会清空笔记/商品/历史/已导入记录，<b>可重新导入</b>图片文件夹重发。设置与账号信息不会被清。</li>
+    <li><b>图片根目录</b>：设置里可改成本地图库路径。</li>
+  </ul>
+</section>
+
+<!-- ============ 7 ============ -->
+<section>
+  <h2><span class="n">7</span>常见问题排查</h2>
+  <div class="grid">
+    <div>
+      <h3>停在「请人工复核」没反应</h3>
+      <p style="font-size:13.5px;color:var(--sub);margin:4px 0">确认插件 popup 里「自动提交」是<b>开</b>；或关掉它后手动点「发布」。升级到 v0.2.17 后默认即自动发布。</p>
+    </div>
+    <div>
+      <h3>点了「拉取下一篇」无反应</h3>
+      <p style="font-size:13.5px;color:var(--sub);margin:4px 0">确认当前在 <code>creator.xiaohongshu.com</code> 创作页；确认插件已「重新加载」到最新版；确认队列里有笔记（笔记生成页有草稿）。</p>
+    </div>
+    <div>
+      <h3>弹出验证/滑块挑战</h3>
+      <p style="font-size:13.5px;color:var(--sub);margin:4px 0">软件<b>不会</b>自动破解验证，会停下转人工。手动完成验证后继续即可。</p>
+    </div>
+    <div>
+      <h3>图片不显示 / 上传失败</h3>
+      <p style="font-size:13.5px;color:var(--sub);margin:4px 0">确认图片文件夹里是常见格式且未损坏；本地图片走内置文件服务，无需联网。</p>
+    </div>
+  </div>
+  <div class="note">任何环节卡住，把「🚀 发布助手」侧栏里的提示文字发给我，我就能定位具体卡点在哪。</div>
+</section>
+
+<footer>小红书发布助手 v0.2.17 · 本说明随版本更新，操作时以软件实际界面为准</footer>
+</div>
+</body>
+</html>

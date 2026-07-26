@@ -1,0 +1,344 @@
+// app.js — 前端逻辑
+const $ = (s) => document.querySelector(s);
+const $$ = (s) => Array.from(document.querySelectorAll(s));
+const api = async (method, path, body) => {
+  const opt = { method, headers: {} };
+  if (body !== undefined) { opt.headers['Content-Type'] = 'application/json'; opt.body = JSON.stringify(body); }
+  const r = await fetch(path, opt);
+  return r.json();
+};
+const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+// 经后端 /api/image 代理加载远程图（绕过防盗链），商品页/笔记缩略图统一走这里
+const imgUrl = (u) => (u ? '/api/image?url=' + encodeURIComponent(u) : '');
+// 本地图片文件夹的图片：经后端 /api/file 直接暴露（同源），文件夹缩略图用这个
+const imgFileUrl = (rel) => (rel ? '/api/file?rel=' + encodeURIComponent(rel) : '');
+const thumbStrip = (imgs) => (imgs && imgs.length)
+  ? `<div class="thumbs">${imgs.slice(0, 4).map((u) => `<img src="${imgUrl(u)}" onerror="this.style.display='none'"/>`).join('')}${imgs.length > 4 ? `<span class="more">+${imgs.length - 4}</span>` : ''}</div>`
+  : '';
+
+let pollTimer = null;
+let nextPublishAtAt = 0; // 插件上报的「下一篇最早发布时刻(ms)」，用于批量发布页倒计时
+
+// ---- 标签页 ----
+const PAGE_TITLES = { products: '采集商品', batch: '批量发布', history: '历史', settings: '设置' };
+$$('.tab-btn').forEach((b) => b.addEventListener('click', () => {
+  $$('.tab-btn').forEach((x) => x.classList.remove('active'));
+  $$('.tab').forEach((x) => x.classList.remove('active'));
+  b.classList.add('active');
+  $(`.tab[data-tab="${b.dataset.tab}"]`).classList.add('active');
+  if ($('#pageTitle')) $('#pageTitle').textContent = PAGE_TITLES[b.dataset.tab] || '';
+  if (b.dataset.tab === 'batch') { startPoll(); } else { stopPoll(); }
+  if (b.dataset.tab === 'history') loadHistory();
+  if (b.dataset.tab === 'products') loadImageFolders();
+  loadStats();
+}));
+
+// ---- 连接状态 + 概览统计 ----
+function setConn(kind, text) {
+  const dot = $('#connDot'); const txt = $('#connText');
+  if (dot) dot.className = 'conn-dot ' + (kind || '');
+  if (txt) txt.textContent = text;
+}
+async function checkConn() {
+  try {
+    const r = await fetch('/api/settings');
+    if (r.ok) setConn('ok', '后端已连接');
+    else setConn('bad', '后端异常');
+  } catch { setConn('bad', '后端未连接'); }
+}
+async function loadStats() {
+  try {
+    const [products, queue, history] = await Promise.all([
+      api('GET', '/api/products'), api('GET', '/api/batch/queue'), api('GET', '/api/history'),
+    ]);
+    const tasks = queue.tasks || [];
+    const queued = tasks.filter((t) => ['queued', 'picked', 'running', 'submitting', 'waiting_submit', 'manual_hold', 'verify_result'].includes(t.status)).length;
+    const published = (history || []).filter((h) => h.status === 'success' || h.status === 'published').length;
+    const failed = (history || []).filter((h) => ['failed', 'skipped'].includes(h.status)).length;
+    if ($('#statProducts')) $('#statProducts').textContent = products.length;
+    if ($('#statQueued')) $('#statQueued').textContent = queued;
+    if ($('#statPublished')) $('#statPublished').textContent = published;
+    if ($('#statFailed')) $('#statFailed').textContent = failed;
+  } catch {}
+}
+// 每隔一段时间刷新连接与统计
+setInterval(() => { checkConn(); if ($('.tab.active')?.dataset.tab !== 'settings') loadStats(); }, 8000);
+
+// ---- Toast ----
+function toast(text, kind = '') {
+  const wrap = $('#toast');
+  if (!wrap) return;
+  const el = document.createElement('div');
+  el.className = 'toast ' + kind;
+  el.textContent = text;
+  wrap.appendChild(el);
+  setTimeout(() => { el.style.opacity = '0'; el.style.transform = 'translateX(20px)'; setTimeout(() => el.remove(), 250); }, 2600);
+}
+
+// ---- 选品 ----
+const SRC_LABEL = { extension: '插件', qianfan: '千帆', manual: '手动', import: '导入' };
+async function loadProducts() {
+  const list = await api('GET', '/api/products');
+  $('#prodCount').textContent = list.length;
+  if (!list.length) {
+    $('#productList').innerHTML = '<div class="empty"><span class="em">📦</span>商品库还是空的。<br/>在千帆页用插件「采集本页商品」，或上方手动/导入添加。</div>';
+    loadStats();
+    return;
+  }
+  $('#productList').innerHTML = list.map((p) => `
+    <div class="prod" data-id="${p.id}">
+      ${p.source ? `<span class="src">${SRC_LABEL[p.source] || esc(p.source)}</span>` : ''}
+      ${p.image ? `<img src="${imgUrl(p.image)}" onerror="this.style.display='none'"/>` : '<div class="noimg">无图</div>'}
+      <div class="pname">${esc(p.productName || p.itemId || '未命名')}</div>
+      <div class="pmeta">${p.price ? '¥' + esc(p.price) : ''} ${p.itemId ? '· ' + esc(p.itemId) : ''}</div>
+      <div class="pacts">
+        <button class="mini del" data-id="${p.id}">删除</button>
+      </div>
+    </div>`).join('');
+  $$('#productList .del').forEach((b) => b.addEventListener('click', async () => {
+    await api('POST', `/api/products/${b.dataset.id}/delete`); loadProducts();
+  }));
+}
+
+$('#fetchQianfanBtn').addEventListener('click', async () => {
+  $('#fetchMsg').textContent = '抓取中…';
+  const r = await api('POST', '/api/qianfan/fetch', {});
+  $('#fetchMsg').textContent = r.ok ? `✅ 抓到 ${r.count} 个商品` : '❌ ' + (r.detail || '失败');
+  if (r.ok) { loadProducts(); toast(`已抓取 ${r.count} 个商品`, 'ok'); }
+  else toast('千帆抓取失败：' + (r.detail || ''), 'err');
+});
+
+$('#addProductBtn').addEventListener('click', async () => {
+  const r = await api('POST', '/api/products', {
+    itemId: $('#mItemId').value, productName: $('#mName').value, price: $('#mPrice').value,
+    image: $('#mImage').value, description: $('#mDesc').value, source: 'manual',
+  });
+  $('#addMsg').textContent = r.id ? '✅ 已添加' : '❌ 失败';
+  if (r.id) { toast('已添加商品', 'ok'); loadProducts(); } else toast('添加失败', 'err');
+});
+
+$('#importBtn').addEventListener('click', async () => {
+  const text = $('#importBox').value.trim();
+  let products = [];
+  if (text.startsWith('[')) {
+    try { products = JSON.parse(text); } catch { $('#importMsg').textContent = '❌ JSON 解析失败'; return; }
+  } else {
+    products = text.split('\n').filter(Boolean).map((line) => {
+      const [productName, price, itemId] = line.split('|');
+      return { productName: (productName || '').trim(), price: (price || '').trim(), itemId: (itemId || '').trim() };
+    });
+  }
+  const r = await api('POST', '/api/products/import', { products });
+  $('#importMsg').textContent = `✅ 导入 ${r.added} 个`;
+  toast(`已导入 ${r.added} 个商品`, 'ok'); loadProducts();
+});
+
+$('#refreshProdBtn').addEventListener('click', () => { loadProducts(); loadStats(); toast('已刷新商品库', 'ok'); });
+
+// ---- 本地图片文件夹（按 images/<id>/ 读取并发布）----
+async function loadImageFolders() {
+  const box = $('#imageFolderList'); if (!box) return;
+  let data;
+  try { data = await api('GET', '/api/images-folders'); } catch { return; }
+  const prev = $('#imagesRootPreview'); if (prev) prev.textContent = data.root || '—';
+  if (!data.exists) {
+    box.innerHTML = `<div class="empty"><span class="em">📁</span>图片根目录不存在：<code>${esc(data.root)}</code><br/>请在软件数据目录建一个 <code>images/</code>，其下每个子文件夹（名即 id）放一组笔记图片，然后点「扫描图片文件夹」。</div>`;
+    return;
+  }
+  const folders = data.folders || [];
+  if (!folders.length) {
+    box.innerHTML = `<div class="empty"><span class="em">📁</span>没有找到含图片的子文件夹。<br/>在 <code>${esc(data.root)}</code> 下建立 <code>&lt;id&gt;/</code> 子目录并放入图片（jpg/png/webp…），再点扫描。</div>`;
+    return;
+  }
+  box.innerHTML = folders.map((f) => `
+    <div class="prod ifold" data-id="${esc(f.id)}">
+      <label class="pick"><input type="checkbox" class="ifold-check" data-id="${esc(f.id)}" ${f.imported ? 'disabled' : ''}/> ${f.imported ? '已导入' : '选'}</label>
+      ${f.images.length ? `<img src="${imgFileUrl(f.images[0])}" onerror="this.style.display='none'"/>` : '<div class="noimg">无图</div>'}
+      <div class="pname">${esc(f.name)}</div>
+      <div class="pmeta">${f.imageCount} 张图 · 将生成标题：<strong>${esc(f.previewTitle)}</strong></div>
+      ${f.matchedProduct
+        ? `<div class="pmeta imported">🔗 已匹配千帆商品（按${esc(f.matchedProduct.matchBy)}）</div>${f.nameWarning ? `<div class="pmeta warn">⚠ 商品名疑似就是文件夹名，请到「采集商品」页把该商品名改成真实标题</div>` : ''}`
+        : `<div class="pmeta warn">⚠ 未匹配到千帆商品 → 标题将是文件夹名。可在文件夹内放 title.txt 指定真实标题，或到「采集商品」页添加 itemId=${esc(f.productId)} 的商品</div>`}
+      ${f.imported ? '<div class="pmeta imported">✓ 已导入</div>' : ''}
+    </div>`).join('');
+}
+$('#scanAndImportBtn').addEventListener('click', async () => {
+  $('#imgFolderMsg').textContent = '扫描并导入中…';
+  await loadImageFolders();
+  const r = await api('POST', '/api/images-folders/import', { matchedOnly: true });
+  if (r.ok) {
+    $('#imgFolderMsg').textContent = `✅ 已导入 ${r.created} 组（仅「有图片且匹配商品库」）并生成笔记入队`;
+    toast(`已导入 ${r.created} 组图片笔记`, 'ok');
+    loadImageFolders(); loadStats();
+  } else {
+    $('#imgFolderMsg').textContent = '❌ ' + (r.detail || '失败');
+  }
+});
+
+
+// ---- 批量发布 ----
+async function loadQueue() {
+  const data = await api('GET', '/api/batch/queue');
+  const tasks = data.tasks;
+  nextPublishAtAt = data.nextPublishAt || 0;
+  renderCountdown();
+  $('#queueList').innerHTML = tasks.length ? tasks.map((t) => `
+    <div class="qitem">
+      <span class="badge ${t.status}">${esc(t.status)}</span>
+      <span class="qname">${esc(t.product?.productName || t.itemId || '商品')}</span>
+      ${thumbStrip(t.images)}
+      <span class="qstep">${esc(t.step || '')}</span>
+      <span class="qdetail">${esc(t.statusDetail || '')}</span>
+      ${t.status === 'queued' ? `<button class="mini cancel" data-id="${t.id}">取消</button>` : ''}
+    </div>`).join('') : '<div class="empty"><span class="em">🚀</span>队列为空。<br/>去「采集商品」页的本地图片文件夹扫描并导入生成笔记。</div>';
+  $$('#queueList .cancel').forEach((b) => b.addEventListener('click', async () => {
+    await api('POST', `/api/batch/${b.dataset.id}/cancel`); loadQueue();
+  }));
+}
+function startPoll() { stopPoll(); loadQueue(); pollTimer = setInterval(loadQueue, 2000); }
+function stopPoll() { if (pollTimer) clearInterval(pollTimer); pollTimer = null; }
+
+// ---- 批量发布页「下一篇倒计时」：读取插件上报的 nextPublishAt，每秒刷新 ----
+function fmtCountdown(ms) {
+  const s = Math.max(0, Math.ceil((ms - Date.now()) / 1000));
+  const m = Math.floor(s / 60), ss = s % 60;
+  return (m > 0 ? m + '分' : '') + ss + '秒';
+}
+function renderCountdown() {
+  const el = document.getElementById('nextCountdown');
+  if (!el) return;
+  if (!nextPublishAtAt || nextPublishAtAt <= Date.now()) {
+    el.textContent = '⏳ 距下一篇发布：—（到点即发布）';
+    el.classList.remove('active');
+  } else {
+    el.textContent = '⏳ 距下一篇发布：' + fmtCountdown(nextPublishAtAt);
+    el.classList.add('active');
+  }
+}
+setInterval(renderCountdown, 1000); // 每秒走字，loadQueue 每 2s 刷新数据源
+
+$('#pumpBtn').addEventListener('click', async () => {
+  const mode = $('#setPublish').value;
+  if (mode === 'extension') {
+    $('#pumpMsg').textContent = 'ⓘ 插件模式下请到创作者页用插件「拉取下一篇」发布';
+    toast('插件模式：请到创作者发布台用插件拉取发布', 'warn');
+    return;
+  }
+  await api('POST', '/api/batch/pump'); $('#pumpMsg').textContent = '▶ 执行中'; startPoll(); toast('已开始批量发布', 'ok');
+});
+$('#pauseBtn').addEventListener('click', async () => { await api('POST', '/api/batch/pause'); $('#pumpMsg').textContent = '⏸ 已暂停'; });
+$('#resumeBtn').addEventListener('click', async () => { await api('POST', '/api/batch/resume'); $('#pumpMsg').textContent = '⏵ 继续'; });
+$('#stopBtn').addEventListener('click', async () => { await api('POST', '/api/batch/stop'); $('#pumpMsg').textContent = '⏹ 已停止'; });
+$('#retryBtn').addEventListener('click', async () => {
+  const r = await api('POST', '/api/batch/retry', {});
+  if (r.ok) {
+    $('#pumpMsg').textContent = `🔁 已重置 ${r.requed || 0} 条失败任务`;
+    toast(`已重置 ${r.requed || 0} 条到待发布`, 'ok');
+    loadQueue(); loadStats();
+  } else toast('重置失败', 'err');
+});
+
+// ---- 历史 ----
+async function loadHistory() {
+  const h = await api('GET', '/api/history');
+  $('#historyList').innerHTML = h.length ? h.map((r) => `
+    <div class="qitem">
+      <span class="badge ${r.status}">${esc(r.status)}</span>
+      <span class="qname">${esc(r.title || r.itemId || '')}</span>
+      <span class="qdetail">${esc(r.detail || '')}</span>
+      <span class="qstep">${esc(r.at || '')}</span>
+    </div>`).join('') : '<div class="empty"><span class="em">🕘</span>暂无发布历史。</div>';
+}
+
+// ---- 设置 ----
+async function loadSettings() {
+  const s = await api('GET', '/api/settings');
+  $('#setProvider').value = s.aiProvider || 'deepseek';
+  $('#setKey').value = s.aiApiKey || '';
+  $('#setBaseUrl').value = s.aiBaseUrl || '';
+  $('#setModel').value = s.aiModel || '';
+  $('#setPublish').value = s.publishMode || 'dry-run';
+  $('#setQianfanUrl').value = s.qianfanUrl || '';
+  $('#setBrowserUrl').value = s.cdpBrowserUrl || '';
+  $('#setChromePath').value = s.cdpChromePath || '';
+  $('#setImagesRoot').value = s.imagesRoot || '';
+  $('#setGenTitle').checked = !!s.generateTitle;
+  $('#setGenContent').checked = !!s.generateContent;
+  $('#setGenTopics').checked = !!s.enableAiTopics;
+  $('#setTopicsCount').value = s.topicsCount || 6;
+  $('#setEmoji').value = s.randomEmoji ?? 30;
+  $('#setAutoSubmit').checked = !!s.autoSubmit;
+  $('#setHumanTyping').checked = !!s.humanTyping;
+  $('#setInterval').value = s.publishIntervalSeconds || 500;
+  $('#setRandomDelay').value = s.publishIntervalRandomDelaySeconds || 200;
+  $('#setRepeat').value = s.singleProductRepeatLimit ?? 0;
+  $('#setTitlePrompt').value = s.titlePrompt || '';
+  $('#setContentPrompt').value = s.contentPrompt || '';
+  $('#setTopicsPrompt').value = s.topicsPrompt || '';
+  updatePublishHint();
+}
+const PUBLISH_HINTS = {
+  'dry-run': '当前为「模拟发布」：不会真实发出，仅演示流程，便于先调通前后端与插件。',
+  'extension': '「浏览器插件」模式（推荐）：在创作者发布台页面点右下角「🚀发布助手 → 拉取下一篇」自动填写，人工复核后点发布。此模式下下方「开始批量发布」无效，由插件驱动。',
+  'cdp': '「CDP 真实浏览器」：需先在设置填 CDP 浏览器地址并登录创作者后台，再点「开始批量发布」由本机已登录 Chrome 驱动发布。',
+};
+function updatePublishHint() {
+  const el = $('#publishModeHint');
+  if (el) el.textContent = PUBLISH_HINTS[$('#setPublish').value] || '';
+}
+$('#setPublish').addEventListener('change', updatePublishHint);
+$('#saveSetBtn').addEventListener('click', async () => {
+  await api('POST', '/api/settings', {
+    aiProvider: $('#setProvider').value, aiApiKey: $('#setKey').value, aiBaseUrl: $('#setBaseUrl').value, aiModel: $('#setModel').value,
+    publishMode: $('#setPublish').value, qianfanUrl: $('#setQianfanUrl').value, cdpBrowserUrl: $('#setBrowserUrl').value, cdpChromePath: $('#setChromePath').value,
+    generateTitle: $('#setGenTitle').checked, generateContent: $('#setGenContent').checked, enableAiTopics: $('#setGenTopics').checked,
+    topicsCount: +$('#setTopicsCount').value, randomEmoji: +$('#setEmoji').value, autoSubmit: $('#setAutoSubmit').checked,
+    publishIntervalSeconds: +$('#setInterval').value, publishIntervalRandomDelaySeconds: +$('#setRandomDelay').value, singleProductRepeatLimit: +$('#setRepeat').value,
+    titlePrompt: $('#setTitlePrompt').value, contentPrompt: $('#setContentPrompt').value, topicsPrompt: $('#setTopicsPrompt').value,
+  });
+  $('#setMsg').textContent = '✅ 已保存';
+  setTimeout(() => ($('#setMsg').textContent = ''), 2000);
+});
+
+$('#clearDataBtn').addEventListener('click', async () => {
+  if (!confirm('确定清除全部发布数据吗？\n将删除：采集商品、发布任务、发布历史、已上传图片。\n（AI 配置与账号设置保留）')) return;
+  $('#clearMsg').textContent = '清除中…';
+  try {
+    const r = await api('POST', '/api/data/clear', { targets: ['tasks', 'products', 'history', 'uploads'] });
+    if (r.ok) {
+      const c = (r.result && r.result.cleared) || [];
+      $('#clearMsg').textContent = '✅ 已清除：' + c.join('、');
+      if (typeof loadProducts === 'function') loadProducts();
+    } else {
+      $('#clearMsg').textContent = '❌ 清除失败';
+    }
+  } catch (e) {
+    $('#clearMsg').textContent = '❌ ' + (e.message || '清除失败');
+  }
+  setTimeout(() => ($('#clearMsg').textContent = ''), 5000);
+});
+$('#aiTestBtn').addEventListener('click', async () => {
+  const r = await api('POST', '/api/ai/test', {
+    aiProvider: $('#setProvider').value, aiApiKey: $('#setKey').value, aiBaseUrl: $('#setBaseUrl').value, aiModel: $('#setModel').value,
+  });
+  $('#aiTestMsg').textContent = r.ok ? '✅ ' + (r.detail || '连通') : '❌ ' + (r.detail || '失败');
+});
+$('#cdpTestBtn').addEventListener('click', async () => {
+  const r = await api('POST', '/api/cdp/status', { cdpBrowserUrl: $('#setBrowserUrl').value });
+  $('#cdpMsg').textContent = r.ok ? '✅ ' + r.detail : '❌ ' + (r.detail || '未连接');
+});
+$('#cdpLaunchBtn').addEventListener('click', async () => {
+  const r = await api('POST', '/api/cdp/launch', { cdpChromePath: $('#setChromePath').value });
+  $('#cdpMsg').textContent = r.ok ? '✅ ' + r.detail : '❌ ' + (r.detail || '失败');
+});
+
+function switchTab(name) {
+  $$('.tab-btn').forEach((x) => x.classList.toggle('active', x.dataset.tab === name));
+  $$('.tab').forEach((x) => x.classList.toggle('active', x.dataset.tab === name));
+}
+
+// 初始化
+loadProducts();
+loadSettings();
+checkConn();
+loadStats();

@@ -1,0 +1,51 @@
+{
+  "browserURL": "http://127.0.0.1:9222",
+  "launch": {
+    "headless": false,
+    "args": [
+      "--remote-debugging-port=9222",
+      "--no-first-run",
+      "--no-default-browser-check",
+      "--disable-blink-features=AutomationControlled",
+      "--remote-allow-origins=*"
+    ]
+  },
+  "stealth": {
+    "webdriver": true,
+    "note": "仅抹掉 navigator.webdriver 标志，不做指纹伪造/验证码破解。"
+  },
+  "qianfan": {
+    "note": "千帆商品页选品抓取。请在浏览器登录千帆并打开商品列表页后使用『从千帆抓取』。选择器随官网改版变动，如抓取为空请按实际 DOM 调整下面字段。",
+    "productPageUrl": "https://channel.xiaohongshu.com/ark/product/list",
+    "hostContains": "xiaohongshu.com",
+    "cardSelector": ".product-item, .goods-card, [class*='ProductItem'], [class*='goodsCard']",
+    "itemIdSelector": "[class*='goodsId'], [class*='itemId'], [class*='productId'], .sku-id",
+    "nameSelector": "[class*='title'], [class*='name'], .goods-name, .product-title",
+    "priceSelector": "[class*='price'], .goods-price",
+    "imageSelector": "img",
+    "scrollToLoadMore": true,
+    "maxCards": 50
+  },
+  "publish": {
+    "note": "发布页填表与挂商品。需在你已登录的账号下打开笔记发布页。选择器随官网变动，请按实际 DOM 调整。",
+    "composeUrl": "https://creator.xiaohongshu.com/creator/post",
+    "titleSelector": "[contenteditable='true'][placeholder*='标题'], .title-input, [class*='title']",
+    "contentSelector": "[contenteditable='true'][placeholder*='填写'], .content-input, [class*='content']",
+    "topicsAddSelector": "[class*='topic'], [class*='hashtag'], button[class*='addTopic']",
+    "imageUploadSelector": "input[type='file']",
+    "addProductButtonSelector": "[class*='addProduct'], [class*='关联商品'], button[class*='product'], [class*='挂商品']",
+    "productSearchSelector": "input[placeholder*='商品'], input[placeholder*='搜索'], [class*='searchInput']",
+    "productResultSelector": "[class*='productItem'], [class*='goodsItem'], [class*='searchItem']",
+    "submitSelector": "[class*='publish'], [class*='submit'], button[class*='发布']",
+    "successIndicator": "[class*='success'], [class*='发布成功']",
+    "challengeIndicator": "[class*='geetest'], [class*='captcha'], [id*='captcha'], [class*='slide-captcha'], [class*='px-captcha'], [class*='tcaptcha'], [class*='verify-modal'], [class*='verify-pop'], [class*='验证弹窗']",
+    "topicInputSelector": "input[placeholder*='话题'], [class*='topicInput']"
+  },
+  "pacing": {
+    "typeDelayMin": 30,
+    "typeDelayMax": 90,
+    "stepPauseMin": 400,
+    "stepPauseMax": 1200,
+    "betweenProductsSeconds": 30
+  }
+}

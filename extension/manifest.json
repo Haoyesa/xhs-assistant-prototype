@@ -1,0 +1,57 @@
+{
+  "manifest_version": 3,
+  "name": "黑猫AI自动笔记小助理",
+  "version": "0.2.59",
+  "description": "配套本地助手后端（采集商品 → 按商品生成种草笔记 → 创作者页批量发布）。仅用于你自己的商家账号，人工复核后发布，不做验证码破解。",
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "黑猫AI自动笔记小助理"
+  },
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "permissions": [
+    "scripting",
+    "storage",
+    "alarms",
+    "tabs",
+    "clipboardRead",
+    "notifications",
+    "debugger"
+  ],
+  "host_permissions": [
+    "https://ark.xiaohongshu.com/*",
+    "https://channel.xiaohongshu.com/*",
+    "https://pro.xiaohongshu.com/*",
+    "https://creator.xiaohongshu.com/*",
+    "http://127.0.0.1:5199/*",
+    "http://127.0.0.1:5801/*"
+  ],
+  "content_scripts": [
+    {
+      "matches": ["https://ark.xiaohongshu.com/*", "https://channel.xiaohongshu.com/*", "https://pro.xiaohongshu.com/*"],
+      "js": ["common.js", "content-ark.js"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": ["https://creator.xiaohongshu.com/*"],
+      "js": ["common.js", "content-creator.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "web_accessible_resources": [
+    {
+      "resources": ["panel.css"],
+      "matches": [
+        "https://ark.xiaohongshu.com/*",
+        "https://creator.xiaohongshu.com/*"
+      ]
+    }
+  ]
+}

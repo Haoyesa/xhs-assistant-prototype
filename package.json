@@ -1,0 +1,47 @@
+{
+  "name": "heimao-ai-note-assistant",
+  "version": "0.2.59",
+  "private": true,
+  "author": "heimao-ai",
+  "type": "module",
+  "description": "黑猫AI自动笔记小助理（AI 文案 + 素材库 + 排序 + 历史 + CDP 真实发布 + Electron 桌面外壳），仅用于自有商家账号的批量发布自动化。",
+  "main": "electron/main.mjs",
+  "scripts": {
+    "start": "node server.js",
+    "electron": "electron .",
+    "dist": "electron-builder"
+  },
+  "build": {
+    "appId": "com.example.xhsassistant",
+    "productName": "黑猫AI自动笔记小助理",
+    "icon": "assets/icon.ico",
+    "files": [
+      "server.js",
+      "qianfan-scraper.js",
+      "cdp-publisher.js",
+      "image-util.js",
+      "cdp-config.json",
+      "public/**/*",
+      "data/**/*",
+      "extension/**/*",
+      "electron/**/*"
+    ],
+    "asarUnpack": [
+      "extension/**/*"
+    ],
+    "directories": {
+      "output": "dist"
+    },
+    "win": {
+      "target": "nsis",
+      "artifactName": "黑猫AI自动笔记小助理${version}-setup.exe"
+    }
+  },
+  "dependencies": {
+    "puppeteer-core": "^23.11.1"
+  },
+  "devDependencies": {
+    "electron": "^31.0.0",
+    "electron-builder": "^24.0.0"
+  }
+}

@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <style>
+    body { width: 320px; margin: 0; padding: 14px; font-family: system-ui, "PingFang SC", "Microsoft YaHei", sans-serif; background: #0f1115; color: #e6e8eb; }
+    h1 { font-size: 15px; margin: 0 0 10px; }
+    label { display: block; font-size: 12px; color: #9aa0a6; margin: 8px 0 3px; }
+    input { width: 100%; box-sizing: border-box; padding: 7px 9px; border-radius: 8px; border: 1px solid #2a2f37; background: #171a21; color: #e6e8eb; font-size: 13px; }
+    button { margin-top: 10px; width: 100%; padding: 9px; border: 0; border-radius: 8px; background: #ff2e4d; color: #fff; font-size: 13px; cursor: pointer; }
+    button.sec { background: #2a2f37; }
+    .row { display: flex; gap: 8px; }
+    .row button { flex: 1; }
+    .status { margin-top: 10px; font-size: 12px; color: #8b98a8; min-height: 16px; }
+    .diag { margin-top: 10px; font-size: 12px; color: #9aa0a6; background: #171a21; padding: 7px 9px; border-radius: 8px; }
+    .tip { margin-top: 10px; font-size: 11px; color: #6b7280; line-height: 1.5; }
+    a { color: #ff8a9c; }
+  </style>
+</head>
+<body>
+  <h1>🐱 黑猫AI自动笔记小助理</h1>
+  <div class="row">
+    <button id="pull">拉取下一篇</button>
+  </div>
+  <div class="diag" id="diag">后端：检测中… ｜ 待发：—</div>
+  <label>批量发布队列（每篇开新标签 · 一次只发一篇）</label>
+  <div class="row">
+    <button id="start">开始批量发布</button>
+    <button id="pause" class="sec">暂停</button>
+  </div>
+  <div class="row">
+    <button id="resume" class="sec">继续</button>
+    <button id="stop" class="sec">停止并关闭</button>
+  </div>
+  <div class="diag" id="sched">队列：未开始</div>
+  <label>自动提交（自动点「发布」）</label>
+  <div class="row">
+    <button id="autoToggle" class="sec">自动提交：关</button>
+    <button id="refresh" class="sec">刷新状态</button>
+  </div>
+  <div class="status" id="status">就绪</div>
+  <div class="tip">
+    用法：① 千帆商品页：浮窗自动识别商品，勾选后点「采集选中」进商品库；<br/>
+    ② 桌面程序自动按匹配的图片文件夹生成笔记并入队；<br/>
+    ③ 小红书创作者发布页：点「拉取下一篇」自动填表，点「开始批量发布」逐篇自动发布（每篇开新标签，一次一篇）；<br/>
+    ④ 开「自动提交」自动点「发布」，否则手动点发布。遇验证挑战暂停转人工，解决后继续。仅在自有商家账号下使用。
+  </div>
+  <script src="popup.js"></script>
+</body>
+</html>

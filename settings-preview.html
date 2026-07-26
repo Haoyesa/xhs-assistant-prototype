@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>发布设置（对齐原软件）— v0.2.11 排版预览</title>
+<style>
+  :root {
+    --bg: #0e1014; --bg2: #12151b; --panel: #161a22; --panel2: #1d222c;
+    --border: #283041; --border2: #323a4d; --text: #e7eaf0; --muted: #97a1b3;
+    --radius: 14px; --shadow: 0 10px 30px #0007;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 36px; font-size: 14px; color: var(--text);
+    font-family: -apple-system, "PingFang SC", "Microsoft YaHei", system-ui, "Segoe UI", sans-serif;
+    background: radial-gradient(1200px 600px at 80% -10%, #1a2030 0%, var(--bg) 55%) fixed;
+  }
+  .note { max-width: 520px; margin: 0 auto 16px; color: var(--muted); font-size: 12px; line-height: 1.6; }
+  .card {
+    max-width: 520px; margin: 0 auto;
+    background: linear-gradient(180deg, var(--panel) 0%, var(--bg2) 100%);
+    border: 1px solid var(--border); border-radius: var(--radius);
+    padding: 18px; box-shadow: var(--shadow);
+  }
+  h3 { font-size: 15px; font-weight: 700; margin: 0 0 14px; }
+  /* ===== 以下为 v0.2.11 实际生效样式（与 public/styles.css 一致） ===== */
+  .settings-form { display: flex; flex-direction: column; gap: 10px; }
+  .set-line {
+    display: flex; align-items: center; gap: 10px; font-size: 13px; color: var(--text);
+    padding: 9px 12px; background: var(--panel2); border: 1px solid var(--border); border-radius: 10px;
+  }
+  .set-line input[type="checkbox"] { width: auto; margin: 0; flex: 0 0 auto; }
+  .set-line .set-label { flex: 0 0 auto; }
+  .set-line .topic-count {
+    display: inline-flex; align-items: center; gap: 8px; margin-left: auto;
+    color: var(--muted); font-size: 13px;
+  }
+  .set-line .topic-count input { width: 72px; }
+  .set-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .set-grid .sf-field { display: flex; flex-direction: column; gap: 5px; }
+  .set-grid .sf-field label { font-size: 13px; color: var(--muted); line-height: 1.3; }
+  .set-grid .sf-field input {
+    width: 100%; background: var(--panel2); border: 1px solid var(--border); color: var(--text);
+    border-radius: 9px; padding: 9px 11px; font-size: 13px; font-family: inherit;
+  }
+</style>
+</head>
+<body>
+  <div class="note">这是「发布设置（对齐原软件）」在 v0.2.11 中的最终排版。4 个复选项各占一行，话题数量内联于「生成话题」行右侧，4 个数字项放下方两列网格。直接对照即可，无需重装。</div>
+
+  <div class="card">
+    <h3>发布设置（对齐原软件）</h3>
+    <div class="settings-form">
+      <label class="set-line"><input type="checkbox" id="setGenTitle" /> 生成标题（精简）</label>
+      <label class="set-line"><input type="checkbox" id="setGenContent" /> 生成正文（种草）</label>
+      <div class="set-line">
+        <input type="checkbox" id="setGenTopics" />
+        <span class="set-label">生成话题</span>
+        <span class="topic-count">话题数量<input type="number" id="setTopicsCount" value="6" /></span>
+      </div>
+      <label class="set-line"><input type="checkbox" id="setAutoSubmit" /> 自动提交（否则填好待人工点）</label>
+      <div class="set-grid">
+        <div class="sf-field"><label for="setEmoji">随机表情比例(%)</label><input type="number" id="setEmoji" value="30" /></div>
+        <div class="sf-field"><label for="setInterval">发布间隔(秒)</label><input type="number" id="setInterval" value="500" /></div>
+        <div class="sf-field"><label for="setRandomDelay">随机延迟(秒)</label><input type="number" id="setRandomDelay" value="200" /></div>
+        <div class="sf-field"><label for="setRepeat">单品重复上限</label><input type="number" id="setRepeat" value="0" /></div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

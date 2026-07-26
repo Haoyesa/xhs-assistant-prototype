@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>黑猫AI自动笔记小助理</title>
+  <link rel="stylesheet" href="/static/styles.css" />
+</head>
+<body>
+  <div class="app">
+    <!-- 侧边栏 -->
+    <aside class="sidebar">
+      <div class="logo">
+        <img class="logo-ico" src="/static/logo.svg" alt="黑猫AI自动笔记小助理" />
+        <span class="logo-txt">黑猫AI<br/>自动笔记小助理</span>
+      </div>
+      <nav class="nav">
+        <button class="tab-btn active" data-tab="products"><span class="ni">📦</span>采集商品</button>
+        <button class="tab-btn" data-tab="batch"><span class="ni">🚀</span>批量发布</button>
+        <button class="tab-btn" data-tab="history"><span class="ni">🕘</span>历史</button>
+        <button class="tab-btn" data-tab="settings"><span class="ni">⚙️</span>设置</button>
+      </nav>
+      <div class="side-foot">
+        <div class="conn" id="connBox" title="后端连接状态">
+          <span class="conn-dot" id="connDot"></span>
+          <span id="connText">连接中…</span>
+        </div>
+        <div class="side-hint">仅自有账号 · 人工复核</div>
+      </div>
+    </aside>
+
+    <!-- 主区 -->
+    <div class="main">
+      <header class="topbar">
+        <div class="top-head">
+        <div class="crumb">黑猫AI自动笔记小助理</div>
+        <h1 id="pageTitle">采集商品</h1>
+        </div>
+        <div class="overview">
+          <div class="stat"><div class="stat-num" id="statProducts">0</div><div class="stat-label">商品库</div></div>
+          <div class="stat"><div class="stat-num" id="statQueued">0</div><div class="stat-label">待发布</div></div>
+          <div class="stat"><div class="stat-num ok" id="statPublished">0</div><div class="stat-label">已发布</div></div>
+          <div class="stat"><div class="stat-num bad" id="statFailed">0</div><div class="stat-label">失败/跳过</div></div>
+        </div>
+      </header>
+
+      <main class="content">
+        <!-- 选品 -->
+        <section class="tab active" data-tab="products">
+          <div class="card">
+            <div class="card-h">
+              <h3>采集商品</h3>
+              <span class="hint">插件在千帆页「采集本页商品」→ 进入这里；也可手动/导入。</span>
+            </div>
+            <div class="row">
+              <button id="fetchQianfanBtn" class="primary">🔄 从千帆抓取商品</button>
+              <span id="fetchMsg" class="msg"></span>
+            </div>
+            <div class="cols">
+              <details class="manual-add">
+                <summary>➕ 手动添加商品</summary>
+                <div class="grid2">
+                  <label>商品ID(itemId)<input id="mItemId" placeholder="如 1234567890" /></label>
+                  <label>商品名称<input id="mName" placeholder="商品标题" /></label>
+                  <label>价格<input id="mPrice" placeholder="99" /></label>
+                  <label>图片URL<input id="mImage" placeholder="https://..." /></label>
+                </div>
+                <label>描述<input id="mDesc" placeholder="选填" /></label>
+                <div class="row"><button id="addProductBtn">添加</button><span id="addMsg" class="msg"></span></div>
+              </details>
+              <details>
+                <summary>📥 批量导入（每行：名称|价格|itemId，或粘贴 JSON）</summary>
+                <textarea id="importBox" rows="5" placeholder="保温杯|99|123&#10;收纳盒|49|456"></textarea>
+                <div class="row"><button id="importBtn">导入</button><span id="importMsg" class="msg"></span></div>
+              </details>
+            </div>
+          </div>
+          <div class="card">
+            <div class="card-h">
+              <h3>📁 本地图片文件夹（按 images/&lt;id&gt; 发布）</h3>
+              <span class="hint">把每组笔记的图片放进 <code>images/&lt;id&gt;/</code> 文件夹。文件夹名支持 <code>&lt;商品ID&gt;_&lt;序号&gt;</code> 格式（如 <code>686673d41ea4cb001553c6da_1</code>），软件会自动匹配千帆商品库的商品名作为笔记标题。未匹配到则用文件夹名（或文件夹内可选 name.txt）作为 AI 生成文案的种子。图片根目录默认在软件数据目录的 images/，可在「设置 → 发布方式」修改。</span>
+            </div>
+            <div class="row">
+              <button id="scanAndImportBtn" class="primary">🔍 扫描图片文件夹并导入生成笔记</button>
+              <span id="imgFolderMsg" class="msg"></span>
+            </div>
+            <div class="hint">图片根目录：<code id="imagesRootPreview">—</code></div>
+            <div id="imageFolderList" class="product-grid"></div>
+          </div>
+
+          <div class="card">
+            <div class="row between">
+              <strong>商品库（<span id="prodCount">0</span>）</strong>
+              <span class="row" style="gap:8px">
+                <button id="refreshProdBtn" class="mini">🔄 刷新</button>
+              </span>
+            </div>
+            <div id="productList" class="product-grid"></div>
+          </div>
+        </section>
+
+        <!-- 批量发布 -->
+        <section class="tab" data-tab="batch">
+          <div class="card">
+            <div class="row">
+              <button id="pumpBtn" class="primary">▶ 开始批量发布</button>
+              <button id="pauseBtn">⏸ 暂停</button>
+              <button id="resumeBtn">⏵ 继续</button>
+              <button id="stopBtn">⏹ 停止</button>
+              <button id="retryBtn">🔁 重试失败</button>
+              <span id="pumpMsg" class="msg"></span>
+            </div>
+            <div class="hint">dry-run 为模拟发布；切到 CDP 真实发布需在设置填浏览器地址并登录千帆/创作者后台。插件方案下请在创作者页点「拉取下一篇」自动填充，人工复核后发布。</div>
+            <div id="nextCountdown" class="next-countdown">⏳ 距下一篇发布：—</div>
+          </div>
+          <div id="queueList" class="card"></div>
+        </section>
+
+        <!-- 历史 -->
+        <section class="tab" data-tab="history">
+          <div id="historyList" class="card"></div>
+        </section>
+
+        <!-- 设置 -->
+        <section class="tab" data-tab="settings">
+          <div class="card">
+            <h3>AI 配置</h3>
+            <div class="grid2">
+              <label>服务商
+                <select id="setProvider">
+                  <option value="deepseek">DeepSeek</option>
+                  <option value="doubao">豆包 Doubao</option>
+                  <option value="custom">自定义(OpenAI兼容)</option>
+                </select>
+              </label>
+              <label>API Key<input type="password" id="setKey" placeholder="sk-..." /></label>
+              <label>BaseURL(自定义时填)<input id="setBaseUrl" placeholder="https://..." /></label>
+              <label>模型名(可选)<input id="setModel" placeholder="deepseek-chat" /></label>
+            </div>
+            <div class="row">
+              <button id="aiTestBtn">测试 AI 连通</button><span id="aiTestMsg" class="msg"></span>
+            </div>
+          </div>
+
+          <div class="card">
+            <h3>发布方式 / 千帆</h3>
+            <div class="grid2">
+              <label>发布方式
+                <select id="setPublish">
+                  <option value="dry-run">模拟发布（占位，不真实发布）</option>
+                  <option value="extension">浏览器插件（推荐，配套插件填写）</option>
+                  <option value="cdp">CDP 真实浏览器</option>
+                </select>
+              </label>
+              <div class="hint" id="publishModeHint" style="grid-column:1/-1"></div>
+              <label>千帆商品页 URL<input id="setQianfanUrl" placeholder="https://channel.xiaohongshu.com/..." /></label>
+              <label>CDP 浏览器地址<input id="setBrowserUrl" placeholder="http://127.0.0.1:9222" /></label>
+              <label>Chrome 路径(可选)<input id="setChromePath" placeholder="C:\...\chrome.exe" /></label>
+              <label>图片根目录(本地图库,可选)<input id="setImagesRoot" placeholder="留空=数据目录/images" /></label>
+            </div>
+            <div class="row">
+              <button id="cdpTestBtn">测试 CDP 连接</button>
+              <button id="cdpLaunchBtn">启动 Chrome</button>
+              <span id="cdpMsg" class="msg"></span>
+            </div>
+          </div>
+
+          <div class="card">
+            <h3>发布设置（对齐原软件）</h3>
+            <div class="settings-form">
+              <label class="set-line"><input type="checkbox" id="setGenTitle" /> 生成标题（精简）</label>
+              <label class="set-line"><input type="checkbox" id="setGenContent" /> 生成正文（种草）</label>
+              <div class="set-line">
+                <input type="checkbox" id="setGenTopics" />
+                <span class="set-label">生成话题</span>
+                <span class="topic-count">话题数量<input type="number" id="setTopicsCount" value="6" /></span>
+              </div>
+              <label class="set-line"><input type="checkbox" id="setAutoSubmit" /> 自动提交（否则填好待人工点）</label>
+              <label class="set-line"><input type="checkbox" id="setHumanTyping" /> 模拟真人打字（逐字输入标题/正文/话题）</label>
+              <div class="set-grid">
+                <div class="sf-field"><label for="setEmoji">随机表情比例(%)</label><input type="number" id="setEmoji" value="30" /></div>
+                <div class="sf-field"><label for="setInterval">发布间隔(秒)</label><input type="number" id="setInterval" value="500" /></div>
+                <div class="sf-field"><label for="setRandomDelay">随机延迟(秒)</label><input type="number" id="setRandomDelay" value="200" /></div>
+                <div class="sf-field"><label for="setRepeat">单品重复上限</label><input type="number" id="setRepeat" value="0" /></div>
+              </div>
+            </div>
+            <details>
+              <summary>标题提示词</summary>
+              <textarea id="setTitlePrompt" rows="3"></textarea>
+            </details>
+            <details>
+              <summary>正文提示词（种草）</summary>
+              <textarea id="setContentPrompt" rows="6"></textarea>
+            </details>
+            <details>
+              <summary>话题提示词</summary>
+              <textarea id="setTopicsPrompt" rows="2"></textarea>
+            </details>
+            <div class="row"><button id="saveSetBtn" class="primary">保存设置</button><span id="setMsg" class="msg"></span></div>
+          </div>
+
+          <div class="card">
+            <h3>数据管理</h3>
+            <p class="hint">清除「发布数据」会删除已采集的商品、发布任务队列、发布历史与已上传图片；<b>不影响</b> AI 配置与账号设置。</p>
+            <div class="row">
+              <button id="clearDataBtn" class="danger">清除发布数据</button>
+              <span id="clearMsg" class="msg"></span>
+            </div>
+          </div>
+        </section>
+      </main>
+    </div>
+  </div>
+
+  <div id="toast" class="toast-wrap"></div>
+  <script src="/static/app.js"></script>
+</body>
+</html>
