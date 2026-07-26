@@ -53,5 +53,77 @@
     } catch (e) {}
   }
 
-  window.XhsCommon = { getXhsServerUrl, xhsFetch, xhsKeepAlive };
+  // 让固定浮窗可拖动（header/handle 触发），限制在视口内，并持久化位置。
+  function xhsMakeDraggable(el, handle = el) {
+    if (!el || el.dataset.xhsDragBound) return;
+    el.dataset.xhsDragBound = '1';
+    let dragging = false, startX, startY, startL, startT, rafId;
+
+    const setPos = (left, top) => {
+      el.style.setProperty('right', 'auto', 'important');
+      el.style.setProperty('bottom', 'auto', 'important');
+      el.style.setProperty('left', left + 'px', 'important');
+      el.style.setProperty('top', top + 'px', 'important');
+    };
+    const clamp = (n, min, max) => Math.max(min, Math.min(max, n));
+
+    const onDown = (e) => {
+      if (e.button !== 0) return;
+      // 避免点击面板内部按钮/输入框/链接时触发拖动
+      const interactive = e.target.closest('button, input, textarea, select, a, label, [role="button"]');
+      if (interactive && interactive !== handle && interactive !== el) return;
+      const rect = el.getBoundingClientRect();
+      startX = e.clientX;
+      startY = e.clientY;
+      startL = rect.left;
+      startT = rect.top;
+      dragging = true;
+      setPos(startL, startT);
+      handle.setPointerCapture(e.pointerId);
+      handle.style.setProperty('cursor', 'grabbing', 'important');
+      e.preventDefault();
+    };
+    const onMove = (e) => {
+      if (!dragging) return;
+      e.preventDefault();
+      if (rafId) cancelAnimationFrame(rafId);
+      rafId = requestAnimationFrame(() => {
+        const dx = e.clientX - startX;
+        const dy = e.clientY - startY;
+        const rect = el.getBoundingClientRect();
+        const vw = window.innerWidth;
+        const vh = window.innerHeight;
+        setPos(clamp(startL + dx, 0, vw - rect.width), clamp(startT + dy, 0, vh - rect.height));
+      });
+    };
+    const onUp = (e) => {
+      if (!dragging) return;
+      dragging = false;
+      handle.style.removeProperty('cursor');
+      try { handle.releasePointerCapture(e.pointerId); } catch (_) {}
+      if (rafId) { cancelAnimationFrame(rafId); rafId = null; }
+      const rect = el.getBoundingClientRect();
+      try {
+        chrome.storage.local.set({ ['xhs_pos_' + el.id]: { left: rect.left, top: rect.top } });
+      } catch (_) {}
+    };
+
+    handle.addEventListener('pointerdown', onDown);
+    handle.addEventListener('pointermove', onMove);
+    handle.addEventListener('pointerup', onUp);
+    handle.addEventListener('pointercancel', onUp);
+
+    // 恢复上次位置
+    try {
+      chrome.storage.local.get(['xhs_pos_' + el.id], (v) => {
+        const p = v['xhs_pos_' + el.id];
+        if (!p) return;
+        const rect = el.getBoundingClientRect();
+        const vw = window.innerWidth, vh = window.innerHeight;
+        setPos(clamp(p.left, 0, vw - rect.width), clamp(p.top, 0, vh - rect.height));
+      });
+    } catch (_) {}
+  }
+
+  window.XhsCommon = { getXhsServerUrl, xhsFetch, xhsKeepAlive, xhsMakeDraggable };
 })();

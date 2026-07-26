@@ -1910,17 +1910,36 @@ function buildPanel() {
   box.id = 'xhs-creator-helper';
   box.setAttribute('data-xhs-helper', '1');
   box.innerHTML = `
-    <div class="xhs-h-title">黑猫智记AI</div>
-    <div class="xhs-h-status" id="xhs-c-status">就绪</div>`;
+    <div class="xhs-h-head">
+      <img class="xhs-h-logo" src="${chrome.runtime.getURL('icons/icon48.png')}" alt="黑猫智记AI" />
+      <div class="xhs-h-title">黑猫智记AI</div>
+      <div class="xhs-h-drag" title="拖动">⋮⋮</div>
+    </div>
+    <div class="xhs-h-body">
+      <span class="xhs-h-dot" id="xhs-h-dot"></span>
+      <span class="xhs-h-status" id="xhs-c-status">就绪</span>
+    </div>`;
   document.body.appendChild(box);
-  // 统一状态输出：同时更新侧栏状态 + 顶部 Toast
+  // 让头部可拖动整个浮窗
+  if (window.XhsCommon && window.XhsCommon.xhsMakeDraggable) {
+    window.XhsCommon.xhsMakeDraggable(box, box.querySelector('.xhs-h-head'));
+  }
+  // 统一状态输出：同时更新侧栏状态 + 顶部 Toast + 状态点颜色
   const setStatus = (t) => {
     window.__xhsToastStatus = t;
     const side = document.getElementById('xhs-c-status');
     if (side) side.textContent = t;
     if (window.__renderXhsToast) window.__renderXhsToast();
+    const dot = document.getElementById('xhs-h-dot');
+    if (dot) {
+      dot.className = 'xhs-h-dot';
+      if (/失败|错误|异常|fail|error|timeout|timed out/i.test(t)) dot.classList.add('bad');
+      else if (/发布|成功|完成|ok|✓|published|已发/i.test(t)) dot.classList.add('ok');
+      else if (/等待|倒计|暂停|manual|验证|挑战|识别|填表|拉取|续|计时|处理|发布中/i.test(t)) dot.classList.add('wait');
+    }
   };
   window.__xhsHelper = { status: setStatus };
+  setStatus('就绪');
 }
 
 if (!document.getElementById('xhs-creator-helper')) {

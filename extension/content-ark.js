@@ -262,6 +262,7 @@ function buildPanel() {
     <div class="xh-head">
       <span class="xh-dot" id="xhDot" title="后端连接状态"></span>
       <span class="xh-title">黑猫智记AI</span>
+      <div class="xh-drag" title="拖动面板">⋮⋮</div>
       <button class="xh-collapse" id="xhCollapse" title="折叠/展开">▾</button>
     </div>
     <div class="xh-body" id="xhBody">
@@ -297,6 +298,10 @@ function buildPanel() {
       <div class="xh-status" id="xhStatus">就绪</div>
     </div>`;
   document.body.appendChild(box);
+  // 头部可拖动整个选品面板
+  if (window.XhsCommon && window.XhsCommon.xhsMakeDraggable) {
+    window.XhsCommon.xhsMakeDraggable(box, box.querySelector('.xh-head'));
+  }
 
   const $ = (id) => box.querySelector('#' + id);
   const status = (t) => { $('xhStatus').textContent = t; };

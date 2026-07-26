@@ -107,3 +107,102 @@
 .xh-toast.xh-toast-ok { background: #1d3a2a !important; border-color: #36c275 !important; color: #c9f5da !important; }
 .xh-toast.xh-toast-err { background: #3a1d1d !important; border-color: #e2554b !important; color: #f5c9c9 !important; }
 .xh-toast.xh-toast-info { background: #1d2a3a !important; border-color: #4f8cff !important; color: #c9def5 !important; }
+
+/* =========================================================
+   创作者页浮窗（#xhs-creator-helper）专用样式 — 毛玻璃品牌卡片
+   ========================================================= */
+#xhs-creator-helper {
+  width: 220px !important;
+  max-height: none !important;
+  border: 1px solid rgba(0, 240, 255, 0.22) !important;
+  border-radius: 16px !important;
+  background: rgba(15, 18, 25, 0.92) !important;
+  backdrop-filter: blur(14px) !important;
+  -webkit-backdrop-filter: blur(14px) !important;
+  box-shadow: 0 12px 38px rgba(0, 0, 0, 0.45), 0 0 0 1px rgba(0, 240, 255, 0.06) inset !important;
+  overflow: visible !important;
+}
+#xhs-creator-helper .xhs-h-head {
+  display: flex !important;
+  align-items: center !important;
+  gap: 8px !important;
+  padding: 10px 12px !important;
+  background: linear-gradient(90deg, rgba(0, 240, 255, 0.14), rgba(184, 41, 247, 0.08)) !important;
+  border-bottom: 1px solid rgba(0, 240, 255, 0.12) !important;
+  border-radius: 15px 15px 0 0 !important;
+  cursor: grab !important;
+  user-select: none !important;
+}
+#xhs-creator-helper .xhs-h-head:active { cursor: grabbing !important; }
+#xhs-creator-helper .xhs-h-logo {
+  width: 28px !important;
+  height: 28px !important;
+  border-radius: 7px !important;
+  object-fit: cover !important;
+  flex: 0 0 auto !important;
+  box-shadow: 0 0 0 1px rgba(0, 240, 255, 0.25) !important;
+}
+#xhs-creator-helper .xhs-h-title {
+  flex: 1 !important;
+  font-size: 14px !important;
+  font-weight: 700 !important;
+  color: #fff !important;
+  letter-spacing: 0.2px !important;
+}
+#xhs-creator-helper .xhs-h-drag {
+  flex: 0 0 auto !important;
+  width: 18px !important;
+  height: 18px !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  color: rgba(255, 255, 255, 0.5) !important;
+  font-size: 10px !important;
+  letter-spacing: 1px !important;
+  cursor: grab !important;
+  border-radius: 4px !important;
+}
+#xhs-creator-helper .xhs-h-head:active .xhs-h-drag,
+#xhs-creator-helper .xhs-h-drag:active { cursor: grabbing !important; }
+#xhs-creator-helper .xhs-h-body {
+  padding: 10px 12px 12px !important;
+  display: flex !important;
+  align-items: center !important;
+  gap: 8px !important;
+}
+#xhs-creator-helper .xhs-h-dot {
+  width: 8px !important;
+  height: 8px !important;
+  border-radius: 50% !important;
+  background: #00f0ff !important;
+  box-shadow: 0 0 0 2px rgba(0, 240, 255, 0.25), 0 0 10px rgba(0, 240, 255, 0.6) !important;
+  flex: 0 0 auto !important;
+  transition: background .2s ease, box-shadow .2s ease !important;
+}
+#xhs-creator-helper .xhs-h-dot.ok { background: #36c275 !important; box-shadow: 0 0 0 2px rgba(54, 194, 117, 0.25), 0 0 10px rgba(54, 194, 117, 0.5) !important; }
+#xhs-creator-helper .xhs-h-dot.wait { background: #e0a83a !important; box-shadow: 0 0 0 2px rgba(224, 168, 58, 0.25), 0 0 10px rgba(224, 168, 58, 0.5) !important; }
+#xhs-creator-helper .xhs-h-dot.bad { background: #e2554b !important; box-shadow: 0 0 0 2px rgba(226, 85, 75, 0.25), 0 0 10px rgba(226, 85, 75, 0.5) !important; }
+#xhs-creator-helper .xhs-h-status {
+  flex: 1 !important;
+  font-size: 12px !important;
+  color: #e6e8eb !important;
+  line-height: 1.5 !important;
+  word-break: break-word !important;
+}
+
+/* =========================================================
+   千帆选品浮窗（#xhs-ark-helper）拖动手柄
+   ========================================================= */
+#xhs-ark-helper .xh-head { cursor: grab !important; }
+#xhs-ark-helper .xh-head:active { cursor: grabbing !important; }
+#xhs-ark-helper .xh-head .xh-drag {
+  padding: 0 5px !important;
+  color: #6b7280 !important;
+  font-size: 11px !important;
+  letter-spacing: 1px !important;
+  cursor: grab !important;
+  user-select: none !important;
+  line-height: 1 !important;
+}
+#xhs-ark-helper .xh-head .xh-drag:active { cursor: grabbing !important; }
+#xhs-ark-helper .xh-head .xh-collapse { cursor: pointer !important; }
