@@ -52,7 +52,7 @@
   },
   "web_accessible_resources": [
     {
-      "resources": ["panel.css"],
+      "resources": ["panel.css", "icons/*"],
       "matches": [
         "https://ark.xiaohongshu.com/*",
         "https://creator.xiaohongshu.com/*"
