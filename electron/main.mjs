@@ -1,6 +1,6 @@
 // electron/main.mjs
 // 桌面外壳：在本进程内启动本地服务，并开一个窗口加载它。
-import { app, BrowserWindow } from 'electron';
+import { app, BrowserWindow, dialog } from 'electron';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -15,7 +15,15 @@ process.env.XHS_DATA_DIR = app.getPath('userData');
 const { startServer } = await import('../server.js');
 
 // 在 Electron 主进程内直接拉起本地服务（无需额外 node 进程）
-startServer(PORT);
+const srv = startServer(PORT);
+// 端口被占用（旧实例/旧版本 exe/命令行 node server.js 残留）时给出明确提示，
+// 避免前端一直卡在「连接中…」却找不到原因
+srv.on('error', (err) => {
+  const msg = (err && err.code === 'EADDRINUSE')
+    ? `端口 ${PORT} 已被占用。\n通常是另一个「黑猫AI自动笔记小助理」实例、旧版本 exe，或命令行 node server.js 正在运行。\n请先在任务管理器结束这些进程，再重新打开本软件。`
+    : String((err && err.message) || err);
+  try { dialog.showErrorBox('后端启动失败', msg); } catch {}
+});
 
 function createWindow() {
   const win = new BrowserWindow({
@@ -26,7 +34,7 @@ function createWindow() {
     backgroundColor: '#0f1115',
     webPreferences: { contextIsolation: true, nodeIntegration: false },
   });
-  const url = `http://localhost:${PORT}`;
+  const url = `http://127.0.0.1:${PORT}`;
   win.loadURL(url);
   if (isDev) win.webContents.openDevTools({ mode: 'detach' });
 }

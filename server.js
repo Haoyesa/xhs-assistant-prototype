@@ -434,7 +434,7 @@ function sendFile(res, file) {
 }
 
 const server = http.createServer(async (req, res) => {
-  const url = new URL(req.url, `http://localhost:${PORT}`);
+  const url = new URL(req.url, `http://127.0.0.1:${PORT}`);
   const p = url.pathname;
   const method = req.method;
 
@@ -818,7 +818,7 @@ const server = http.createServer(async (req, res) => {
       const settings = { ...DEFAULT_SETTINGS, ...(await readStore(stores.settings, {})) };
       return sendJSON(res, 200, {
         ok: true, task,
-        serverUrl: `http://localhost:${PORT}`,
+        serverUrl: `http://127.0.0.1:${PORT}`,
         autoSubmit: settings.autoSubmit,
         humanTyping: settings.humanTyping,
         qianfanUrl: settings.qianfanUrl,
@@ -934,7 +934,7 @@ const server = http.createServer(async (req, res) => {
       const prodById = new Map(products.map((p) => [normalizeId(p.id), p]));
       const prodByName = new Map();
       for (const p of products) { const k = normalizeId(p.productName); if (k) prodByName.set(k, chooseBetter(prodByName.get(k), p)); }
-      const serverUrl = `http://localhost:${PORT}`;
+      const serverUrl = `http://127.0.0.1:${PORT}`;
       const created = [];
       for (const f of folders) {
         if (ids && !ids.includes(f.id)) continue;
@@ -1063,8 +1063,8 @@ export function startServer(port = PORT) {
       console.error('[server] 启动错误:', err);
     }
   });
-  server.listen(port, () => {
-    console.log(`黑猫AI自动笔记小助理已启动: http://localhost:${port}`);
+  server.listen(port, '0.0.0.0', () => {
+    console.log(`黑猫AI自动笔记小助理已启动: http://127.0.0.1:${port}`);
   });
   return server;
 }
