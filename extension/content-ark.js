@@ -261,7 +261,7 @@ function buildPanel() {
   box.innerHTML = `
     <div class="xh-head">
       <span class="xh-dot" id="xhDot" title="后端连接状态"></span>
-      <span class="xh-title">黑猫AI自动笔记小助理</span>
+      <span class="xh-title">黑猫智记AI</span>
       <button class="xh-collapse" id="xhCollapse" title="折叠/展开">▾</button>
     </div>
     <div class="xh-body" id="xhBody">

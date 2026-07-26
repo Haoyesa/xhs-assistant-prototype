@@ -20,7 +20,7 @@ const srv = startServer(PORT);
 // 避免前端一直卡在「连接中…」却找不到原因
 srv.on('error', (err) => {
   const msg = (err && err.code === 'EADDRINUSE')
-    ? `端口 ${PORT} 已被占用。\n通常是另一个「黑猫AI自动笔记小助理」实例、旧版本 exe，或命令行 node server.js 正在运行。\n请先在任务管理器结束这些进程，再重新打开本软件。`
+    ? `端口 ${PORT} 已被占用。\n通常是另一个「黑猫智记AI」实例、旧版本 exe，或命令行 node server.js 正在运行。\n请先在任务管理器结束这些进程，再重新打开本软件。`
     : String((err && err.message) || err);
   try { dialog.showErrorBox('后端启动失败', msg); } catch {}
 });

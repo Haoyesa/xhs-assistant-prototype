@@ -1924,7 +1924,7 @@ function buildPanel() {
   box.id = 'xhs-creator-helper';
   box.setAttribute('data-xhs-helper', '1');
   box.innerHTML = `
-    <div class="xhs-h-title">黑猫AI自动笔记小助理</div>
+    <div class="xhs-h-title">黑猫智记AI</div>
     <div class="xhs-h-row">
       <button id="xhs-c-pull">拉取下一篇</button>
     </div>

@@ -4,7 +4,7 @@
   "private": true,
   "author": "heimao-ai",
   "type": "module",
-  "description": "黑猫AI自动笔记小助理（AI 文案 + 素材库 + 排序 + 历史 + CDP 真实发布 + Electron 桌面外壳），仅用于自有商家账号的批量发布自动化。",
+  "description": "黑猫智记AI（AI 文案 + 素材库 + 排序 + 历史 + CDP 真实发布 + Electron 桌面外壳），仅用于自有商家账号的批量发布自动化。",
   "main": "electron/main.mjs",
   "scripts": {
     "start": "node server.js",
@@ -13,7 +13,7 @@
   },
   "build": {
     "appId": "com.example.xhsassistant",
-    "productName": "黑猫AI自动笔记小助理",
+    "productName": "黑猫智记AI",
     "icon": "assets/icon.ico",
     "files": [
       "server.js",
@@ -34,7 +34,7 @@
     },
     "win": {
       "target": "nsis",
-      "artifactName": "黑猫AI自动笔记小助理${version}-setup.exe"
+      "artifactName": "黑猫智记AI${version}-setup.exe"
     }
   },
   "dependencies": {

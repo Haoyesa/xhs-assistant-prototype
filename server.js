@@ -1040,7 +1040,7 @@ async function showPortErrorAndExit(port) {
     dialog.showErrorBox(
       '后端启动失败',
       `端口 ${port} 已被其他程序占用，无法启动本地后端。\n` +
-      `通常是另一个「黑猫AI自动笔记小助理」实例、旧版本 exe，或命令行 node server.js 正在运行。\n` +
+      `通常是另一个「黑猫智记AI」实例、旧版本 exe，或命令行 node server.js 正在运行。\n` +
       `请先在任务管理器结束这些进程，再重新打开本软件。`
     );
   } catch {}
@@ -1064,7 +1064,7 @@ export function startServer(port = PORT) {
     }
   });
   server.listen(port, '0.0.0.0', () => {
-    console.log(`黑猫AI自动笔记小助理已启动: http://127.0.0.1:${port}`);
+    console.log(`黑猫智记AI已启动: http://127.0.0.1:${port}`);
   });
   return server;
 }
