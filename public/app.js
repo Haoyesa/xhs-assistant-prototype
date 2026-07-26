@@ -220,7 +220,7 @@ setInterval(renderCountdown, 1000); // 每秒走字，loadQueue 每 2s 刷新数
 $('#pumpBtn').addEventListener('click', async () => {
   const mode = $('#setPublish').value;
   if (mode === 'extension') {
-    $('#pumpMsg').textContent = 'ⓘ 插件模式下请到创作者页用插件「拉取下一篇」发布';
+    $('#pumpMsg').textContent = 'ⓘ 插件模式下请到创作者页用浏览器插件「开始批量发布」一键自动发布';
     toast('插件模式：请到创作者发布台用插件拉取发布', 'warn');
     return;
   }
@@ -279,7 +279,7 @@ async function loadSettings() {
 }
 const PUBLISH_HINTS = {
   'dry-run': '当前为「模拟发布」：不会真实发出，仅演示流程，便于先调通前后端与插件。',
-  'extension': '「浏览器插件」模式（推荐）：在创作者发布台页面点右下角「🚀发布助手 → 拉取下一篇」自动填写，人工复核后点发布。此模式下下方「开始批量发布」无效，由插件驱动。',
+  'extension': '「浏览器插件」模式（推荐）：在创作者发布台页面点浏览器插件「开始批量发布」即可自动逐篇填表并发布（默认开启自动提交）。此模式下下方「开始批量发布」无效，由插件驱动。',
   'cdp': '「CDP 真实浏览器」：需先在设置填 CDP 浏览器地址并登录创作者后台，再点「开始批量发布」由本机已登录 Chrome 驱动发布。',
 };
 function updatePublishHint() {

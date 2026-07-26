@@ -1689,7 +1689,7 @@ async function ensureUploadReady(status) {
   return input;
 }
 
-// 半自动模式：监听人工发布成功后链式拉取下一篇
+// 监听「人工点发布成功」后回报 published 并续链队列（autoSubmit 关闭人工复核 / 验证挑战转人工后，用户手动点「发布」时触发）
 let __manualWatch = null;
 function armManualSuccessWatch(taskId) {
   if (__manualWatch) return;
@@ -1703,7 +1703,7 @@ function armManualSuccessWatch(taskId) {
     const has = RE.test(document.body.innerText);
     if (has && (Date.now() - started > 4000) && !sawSuccess) {
       clearInterval(__manualWatch); __manualWatch = null;
-      status('检测到已发布 ✓，正在拉取下一篇…');
+      status('检测到已发布 ✓，正在续下一篇…');
       chrome.runtime.sendMessage({ type: 'reportDone', taskId, status: 'published', detail: '人工点击发布成功', delayMs: window.__xhsLastDelayMs || 0 });
     }
     sawSuccess = has;
@@ -1743,7 +1743,7 @@ async function reportSchedule(at) {
   try { await window.XhsCommon.xhsFetch('/api/ext/schedule', { method: 'POST', body: { nextPublishAt: at } }); } catch (e) {}
 }
 
-// 统一执行：校验挑战 → 填表 → 回报结果。供 background 下发与「手动拉取」按钮复用。
+// 统一执行：校验挑战 → 填表 → 回报结果。供 background 下发调用。
 // 同一任务在 30s 内的重复下发直接跳过（防止 MV3 重复注入 content script 导致 onMessage 监听器注册两遍、一次下发触发两次填充/重复传图）。
 const __fillLock = (window.__xhsFillLock = window.__xhsFillLock || new Set());
 async function runFill(task, autoSubmit, serverUrl, humanTyping) {
@@ -1754,7 +1754,7 @@ async function runFill(task, autoSubmit, serverUrl, humanTyping) {
   window.__xhsLastDelayMs = __delayMs;
   sendDelay(__delayMs);
   // 开始新任务前，撤销上一条可能仍在监听「人工发布成功」的 watch，
-  // 否则提早手动点「拉取下一篇」会导致把新任务误报成上一条已发布。
+  // 否则提早开始下一篇会导致把新任务误报成上一条已发布。
   if (__manualWatch) { clearInterval(__manualWatch); __manualWatch = null; }
   if (__fillLock.has(task.id)) {
     console.log('[XHS] 跳过重复 fillTask（同一任务进行中）', task.id);
@@ -1895,28 +1895,6 @@ function startToastCountdown() {
   }, 1000);
 }
 
-// 图文发布页（拉取下一篇 / 自动跳转都用它）
-const CREATOR_URL = 'https://creator.xiaohongshu.com/publish/publish?source=&published=true&from=tab_switch&target=image';
-
-// 跳转后重注入时：若之前点了「拉取下一篇」但当时不在图文页，重开后自动拉取填充
-async function autoPullIfPending() {
-  try {
-    const s = await new Promise((res) => chrome.storage.local.get({ xhsPendingManualFill: false }, (r) => res(r)));
-    if (!s.xhsPendingManualFill) return;
-    await chrome.storage.local.remove('xhsPendingManualFill');
-    // 仅当已在图文发布页才自动拉取（否则属于脏标志，丢弃）
-    if (!/[\?&]target=image\b/.test(location.href || '')) return;
-    const setStatus = (window.__xhsHelper?.status) || (() => {});
-    setStatus('拉取中…');
-    const r = await window.XhsCommon.xhsFetch('/api/ext/next', { method: 'GET' });
-    if (!r.ok || !r.data || !r.data.ok || !r.data.task) {
-      setStatus('⚠ ' + ((r.data && r.data.msg) || '没有待发任务，或后端未连接'));
-      return;
-    }
-    setStatus('已拉取：' + (r.data.task.product?.productName || r.data.task.title || r.data.task.itemId || '笔记'));
-    await runFill(r.data.task, r.data.autoSubmit, r.data.serverUrl, r.data.humanTyping);
-  } catch (e) {}
-}
 
 // 注入侧栏 UI + 顶部 Toast
 function buildPanel() {
@@ -1933,9 +1911,6 @@ function buildPanel() {
   box.setAttribute('data-xhs-helper', '1');
   box.innerHTML = `
     <div class="xhs-h-title">黑猫智记AI</div>
-    <div class="xhs-h-row">
-      <button id="xhs-c-pull">拉取下一篇</button>
-    </div>
     <div class="xhs-h-status" id="xhs-c-status">就绪</div>`;
   document.body.appendChild(box);
   // 统一状态输出：同时更新侧栏状态 + 顶部 Toast
@@ -1946,31 +1921,6 @@ function buildPanel() {
     if (window.__renderXhsToast) window.__renderXhsToast();
   };
   window.__xhsHelper = { status: setStatus };
-  box.querySelector('#xhs-c-pull').addEventListener('click', async () => {
-    setStatus('拉取中…');
-    try {
-      // 若当前不在图文发布页，先跳转过去；跳转后 content script 会重注入并在 autoPullIfPending 中自动拉取填充
-      if (!/[\?&]target=image\b/.test(location.href || '')) {
-        await chrome.storage.local.set({ xhsPendingManualFill: true });
-        setStatus('正在打开图文发布页…');
-        window.location.href = CREATOR_URL;
-        return;
-      }
-      // 自包含：直连后端拉取下一篇并就地填充，不依赖 service worker（避免 Extension context invalidated）
-      const r = await window.XhsCommon.xhsFetch('/api/ext/next', { method: 'GET' });
-      if (!r.ok || !r.data || !r.data.ok || !r.data.task) {
-        setStatus('⚠ ' + ((r.data && r.data.msg) || '没有待发任务，或后端未连接（确认助手桌面程序已启动）'));
-        return;
-      }
-      const next = r.data;
-      setStatus('已拉取：' + (next.task.product?.productName || next.task.title || next.task.itemId || '笔记'));
-      await runFill(next.task, next.autoSubmit, next.serverUrl, next.humanTyping);
-    } catch (e) {
-      setStatus('⚠ 拉取失败：' + e.message);
-    }
-  });
-  // 若上一页点了「拉取下一篇」但当时不在图文页，跳转后重注入时自动续拉
-  autoPullIfPending();
 }
 
 if (!document.getElementById('xhs-creator-helper')) {

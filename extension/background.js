@@ -102,7 +102,6 @@ let busy = false;                // 当前是否有一篇笔记正在发布中�
 let paused = false;              // 遇到验证挑战等需人工，暂停队列（解决后由 content script 回报 published 恢复）
 let current = null;              // { tabId, taskId, resolved } 当前正在发布的任务
 let awaitingTabId = null;        // 刚开的新标签，等其加载完成后再填充
-let suppressAutoFill = false;     // tick() 手动跳转图文页期间，阻止 onUpdated 自动 fillTab 造成双填
 let lastPublishedTabId = null;   // 刚发布成功的标签页：先保留用于显示「下一篇倒计时」，开下一篇时再关
 let nextAllowedAt = 0;           // 下一篇最早可开标签的时间戳（ms），用于保证「发布后延时」
 let lastDelayMs = 500 * 1000 + 200 * 1000; // 上一次取的间隔（默认 500s+200s），按服务端返回覆盖
@@ -157,21 +156,6 @@ function openNextTab() {
       awaitingTabId = tab.id;
       broadcast({ kind: 'info', msg: '已打开新的发布标签，等待加载…' });
     });
-  });
-}
-
-// 等待指定标签加载到 complete 状态（带超时兜底）。用于 tick() 自动跳转图文页后确认页面就绪。
-function waitTabComplete(tabId, timeout = 15000) {
-  return new Promise((resolve) => {
-    const listener = (tid, info) => {
-      if (tid !== tabId) return;
-      if (info.status === 'complete') {
-        chrome.tabs.onUpdated.removeListener(listener);
-        resolve();
-      }
-    };
-    chrome.tabs.onUpdated.addListener(listener);
-    setTimeout(() => { chrome.tabs.onUpdated.removeListener(listener); resolve(); }, timeout);
   });
 }
 
@@ -333,78 +317,6 @@ async function schedulerStep() {
 chrome.alarms.create('pump', { periodInMinutes: 1 });
 chrome.alarms.onAlarm.addListener((a) => { if (a.name === 'pump') schedulerStep(); });
 
-// ---------------- 手动/兼容：在已有创作者页拉一篇填充（popup「拉取下一篇」）----------------
-async function tick() {
-  const s = await storageGet();
-  if (!s.autoConnect) return { kind: 'info', msg: '自动连接已关闭（可在 popup 开启）' };
-  try {
-    let tabs = await chrome.tabs.query({ url: 'https://creator.xiaohongshu.com/*' });
-    let tab;
-    if (!tabs.length) {
-      // 没有创作者页 → 自动打开图文发布页，再填充（免去用户手动开页面）
-      broadcast({ kind: 'info', msg: '正在打开图文发布页…' });
-      tab = await new Promise((resolve) => {
-        chrome.tabs.create({ url: CREATOR_URL, active: true }, (t) => resolve(t));
-      });
-      if (!tab || tab.id == null) return { kind: 'error', msg: '无法打开图文发布页（可能被浏览器拦截，请手动打开 creator.xiaohongshu.com）' };
-      await waitTabComplete(tab.id, 15000);
-      await new Promise((r) => setTimeout(r, 1500)); // 等 content script 注入与表单渲染
-    } else {
-      tab = tabs[0];
-      // 确保是图文发布页：若当前是视频发布页/笔记列表等其他 creator 子页，自动跳转过去再填充，
-      // 免去用户手动切到「上传图文」。
-      if (!/[\?&]target=image\b/.test(tab.url || '')) {
-        suppressAutoFill = true; // 跳转加载期间，阻止 onUpdated 自动 fillTab 造成双填
-        broadcast({ kind: 'info', msg: '正在切换到图文发布页…' });
-        await new Promise((resolve) => {
-          chrome.tabs.update(tab.id, { url: CREATOR_URL }, () => resolve());
-        });
-        await waitTabComplete(tab.id, 15000);
-        await new Promise((r) => setTimeout(r, 1500)); // 等 content script 注入与表单渲染
-        suppressAutoFill = false;
-      }
-    }
-    const next = await pullNext();
-    if (!next || !next.ok) return { kind: 'error', msg: '后端通信失败：' + (next && next.msg ? next.msg : '无响应（确认助手桌面程序已启动）') };
-    if (!next.task) return { kind: 'idle', msg: '没有待发任务 —— 请先在助手「生成笔记」把商品入队' };
-    let sendErr = null;
-    try {
-      await new Promise((resolve) => {
-        chrome.tabs.sendMessage(tab.id, { type: 'fillTask', task: next.task, autoSubmit: next.autoSubmit, serverUrl: next.serverUrl, humanTyping: next.humanTyping }, (resp) => {
-          if (chrome.runtime.lastError) sendErr = chrome.runtime.lastError.message;
-          resolve();
-        });
-      });
-    } catch (e) { sendErr = e.message; }
-    if (sendErr && /Receiving end does not exist|Could not establish connection|Extension context invalidated/i.test(sendErr)) {
-      try {
-        await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ['content-creator.js'] });
-        await new Promise((r) => setTimeout(r, 600));
-        sendErr = null;
-        await new Promise((resolve) => {
-          chrome.tabs.sendMessage(tab.id, { type: 'fillTask', task: next.task, autoSubmit: next.autoSubmit, serverUrl: next.serverUrl, humanTyping: next.humanTyping }, (resp) => {
-            if (chrome.runtime.lastError) sendErr = chrome.runtime.lastError.message;
-            resolve();
-          });
-        });
-      } catch (e) { sendErr = e.message; }
-    }
-    if (sendErr && /Receiving end does not exist|Could not establish connection|Extension context invalidated/i.test(sendErr)) {
-      try { await reportDone(next.task.id, 'failed', '创作者页未响应：' + sendErr); } catch {}
-      const result = { kind: 'error', msg: '创作者页未就绪（任务已标失败）：' + sendErr };
-      broadcast(result);
-      return result;
-    }
-    const result = { kind: 'busy', msg: '已下发任务：' + (next.task.product?.productName || next.task.itemId || next.task.title || '笔记') };
-    broadcast(result);
-    return result;
-  } catch (e) {
-    const result = { kind: 'error', msg: '与后端通信失败：' + e.message };
-    broadcast(result);
-    return result;
-  }
-}
-
 // 创作者页加载完成：若是本调度器刚开的新标签 → 填充；否则若调度器在跑且无进行中任务 → 接管该页
 chrome.tabs.onUpdated.addListener((tabId, info, tab) => {
   if (info.status !== 'complete') return;
@@ -412,7 +324,7 @@ chrome.tabs.onUpdated.addListener((tabId, info, tab) => {
   if (awaitingTabId === tabId) {
     awaitingTabId = null;
     fillTab(tabId);
-  } else if (schedulerActive && !busy && !paused && !current && !awaitingTabId && !suppressAutoFill) {
+  } else if (schedulerActive && !busy && !paused && !current && !awaitingTabId) {
     // 用户手动打开了创作者页，或复用已有页 → 接管填充
     fillTab(tabId);
   }
@@ -460,9 +372,6 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         const s = await storageGet();
         const r = await api('/api/settings');
         sendResponse({ ok: true, serverUrl: s.serverUrl, settings: r.data });
-      } else if (msg.type === 'manualPublish') {
-        const r = await tick();
-        sendResponse({ ok: true, ...r });
       } else if (msg.type === 'getQueue') {
         try {
           const r = await api('/api/batch/queue', { method: 'GET' });

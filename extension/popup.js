@@ -22,16 +22,6 @@ function refresh() {
   });
 }
 
-$('pull').addEventListener('click', () => {
-  status('请求下一篇…');
-  chrome.runtime.sendMessage({ type: 'manualPublish' }, (r) => {
-    const ok = r && r.ok;
-    const msg = (r && r.msg) || (ok ? '已请求下一篇' : '请求失败');
-    status((ok ? '' : '⚠ ') + msg);
-    refresh();
-  });
-});
-
 $('autoToggle').addEventListener('click', () => {
   chrome.runtime.sendMessage({ type: 'getConfig' }, (c) => {
     const cur = !!(c && c.settings && c.settings.autoSubmit);
