@@ -107,6 +107,7 @@ let lastPublishedTabId = null;   // 刚发布成功的标签页：先保留用�
 let nextAllowedAt = 0;           // 下一篇最早可开标签的时间戳（ms），用于保证「发布后延时」
 let lastDelayMs = 500 * 1000 + 200 * 1000; // 上一次取的间隔（默认 500s+200s），按服务端返回覆盖
 let pollTimer = null;
+let nextTimer = null;            // 「开下一篇」的一次性定时器（SW 回收后会失效，故每次唤醒都重新 arm）
 
 // ---- 调度状态持久化：MV3 的 Service Worker 会随时被回收，内存里的 schedulerActive / paused /
 // nextAllowedAt 都会重置，导致「发布完一篇后队列停住、不再自动发下一篇」。把这些状态落盘到
@@ -125,6 +126,8 @@ function persistSched() {
     schedulerActive = !!s.sched_running;
     paused = !!s.sched_paused;
     nextAllowedAt = s.nextPublishAt || 0;
+    // SW 重启后：若之前在跑队列且已到/接近发布时刻，重新挂定时器推进下一篇
+    if (schedulerActive && !paused && nextAllowedAt) armNextTimer();
   } catch (e) {}
 })();
 
@@ -238,17 +241,24 @@ function startPolling(taskId) {
 }
 
 // 结束当前任务并推进队列（one-time，由轮询或 content script 消息触发）
-function resolveCurrent(kind, detail) {
-  if (!current || current.resolved) return;
-  current.resolved = true;
-  if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
-  const tabId = current.tabId;
-  const wasCurrent = current;
-  current = null;
-  busy = false;
+// reportTabId：content script 回报时所在标签 id（手动拉取路径后台未跟踪 current，用它兜底）
+function resolveCurrent(kind, detail, reportTabId) {
+  const hadCurrent = !!current && !current.resolved;
+  if (!hadCurrent) {
+    // 手动拉取路径：后台未通过 fillTab 跟踪 current，但只要调度器在跑（或发布成功）就继续下一篇
+    if (!schedulerActive && kind !== 'published') return;
+    if (busy) return; // 别的任务进行中，等它自己回报
+  } else {
+    current.resolved = true;
+    if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+    busy = false;
+  }
+  const tabId = hadCurrent ? current.tabId : (reportTabId || null);
+  if (hadCurrent) current = null;
 
   if (kind === 'published') {
     paused = false; // 若之前因人工恢复，解除暂停
+    if (!schedulerActive) schedulerActive = true; // 手动拉取也启动自动链（倒计时+自动下一篇）
     broadcast({ kind: 'ok', msg: '✓ 已发布：' + (detail || '') });
     // 保留刚发布的标签页用于显示「下一篇倒计时」，开下一篇时（openNextTab）再关闭，避免标签堆积
     lastPublishedTabId = tabId;
@@ -265,7 +275,7 @@ function resolveCurrent(kind, detail) {
   persistSched(); // 持久化 paused 等状态变化，抗 SW 回收
 }
 
-// 等配置延时后开下一篇（用 nextAllowedAt 保证延时，不依赖 setTimeout 在 SW 回收后存活）
+// 等配置延时后开下一篇（用 nextAllowedAt 保证延时，并每次 SW 唤醒都重新 arm 定时器，抗 SW 回收）
 function scheduleNext() {
   if (!schedulerActive || paused) return;
   nextAllowedAt = Date.now() + lastDelayMs;
@@ -274,17 +284,33 @@ function scheduleNext() {
   persistSched();
   // 上报给后端，供桌面「批量发布」页同步显示倒计时
   notifyServerSchedule(nextAllowedAt);
-  // 主路径：若 SW 还活着，定时开下一篇；若 SW 被回收，由 pump 闹钟(每分钟)读 nextPublishAt 兜底推进
-  setTimeout(() => {
-    if (schedulerActive && !paused && !busy && !current && !awaitingTabId) openNextTab();
-  }, lastDelayAtDelay());
+  // 真正挂定时器（每次都会重新计算剩余时间，SW 回收后由 pump/schedulerStep 重新 arm）
+  armNextTimer();
 }
 // 把「下一篇最早发布时刻」上报给后端（桌面批量发布页需要它做倒计时）
 async function notifyServerSchedule(at) {
   try { await api('/api/ext/schedule', { method: 'POST', body: { nextPublishAt: at } }); } catch (e) {}
 }
-// 真正等待的毫秒数（用于一次性 setTimeout），但因 SW 可能被回收，真正推进由 pump 闹钟兜底
-function lastDelayAtDelay() { return Math.max(1000, lastDelayMs); }
+// 重新挂「开下一篇」的定时器（始终走异步 setTimeout，不递归）：
+//   - 已到时间 → 1s 后 tryAdvance；未到 → 按剩余时间。
+//   - 关键：每次 SW 唤醒（pump 闹钟 / 页面事件 / 启动时恢复）都调用本函数，保证回收后仍能按时推进。
+function armNextTimer() {
+  if (nextTimer) return; // 已有定时器在跑，避免重复堆叠
+  if (!schedulerActive || paused) return;
+  const remain = nextAllowedAt - Date.now();
+  const delay = remain <= 0 ? 1000 : Math.min(remain, 60 * 60 * 1000);
+  nextTimer = setTimeout(() => { nextTimer = null; tryAdvance(); }, delay);
+}
+// 推进到下一篇：满足所有安全条件才真正 openNextTab（倒计时到点后由 pump/定时器调用）
+function tryAdvance() {
+  if (!schedulerActive || paused || busy || current || awaitingTabId) {
+    // 还没准备好（正忙/有进行中任务/等待新标签加载）：稍后由 pump 或本函数重试
+    if (schedulerActive && !paused) armNextTimer();
+    return;
+  }
+  if (Date.now() < nextAllowedAt) { armNextTimer(); return; }
+  openNextTab();
+}
 
 // 调度步进：由 pump 闹钟/start 调用。规则：
 //   - 暂停或正忙 → 不动
@@ -293,9 +319,9 @@ function lastDelayAtDelay() { return Math.max(1000, lastDelayMs); }
 async function schedulerStep() {
   const s = await storageGet();
   if (!s.autoConnect) return;
-  if (!schedulerActive || paused || busy || current || awaitingTabId) return;
-  if (Date.now() < nextAllowedAt) return; // 还在延时冷却中
-  openNextTab();
+  if (!schedulerActive || paused) return;
+  // 每次唤醒都重新计算：到点则开下一篇，否则挂剩余时间的定时器（抗 SW 回收）
+  armNextTimer();
 }
 
 // 周期 pump：每分钟尝试推进队列（同时兜底 SW 回收后丢失的延时定时器）
@@ -392,9 +418,10 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg?.type === 'reportDone') {
     const s = (sender.tab && sender.tab.url || '');
     if (/creator\.xiaohongshu\.com/.test(s)) {
-      if (msg.status === 'published') resolveCurrent('published', msg.detail);
-      else if (msg.status === 'manual_hold') resolveCurrent('manual_hold', msg.detail);
-      else if (msg.status === 'failed') resolveCurrent('failed', msg.detail);
+      const rid = sender.tab && sender.tab.id;
+      if (msg.status === 'published') resolveCurrent('published', msg.detail, rid);
+      else if (msg.status === 'manual_hold') resolveCurrent('manual_hold', msg.detail, rid);
+      else if (msg.status === 'failed') resolveCurrent('failed', msg.detail, rid);
     }
   }
 });
