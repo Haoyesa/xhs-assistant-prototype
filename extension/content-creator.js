@@ -1887,6 +1887,29 @@ function startToastCountdown() {
   }, 1000);
 }
 
+// 图文发布页（拉取下一篇 / 自动跳转都用它）
+const CREATOR_URL = 'https://creator.xiaohongshu.com/publish/publish?source=&published=true&from=tab_switch&target=image';
+
+// 跳转后重注入时：若之前点了「拉取下一篇」但当时不在图文页，重开后自动拉取填充
+async function autoPullIfPending() {
+  try {
+    const s = await new Promise((res) => chrome.storage.local.get({ xhsPendingManualFill: false }, (r) => res(r)));
+    if (!s.xhsPendingManualFill) return;
+    await chrome.storage.local.remove('xhsPendingManualFill');
+    // 仅当已在图文发布页才自动拉取（否则属于脏标志，丢弃）
+    if (!/[\?&]target=image\b/.test(location.href || '')) return;
+    const setStatus = (window.__xhsHelper?.status) || (() => {});
+    setStatus('拉取中…');
+    const r = await window.XhsCommon.xhsFetch('/api/ext/next', { method: 'GET' });
+    if (!r.ok || !r.data || !r.data.ok || !r.data.task) {
+      setStatus('⚠ ' + ((r.data && r.data.msg) || '没有待发任务，或后端未连接'));
+      return;
+    }
+    setStatus('已拉取：' + (r.data.task.product?.productName || r.data.task.title || r.data.task.itemId || '笔记'));
+    await runFill(r.data.task, r.data.autoSubmit, r.data.serverUrl, r.data.humanTyping);
+  } catch (e) {}
+}
+
 // 注入侧栏 UI + 顶部 Toast
 function buildPanel() {
   if (!document.getElementById('xhs-helper-css')) {
@@ -1918,6 +1941,13 @@ function buildPanel() {
   box.querySelector('#xhs-c-pull').addEventListener('click', async () => {
     setStatus('拉取中…');
     try {
+      // 若当前不在图文发布页，先跳转过去；跳转后 content script 会重注入并在 autoPullIfPending 中自动拉取填充
+      if (!/[\?&]target=image\b/.test(location.href || '')) {
+        await chrome.storage.local.set({ xhsPendingManualFill: true });
+        setStatus('正在打开图文发布页…');
+        window.location.href = CREATOR_URL;
+        return;
+      }
       // 自包含：直连后端拉取下一篇并就地填充，不依赖 service worker（避免 Extension context invalidated）
       const r = await window.XhsCommon.xhsFetch('/api/ext/next', { method: 'GET' });
       if (!r.ok || !r.data || !r.data.ok || !r.data.task) {
@@ -1931,6 +1961,8 @@ function buildPanel() {
       setStatus('⚠ 拉取失败：' + e.message);
     }
   });
+  // 若上一页点了「拉取下一篇」但当时不在图文页，跳转后重注入时自动续拉
+  autoPullIfPending();
 }
 
 if (!document.getElementById('xhs-creator-helper')) {

@@ -17,7 +17,7 @@ const DEFAULTS = {
 };
 
 // 创作者图文发布页（每篇都开这个新标签）
-const CREATOR_URL = 'https://creator.xiaohongshu.com/publish/publish?from=menu&target=image';
+const CREATOR_URL = 'https://creator.xiaohongshu.com/publish/publish?source=&published=true&from=tab_switch&target=image';
 
 function storageGet() {
   return new Promise((resolve) => {
@@ -307,24 +307,35 @@ async function tick() {
   const s = await storageGet();
   if (!s.autoConnect) return { kind: 'info', msg: '自动连接已关闭（可在 popup 开启）' };
   try {
-    const tabs = await chrome.tabs.query({ url: 'https://creator.xiaohongshu.com/*' });
-    if (!tabs.length) return { kind: 'info', msg: '未检测到创作者发布台页面，请先打开 creator.xiaohongshu.com' };
+    let tabs = await chrome.tabs.query({ url: 'https://creator.xiaohongshu.com/*' });
+    let tab;
+    if (!tabs.length) {
+      // 没有创作者页 → 自动打开图文发布页，再填充（免去用户手动开页面）
+      broadcast({ kind: 'info', msg: '正在打开图文发布页…' });
+      tab = await new Promise((resolve) => {
+        chrome.tabs.create({ url: CREATOR_URL, active: true }, (t) => resolve(t));
+      });
+      if (!tab || tab.id == null) return { kind: 'error', msg: '无法打开图文发布页（可能被浏览器拦截，请手动打开 creator.xiaohongshu.com）' };
+      await waitTabComplete(tab.id, 15000);
+      await new Promise((r) => setTimeout(r, 1500)); // 等 content script 注入与表单渲染
+    } else {
+      tab = tabs[0];
+      // 确保是图文发布页：若当前是视频发布页/笔记列表等其他 creator 子页，自动跳转过去再填充，
+      // 免去用户手动切到「上传图文」。
+      if (!/[\?&]target=image\b/.test(tab.url || '')) {
+        suppressAutoFill = true; // 跳转加载期间，阻止 onUpdated 自动 fillTab 造成双填
+        broadcast({ kind: 'info', msg: '正在切换到图文发布页…' });
+        await new Promise((resolve) => {
+          chrome.tabs.update(tab.id, { url: CREATOR_URL }, () => resolve());
+        });
+        await waitTabComplete(tab.id, 15000);
+        await new Promise((r) => setTimeout(r, 1500)); // 等 content script 注入与表单渲染
+        suppressAutoFill = false;
+      }
+    }
     const next = await pullNext();
     if (!next || !next.ok) return { kind: 'error', msg: '后端通信失败：' + (next && next.msg ? next.msg : '无响应（确认助手桌面程序已启动）') };
     if (!next.task) return { kind: 'idle', msg: '没有待发任务 —— 请先在助手「生成笔记」把商品入队' };
-    const tab = tabs[0];
-    // 确保是图文发布页：若当前是视频发布页/笔记列表等其他 creator 子页，自动跳转过去再填充，
-    // 免去用户手动切到「上传图文」。
-    if (!/[\?&]target=image\b/.test(tab.url || '')) {
-      suppressAutoFill = true; // 跳转加载期间，阻止 onUpdated 自动 fillTab 造成双填
-      broadcast({ kind: 'info', msg: '正在切换到图文发布页…' });
-      await new Promise((resolve) => {
-        chrome.tabs.update(tab.id, { url: CREATOR_URL }, () => resolve());
-      });
-      await waitTabComplete(tab.id, 15000);
-      await new Promise((r) => setTimeout(r, 1500)); // 等 content script 注入与表单渲染
-      suppressAutoFill = false;
-    }
     let sendErr = null;
     try {
       await new Promise((resolve) => {
