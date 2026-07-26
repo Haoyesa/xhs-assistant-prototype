@@ -8,6 +8,22 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.PORT || 5199);
 const isDev = !app.isPackaged;
 
+// 窗口图标：优先用解包后的真实文件（resources/app.asar.unpacked/assets/icon.ico），
+// 其次退回 asar 内路径。设置后窗口标题栏与任务栏（运行中的窗口）显示新图标。
+function resolveAppIcon() {
+  const fs = require('node:fs');
+  const candidates = [];
+  if (process.resourcesPath) {
+    candidates.push(path.join(process.resourcesPath, 'app.asar.unpacked', 'assets', 'icon.ico'));
+  }
+  candidates.push(path.join(__dirname, '..', 'assets', 'icon.ico'));
+  for (const c of candidates) {
+    try { if (fs.existsSync(c)) return c; } catch { /* ignore */ }
+  }
+  return undefined;
+}
+const APP_ICON = resolveAppIcon();
+
 // 打包后 asar 内不可写，把数据目录迁到系统用户目录
 process.env.XHS_DATA_DIR = app.getPath('userData');
 
@@ -32,6 +48,7 @@ function createWindow() {
     minWidth: 960,
     minHeight: 640,
     backgroundColor: '#0f1115',
+    icon: APP_ICON,
     webPreferences: { contextIsolation: true, nodeIntegration: false },
   });
   const url = `http://127.0.0.1:${PORT}`;

@@ -389,12 +389,10 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           sendResponse({ ok: false, msg: e.message });
         }
       } else if (msg.type === 'startPublish') {
-        // 开启队列自动发布：若已有创作者页则直接接管填充，否则开一个新标签；之后每篇自动开新标签
+        // 开启队列自动发布：始终直接打开图文上传页（CREATOR_URL）再填充，不依赖/不接管当前已打开的（可能非上传页的）创作者页
         schedulerActive = true; paused = false;
         persistSched();
-        const tabs = await chrome.tabs.query({ url: 'https://creator.xiaohongshu.com/*' });
-        if (tabs.length) fillTab(tabs[0].id);
-        else openNextTab();
+        openNextTab();
         sendResponse({ ok: true, ...schedulerState(), msg: '已开启批量发布' });
       } else if (msg.type === 'pausePublish') {
         // 暂停：不再开新标签（当前正在发的那篇会发完，但不会自动续下一篇）
@@ -402,12 +400,10 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         persistSched();
         sendResponse({ ok: true, ...schedulerState(), msg: '已暂停批量发布' });
       } else if (msg.type === 'resumePublish') {
-        // 继续（从「暂停」恢复；若因验证挑战暂停，需先在标签页解决验证并发布）
+        // 继续（从「暂停」恢复；若因验证挑战暂停，需先在标签页解决验证并发布）：同样直接打开图文上传页
         schedulerActive = true; paused = false;
         persistSched();
-        const tabs = await chrome.tabs.query({ url: 'https://creator.xiaohongshu.com/*' });
-        if (tabs.length) fillTab(tabs[0].id);
-        else openNextTab();
+        openNextTab();
         sendResponse({ ok: true, ...schedulerState(), msg: '已继续批量发布' });
       } else if (msg.type === 'stopNow') {
         // 立即停止并清理当前（用于紧急停止）
