@@ -10,8 +10,15 @@ import path from 'node:path';
 import asar from '@electron/asar';
 
 const require = createRequire(import.meta.url);
+// 优先用项目本地 node_modules 的 javascript-obfuscator；沙箱环境回退到受管路径。
+// 你本机重跑前若没有，执行：npm i -D javascript-obfuscator
 const OBF_PATH = 'C:/Users/25147/.workbuddy/binaries/node/workspace/node_modules/javascript-obfuscator';
-const obf = require(OBF_PATH);
+let obf;
+try {
+  obf = require('javascript-obfuscator');
+} catch {
+  obf = require(OBF_PATH);
+}
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
