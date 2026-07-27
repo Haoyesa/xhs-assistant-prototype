@@ -21,7 +21,7 @@ let nextPublishAtAt = 0; // 插件上报的「下一篇最早发布时刻(ms)」
 let queueHasPending = false; // 队列是否还有 queued/picked 待发任务（用于决定是否显示倒计时）
 
 // ---- 标签页 ----
-const PAGE_TITLES = { products: '采集商品', batch: '批量发布', history: '历史', accounts: '账号管理', settings: '设置' };
+const PAGE_TITLES = { products: '采集商品', generator: '批量作图', batch: '批量发布', history: '历史', accounts: '账号管理', settings: '设置' };
 $$('.tab-btn').forEach((b) => b.addEventListener('click', () => {
   $$('.tab-btn').forEach((x) => x.classList.remove('active'));
   $$('.tab').forEach((x) => x.classList.remove('active'));

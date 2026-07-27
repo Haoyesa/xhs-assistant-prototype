@@ -489,6 +489,11 @@ const server = http.createServer(async (req, res) => {
       return sendFile(res, path.join(PUBLIC, rel));
     }
 
+    // 批量作图：直接读取外部参考页面（iframe 内加载，隔离全局变量冲突）
+    if (method === 'GET' && p === '/generator') {
+      return sendFile(res, 'D:\\project\\xhs-generator\\index.html');
+    }
+
     // 设置
     if (p === '/api/settings' && method === 'GET') {
       const s = await readStore(stores.settings, {});

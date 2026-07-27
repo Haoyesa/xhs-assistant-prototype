@@ -96,6 +96,18 @@ body {
 .tab.active { display: block; animation: fade .25s ease; }
 @keyframes fade { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
 
+/* ---------- 批量作图（iframe 隔离加载参考页） ---------- */
+.tab[data-tab="generator"] .gen-card { padding: 14px; }
+.gen-frame {
+  width: 100%;
+  height: calc(100vh - 220px);
+  min-height: 520px;
+  border: none;
+  border-radius: 10px;
+  background: #f5f5f5;
+  display: block;
+}
+
 /* ---------- 卡片 ---------- */
 .card {
   background: linear-gradient(180deg, var(--panel) 0%, var(--bg2) 100%);

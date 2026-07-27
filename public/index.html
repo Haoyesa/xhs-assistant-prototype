@@ -17,6 +17,7 @@
       </div>
       <nav class="nav">
         <button class="tab-btn active" data-tab="products"><span class="ni">📦</span>采集商品</button>
+        <button class="tab-btn" data-tab="generator"><span class="ni">🎨</span>批量作图</button>
         <button class="tab-btn" data-tab="batch"><span class="ni">🚀</span>批量发布</button>
         <button class="tab-btn" data-tab="history"><span class="ni">🕘</span>历史</button>
         <button class="tab-btn" data-tab="accounts"><span class="ni">👤</span>账号</button>
@@ -98,6 +99,17 @@
               </span>
             </div>
             <div id="productList" class="product-grid"></div>
+          </div>
+        </section>
+
+        <!-- 批量作图 -->
+        <section class="tab" data-tab="generator">
+          <div class="card gen-card">
+            <div class="card-h">
+              <h3>批量作图</h3>
+              <span class="hint">小红书爆款素材生成器：批量导入商品，自动生成封面与文案素材。</span>
+            </div>
+            <iframe src="/generator" class="gen-frame" title="批量作图" loading="lazy"></iframe>
           </div>
         </section>
 
