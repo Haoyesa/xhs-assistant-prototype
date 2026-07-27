@@ -98,12 +98,18 @@ body {
   height: calc(100vh - 60px);
   box-sizing: border-box;
 }
-.center-panel,
+.center-panel {
+  flex: 1 1 auto;
+  min-width: 360px;
+  padding: 14px;
+  overflow-y: hidden;
+}
 .right-panel {
-  height: 100%;
-  max-height: none;
+  flex: 0 0 260px;
+  padding: 14px;
   overflow-y: auto;
 }
+#rightPanel { overflow-y: auto; }
 
 /* ===== 通用面板样式 ===== */
 .panel {
