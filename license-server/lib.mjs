@@ -96,7 +96,8 @@ export function isTokenRevoked(jti) {
 
 // 按套餐 + 计费周期签发（monthly=30天, yearly=365天）。
 // 每个 token 带唯一 jti，供自助解绑时精确吊销单个激活。
-export function issue(plan, billing, machineCode, jti) {
+// extra：附加到 payload 的字段（如团队版的 teamId），不影响签名/校验。
+export function issue(plan, billing, machineCode, jti, extra = {}) {
   resolvePlan(plan); // 校验 plan 存在
   const days = billing === 'yearly' ? 365 : 30;
   const expireAt = Date.now() + days * 86400000;
@@ -107,5 +108,6 @@ export function issue(plan, billing, machineCode, jti) {
     billing: billing || 'monthly',
     issuedAt: Date.now(),
     expireAt,
+    ...extra,
   });
 }

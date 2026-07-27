@@ -11,6 +11,7 @@ import {
   manualIssue,
   verifyProviderCallback,
 } from './payments.mjs';
+import { createTeam, teamInfo, activateSeat, revokeSeat } from './teams.mjs';
 
 const PORT = Number(process.env.LICENSE_PORT || 8787);
 const ADMIN_KEY = process.env.LICENSE_ADMIN_KEY || 'changeme-admin-key';
@@ -188,6 +189,48 @@ const server = http.createServer((req, res) => {
       try {
         const token = manualIssue({ plan: json.plan, billing: json.billing, machineCode: json.machineCode, outTradeNo: json.outTradeNo });
         return send(res, { ok: true, token });
+      } catch (e) {
+        return r404res(res, 400, { error: String(e && e.message || e) });
+      }
+    }
+
+    // 团队版：创建团队（管理员）
+    if (req.url === '/api/team/create' && req.method === 'POST') {
+      if (json.adminKey !== ADMIN_KEY) return r404res(res, 401, { error: 'unauthorized' });
+      try {
+        const team = createTeam({ plan: json.plan || 'team', billing: json.billing, seats: json.seats });
+        return send(res, { ok: true, team: { teamId: team.teamId, plan: team.plan, seats: team.seats } });
+      } catch (e) {
+        return r404res(res, 400, { error: String(e && e.message || e) });
+      }
+    }
+
+    // 团队版：成员激活（占一个席位，发绑定机器码的令牌）
+    if (req.url === '/api/team/activate' && req.method === 'POST') {
+      try {
+        const r = activateSeat(json.teamId, json.machineCode);
+        return send(res, { ok: true, token: r.token, used: r.used, available: r.available, seats: r.seats });
+      } catch (e) {
+        const msg = String(e && e.message || e);
+        const code = msg === 'seats-exhausted' ? 409 : (msg === 'team-not-found' ? 404 : 400);
+        return r404res(res, code, { error: msg });
+      }
+    }
+
+    // 团队版：查询席位使用情况（管理员）
+    if (req.url === '/api/team/status' && req.method === 'POST') {
+      if (json.adminKey !== ADMIN_KEY) return r404res(res, 401, { error: 'unauthorized' });
+      const info = teamInfo(json.teamId);
+      if (!info) return r404res(res, 404, { error: 'team-not-found' });
+      return send(res, { ok: true, team: info });
+    }
+
+    // 团队版：回收席位（同时吊销成员令牌）
+    if (req.url === '/api/team/revoke-seat' && req.method === 'POST') {
+      if (json.adminKey !== ADMIN_KEY) return r404res(res, 401, { error: 'unauthorized' });
+      try {
+        const okk = revokeSeat(json.teamId, json.machineCode);
+        return send(res, { ok: okk });
       } catch (e) {
         return r404res(res, 400, { error: String(e && e.message || e) });
       }
