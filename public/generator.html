@@ -1,0 +1,3510 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>批量作图</title>
+<style>
+/* ===== 全局重置与变量 ===== */
+* { margin: 0; padding: 0; box-sizing: border-box; }
+:root {
+  --header-bg: #161a22;
+  --bg: #0e1014;
+  --bg2: #12151b;
+  --card-bg: #161a22;
+  --border: #283041;
+  --border2: #323a4d;
+  --text: #e7eaf0;
+  --text-light: #9aa3b2;
+  --text-muted: #5c6678;
+  --green: #27ae60;
+  --green-hover: #219a52;
+  --red: #ff2e4d;
+  --red-hover: #e6203c;
+  --pink: #FF6B81;
+  --pink-light: #FFF0F2;
+  --blue: #4f8cff;
+  --blue-hover: #3a7aee;
+  --radius: 12px;
+  --shadow: 0 4px 20px rgba(0,0,0,0.25);
+  --shadow-hover: 0 8px 30px rgba(0,0,0,0.35);
+  --glass: rgba(22,26,34,0.7);
+  --glass-border: rgba(255,255,255,0.08);
+  --transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* 暗色模式（与宿主黑猫智记AI统一） */
+[data-theme="dark"] {
+  --bg: #0e1014;
+  --bg2: #12151b;
+  --card-bg: #161a22;
+  --border: #283041;
+  --text: #e7eaf0;
+  --text-light: #9aa3b2;
+  --text-muted: #5c6678;
+  --shadow: 0 4px 20px rgba(0,0,0,0.25);
+  --shadow-hover: 0 8px 30px rgba(0,0,0,0.35);
+  --glass: rgba(22,26,34,0.7);
+  --glass-border: rgba(255,255,255,0.08);
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  min-height: 100vh;
+  transition: background 0.4s, color 0.4s;
+  background-image: radial-gradient(1200px 600px at 80% -10%, #1a2030 0%, var(--bg) 55%) fixed;
+}
+
+/* ===== Header ===== */
+.header {
+  background: var(--header-bg);
+  padding: 10px 0;
+  box-shadow: 0 2px 10px rgba(0,0,0,0.25);
+  position: relative;
+  border-bottom: 1px solid var(--border);
+}
+
+/* 快捷键提示 */
+.shortcut-bar {
+  position: absolute;
+  left: 20px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  gap: 8px;
+}
+.shortcut-bar kbd {
+  background: rgba(255,255,255,0.15);
+  border: 1px solid rgba(255,255,255,0.25);
+  color: rgba(255,255,255,0.8);
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-family: inherit;
+  backdrop-filter: blur(5px);
+}
+
+/* ===== 主体布局 ===== */
+.main {
+  display: flex;
+  gap: 14px;
+  padding: 14px;
+  max-width: 1600px;
+  margin: 0 auto;
+  align-items: flex-start;
+  min-width: 760px;
+}
+
+/* ===== 通用面板样式 ===== */
+.panel {
+  background: var(--card-bg);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  overflow: hidden;
+  transition: var(--transition);
+  border: 1px solid var(--border);
+}
+.panel:hover {
+  box-shadow: var(--shadow-hover);
+}
+
+/* ===== 中间面板：预览区 ===== */
+.center-panel {
+  flex: 1;
+  min-width: 360px;
+  padding: 14px;
+}
+.preview-header {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 12px;
+  gap: 12px;
+}
+.preview-header span {
+  font-size: 13px;
+  color: var(--text-light);
+}
+.preview-header .nav-btn {
+  padding: 6px 14px;
+  border: none;
+  border-radius: 6px;
+  background: var(--red);
+  color: #fff;
+  font-size: 12px;
+  cursor: pointer;
+  transition: var(--transition);
+  font-weight: 500;
+}
+.preview-header .nav-btn:hover { background: var(--red-hover); transform: translateY(-1px); }
+.preview-header .nav-btn:disabled { background: var(--border2); color: var(--text-muted); cursor: not-allowed; transform: none; }
+.preview-header .page-info {
+  font-size: 13px;
+  color: var(--text);
+  font-weight: 500;
+  min-width: 80px;
+  text-align: center;
+}
+
+.preview-box {
+  width: 100%;
+  max-width: 420px;
+  margin: 0 auto;
+  aspect-ratio: 9/16;
+  border-radius: 16px;
+  border: 1px solid var(--border);
+  background: var(--bg2);
+  overflow: hidden;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: aspect-ratio 0.3s ease;
+}
+.preview-box .placeholder {
+  color: var(--text-muted);
+  font-size: 14px;
+  text-align: center;
+  padding: 20px;
+}
+.preview-box canvas {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.action-bar {
+  display: flex;
+  justify-content: center;
+  gap: 12px;
+  margin-top: 16px;
+}
+.action-bar button {
+  padding: 10px 24px;
+  border: none;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: var(--transition);
+}
+.btn-generate {
+  background: var(--header-bg);
+  color: #fff;
+}
+.btn-generate:hover { opacity: 0.9; transform: translateY(-1px); }
+.btn-download {
+  background: var(--green);
+  color: #fff;
+}
+.btn-download:hover { background: var(--green-hover); transform: translateY(-1px); }
+
+/* ===== 右侧面板：控制区 ===== */
+.right-panel {
+  width: 260px;
+  flex-shrink: 0;
+  padding: 14px;
+  max-height: calc(100vh - 80px);
+  overflow-y: auto;
+}
+.control-group {
+  margin-bottom: 20px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--border);
+}
+.control-group:last-child { border-bottom: none; }
+.control-group-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 12px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.control-group-title .icon {
+  width: 18px;
+  height: 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+}
+
+/* 按钮 */
+.btn-block {
+  display: block;
+  width: 100%;
+  padding: 10px 0;
+  border: none;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: var(--transition);
+  text-align: center;
+  color: #fff;
+}
+.btn-green { background: var(--green); }
+.btn-green:hover { background: var(--green-hover); transform: translateY(-1px); }
+.btn-blue { background: var(--red); }
+.btn-blue:hover { background: var(--red-hover); transform: translateY(-1px); }
+
+/* 隐藏文件输入 */
+.file-input {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  cursor: pointer;
+  z-index: 5;
+}
+
+/* 状态文本 */
+.status-text {
+  font-size: 12px;
+  color: var(--green);
+  margin-top: 6px;
+  display: none;
+}
+.status-text.show { display: block; }
+.file-name {
+  font-size: 12px;
+  color: var(--text-light);
+  margin-top: 6px;
+  word-break: break-all;
+}
+
+/* 表单控件 */
+.form-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.form-row label {
+  font-size: 13px;
+  color: var(--text-light);
+  min-width: 60px;
+  flex-shrink: 0;
+}
+.form-row input[type="text"],
+.form-row input[type="number"],
+.form-row select,
+.form-row textarea {
+  flex: 1;
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  font-size: 13px;
+  font-family: inherit;
+  outline: none;
+  transition: border-color 0.2s;
+}
+.form-row input:focus,
+.form-row select:focus,
+.form-row textarea:focus { border-color: var(--red); }
+.form-row input[type="color"] {
+  width: 36px;
+  height: 28px;
+  padding: 0;
+  border: none;
+  background: none;
+  cursor: pointer;
+}
+.form-row input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+}
+.form-row .hint {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-top: 4px;
+}
+
+/* 小输入框 */
+.input-small {
+  width: 60px !important;
+  flex: 0 0 60px !important;
+  text-align: center;
+}
+
+/* 标题编辑区 */
+.textarea-box {
+  width: 100%;
+  min-height: 60px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  font-size: 13px;
+  font-family: inherit;
+  resize: vertical;
+  outline: none;
+}
+.textarea-box:focus { border-color: var(--red); }
+
+/* 标签 */
+.tag-hint {
+  font-size: 11px;
+  color: var(--text-muted);
+  background: #FFF0F2;
+  border: 1px solid #FFD6DC;
+  padding: 6px 10px;
+  border-radius: 4px;
+  margin-top: 8px;
+  line-height: 1.5;
+}
+
+/* 拖拽区域 */
+.drop-zone {
+  position: relative;
+  border: 2px dashed var(--border);
+  border-radius: 6px;
+  padding: 16px;
+  text-align: center;
+  transition: all 0.2s;
+  margin-bottom: 8px;
+}
+.drop-zone.dragover {
+  border-color: var(--red);
+  background: rgba(255,36,66,0.05);
+}
+
+/* 进度条 */
+.progress-wrap {
+  margin-top: 12px;
+  display: none;
+}
+.progress-wrap.show { display: block; }
+.progress-bar {
+  height: 6px;
+  background: #e1e4e8;
+  border-radius: 3px;
+  overflow: hidden;
+}
+.progress-fill {
+  height: 100%;
+  width: 0%;
+  background: linear-gradient(90deg, #FF2442, #FF6B81);
+  border-radius: 3px;
+  transition: width 0.3s;
+}
+.progress-text {
+  font-size: 12px;
+  color: var(--text-light);
+  margin-top: 4px;
+  text-align: center;
+}
+
+/* 缩略图列表 */
+.thumb-list {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  margin-top: 12px;
+  max-height: 200px;
+  overflow-y: auto;
+}
+.thumb-item {
+  aspect-ratio: var(--thumb-ratio, 9/16);
+  border-radius: 6px;
+  overflow: hidden;
+  border: 2px solid transparent;
+  cursor: pointer;
+  position: relative;
+}
+.thumb-item.active { border-color: var(--red); }
+.thumb-item img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.thumb-item .dl-btn {
+  position: absolute;
+  bottom: 2px;
+  right: 2px;
+  width: 20px;
+  height: 20px;
+  background: rgba(0,0,0,0.6);
+  color: #fff;
+  border: none;
+  border-radius: 4px;
+  font-size: 11px;
+  cursor: pointer;
+  display: none;
+}
+.thumb-item:hover .dl-btn { display: block; }
+
+/* 滚动条 */
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #c1c1c1; border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #a8a8a8; }
+
+/* 响应式：在宿主默认宽度下保持左右两栏 */
+@media (max-width: 760px) {
+  .main { flex-wrap: wrap; min-width: auto; }
+  .center-panel { width: 100%; order: 1; min-width: auto; }
+  .right-panel { width: 100%; order: 2; max-height: none; }
+}
+
+/* ===== Toast 通知系统 ===== */
+.toast-container {
+  position: fixed;
+  top: 80px;
+  right: 20px;
+  z-index: 10000;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  pointer-events: none;
+}
+.toast {
+  padding: 12px 20px;
+  border-radius: 8px;
+  color: #fff;
+  font-size: 14px;
+  font-weight: 500;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.15);
+  transform: translateX(120%);
+  animation: toast-in 0.35s cubic-bezier(0.16,1,0.3,1) forwards;
+  pointer-events: auto;
+  max-width: 360px;
+  line-height: 1.5;
+}
+.toast.out {
+  animation: toast-out 0.3s cubic-bezier(0.16,1,0.3,1) forwards;
+}
+.toast.success { background: linear-gradient(135deg, #27ae60, #2ecc71); }
+.toast.warning { background: linear-gradient(135deg, #f39c12, #e67e22); }
+.toast.error   { background: linear-gradient(135deg, #FF2442, #e6203c); }
+.toast.info    { background: linear-gradient(135deg, #FF2442, #FF6B81); }
+@keyframes toast-in {
+  from { transform: translateX(120%); opacity: 0; }
+  to   { transform: translateX(0); opacity: 1; }
+}
+@keyframes toast-out {
+  from { transform: translateX(0); opacity: 1; }
+  to   { transform: translateX(120%); opacity: 0; }
+}
+
+/* ===== Canvas 拖拽光标 ===== */
+.preview-box.dragging { cursor: grabbing; }
+.preview-box.can-drag { cursor: grab; }
+
+/* ===== Range 滑块 ===== */
+input[type="range"] {
+  -webkit-appearance: none;
+  height: 6px;
+  background: var(--border);
+  border-radius: 3px;
+  outline: none;
+}
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--red);
+  cursor: pointer;
+  border: 2px solid #fff;
+  box-shadow: 0 1px 4px rgba(255,36,66,0.3);
+}
+
+/* ===== 拖拽定位提示标签 ===== */
+.drag-hint {
+  position: absolute;
+  top: 8px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(0,0,0,0.65);
+  color: #fff;
+  font-size: 11px;
+  padding: 4px 12px;
+  border-radius: 12px;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.3s;
+  z-index: 5;
+  white-space: nowrap;
+}
+.preview-box:hover .drag-hint { opacity: 1; }
+
+/* ===== 背景模板缩略图 ===== */
+.bg-thumb {
+  aspect-ratio: 9/16;
+  border-radius: 6px;
+  overflow: hidden;
+  border: 2px solid transparent;
+  cursor: pointer;
+  position: relative;
+  transition: border-color 0.2s;
+}
+.bg-thumb.active { border-color: var(--blue); }
+.bg-thumb:hover { border-color: var(--blue-hover); }
+.bg-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.bg-thumb .remove-btn {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  width: 18px;
+  height: 18px;
+  background: rgba(0,0,0,0.6);
+  color: #fff;
+  border: none;
+  border-radius: 50%;
+  font-size: 11px;
+  cursor: pointer;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+}
+.bg-thumb:hover .remove-btn { display: flex; }
+
+/* ===== 预设模板 ===== */
+.preset-thumb {
+  aspect-ratio: 9/16;
+  border-radius: 6px;
+  overflow: hidden;
+  border: 2px solid transparent;
+  cursor: pointer;
+  transition: var(--transition);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  color: rgba(255,255,255,0.9);
+  text-shadow: 0 1px 2px rgba(0,0,0,0.3);
+  position: relative;
+}
+.preset-thumb.active { border-color: var(--blue); }
+.preset-thumb:hover { border-color: var(--blue-hover); transform: translateY(-2px); }
+
+/* ===== 全屏预览 ===== */
+.fullscreen-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.92);
+  z-index: 9999;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  cursor: pointer;
+  animation: fadeIn 0.3s ease;
+}
+.fullscreen-overlay.show { display: flex; }
+.fullscreen-overlay canvas {
+  max-width: 90vw;
+  max-height: 85vh;
+  border-radius: 12px;
+  box-shadow: 0 0 60px rgba(0,0,0,0.5);
+}
+.fullscreen-overlay .fs-info {
+  position: absolute;
+  bottom: 24px;
+  color: rgba(255,255,255,0.7);
+  font-size: 13px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+.fullscreen-overlay .fs-info kbd {
+  background: rgba(255,255,255,0.15);
+  border: 1px solid rgba(255,255,255,0.25);
+  padding: 2px 10px;
+  border-radius: 4px;
+  font-size: 12px;
+}
+.fullscreen-close {
+  position: absolute;
+  top: 20px;
+  right: 20px;
+  background: rgba(255,255,255,0.15);
+  border: 1px solid rgba(255,255,255,0.2);
+  color: #fff;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  font-size: 20px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: var(--transition);
+}
+.fullscreen-close:hover { background: rgba(255,255,255,0.25); }
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+/* ===== 装饰元素列表 ===== */
+.deco-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 8px;
+  max-height: 160px;
+  overflow-y: auto;
+}
+.deco-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: var(--transition);
+  font-size: 13px;
+  background: var(--card-bg);
+}
+.deco-item:hover { border-color: var(--blue); }
+.deco-item.selected { border-color: var(--red); background: rgba(255,36,66,0.08); }
+.deco-item .deco-preview {
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 20px;
+  flex-shrink: 0;
+  border-radius: 4px;
+  background: rgba(0,0,0,0.04);
+  overflow: hidden;
+}
+.deco-item .deco-preview img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+}
+.deco-item .deco-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  color: var(--text-light);
+}
+.deco-item .deco-remove {
+  width: 20px;
+  height: 20px;
+  background: rgba(0,0,0,0.06);
+  border: none;
+  border-radius: 4px;
+  font-size: 12px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
+  flex-shrink: 0;
+  transition: var(--transition);
+}
+.deco-item .deco-remove:hover { background: rgba(231,76,60,0.15); color: #e74c3c; }
+
+/* ===== Emoji 选择器 ===== */
+.emoji-grid {
+  display: grid;
+  grid-template-columns: repeat(8, 1fr);
+  gap: 2px;
+  margin-top: 8px;
+  max-height: 180px;
+  overflow-y: auto;
+  padding: 4px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--card-bg);
+}
+.emoji-btn {
+  width: 100%;
+  aspect-ratio: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  border: none;
+  background: none;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background 0.15s;
+  padding: 0;
+}
+.emoji-btn:hover { background: rgba(255,36,66,0.12); }
+.emoji-category-label {
+  grid-column: 1 / -1;
+  font-size: 11px;
+  color: var(--text-muted);
+  padding: 4px 2px 2px;
+  border-top: 1px solid var(--border);
+  margin-top: 2px;
+}
+.emoji-category-label:first-child { border-top: none; margin-top: 0; }
+
+/* ===== 装饰元素属性面板 ===== */
+.deco-props {
+  margin-top: 8px;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: rgba(0,0,0,0.02);
+  display: none;
+}
+.deco-props.show { display: block; }
+
+/* ===== 暗色模式适配 ===== */
+[data-theme="dark"] .preview-box { border-color: var(--border); background: #2a1e24; }
+[data-theme="dark"] .drop-zone { border-color: var(--border); }
+[data-theme="dark"] .form-row input,
+[data-theme="dark"] .form-row select,
+[data-theme="dark"] .form-row textarea,
+[data-theme="dark"] .textarea-box {
+  background: var(--bg);
+  border-color: var(--border);
+  color: var(--text);
+}
+[data-theme="dark"] .tag-hint {
+  background: rgba(255,36,66,0.1);
+  border-color: rgba(255,36,66,0.2);
+}
+[data-theme="dark"] .progress-bar { background: var(--border); }
+[data-theme="dark"] .deco-item { background: var(--bg); }
+[data-theme="dark"] .emoji-grid { background: var(--bg); }
+[data-theme="dark"] .deco-props { background: rgba(255,255,255,0.03); }
+[data-theme="dark"] ::-webkit-scrollbar-thumb { background: #555; }
+</style>
+</head>
+<body>
+
+<!-- Toast 通知容器 -->
+<div class="toast-container" id="toastContainer"></div>
+
+<!-- 全屏预览覆盖层 -->
+<div class="fullscreen-overlay" id="fullscreenOverlay">
+  <canvas id="fullscreenCanvas"></canvas>
+  <div class="fs-info">
+    <span id="fsPageInfo"></span>
+    <kbd>← →</kbd> 翻页
+    <kbd>ESC</kbd> 退出
+  </div>
+  <button class="fullscreen-close" id="fullscreenClose">&times;</button>
+</div>
+
+<!-- ===== Header ===== -->
+<header class="header">
+  <div class="shortcut-bar">
+    <kbd>← →</kbd><kbd>翻页</kbd>
+    <kbd>F</kbd><kbd>全屏</kbd>
+    <kbd>Ctrl+Z</kbd><kbd>撤销</kbd>
+  </div>
+</header>
+
+<!-- ===== 主体 ===== -->
+<div class="main">
+
+  <!-- 中间：Canvas 预览 -->
+  <section class="panel center-panel">
+    <div class="preview-header">
+      <button class="nav-btn" id="undoBtn" disabled title="撤销 (Ctrl+Z)">↶</button>
+      <button class="nav-btn" id="prevBtn" disabled>上一页</button>
+      <span>预览图片 - 标题</span>
+      <div class="page-info" id="pageInfo">0 / 0</div>
+      <button class="nav-btn" id="nextBtn" disabled>下一页</button>
+      <button class="nav-btn" id="redoBtn" disabled title="重做 (Ctrl+Y)">↷</button>
+    </div>
+    <div class="preview-box" id="previewBox">
+      <div class="drag-hint" id="dragHint">拖拽文字或装饰元素调整位置</div>
+      <div class="placeholder" id="previewPlaceholder">请选择背景图片开始预览</div>
+      <canvas id="previewCanvas" style="display:none;"></canvas>
+    </div>
+    <div class="progress-wrap" id="progressWrap">
+      <div class="progress-bar"><div class="progress-fill" id="progressFill"></div></div>
+      <div class="progress-text" id="progressText">0 / 0</div>
+    </div>
+    <div class="action-bar">
+      <button class="btn-generate" id="generateBtn">生成全部图片</button>
+      <button class="btn-download" id="downloadBtn">批量下载 ZIP</button>
+    </div>
+    <div class="thumb-list" id="thumbList" style="display:none;"></div>
+  </section>
+
+  <!-- 右侧：控制面板 -->
+  <aside class="panel right-panel" id="rightPanel">
+
+    <!-- CSV 导入 -->
+    <div class="control-group">
+      <div class="control-group-title">
+        <span class="icon">&#128194;</span> CSV文件导入
+      </div>
+      <div class="drop-zone" id="csvDropZone">
+        <button class="btn-block btn-green" id="csvBtn">导入CSV文件</button>
+        <div class="status-text" id="csvStatus"></div>
+        <input type="file" class="file-input" id="csvInput" accept=".csv,.txt">
+      </div>
+      <div class="tag-hint">CSV格式说明：第一列为ID值，第二列为标题内容（支持换行，内容会原样渲染到图片上），第三列可作为副标题</div>
+    </div>
+
+    <!-- CSV 列映射 -->
+    <div class="control-group" id="colMappingGroup" style="display:none;">
+      <div class="control-group-title">CSV 列映射</div>
+      <div class="form-row">
+        <label>ID列</label>
+        <select id="colId"></select>
+      </div>
+      <div class="form-row">
+        <label>标题列</label>
+        <select id="colTitle"></select>
+      </div>
+      <div class="form-row">
+        <label>副标题列</label>
+        <select id="colSubtitle">
+          <option value="">（不使用）</option>
+        </select>
+      </div>
+      <button class="btn-block btn-blue" id="applyMappingBtn" style="margin-top:8px;">应用列映射</button>
+    </div>
+
+    <!-- 输出尺寸 -->
+    <div class="control-group">
+      <div class="control-group-title">输出尺寸</div>
+      <div class="form-row">
+        <label>预设</label>
+        <select id="sizePreset">
+          <option value="1080x1920">小红书竖版 9:16</option>
+          <option value="1080x1440">小红书 3:4</option>
+          <option value="1080x1350">小红书 4:5</option>
+          <option value="1080x1080">正方形 1:1</option>
+          <option value="custom">自定义</option>
+        </select>
+      </div>
+      <div class="form-row" id="customSizeRow" style="display:none;">
+        <label>宽</label>
+        <input type="number" class="input-small" id="customWidth" value="1080" min="100" max="4096">
+        <label style="min-width:auto;margin-left:12px;">高</label>
+        <input type="number" class="input-small" id="customHeight" value="1920" min="100" max="4096">
+      </div>
+      <div class="form-row" style="margin-top:4px;">
+        <span style="font-size:11px;color:#999;" id="sizeInfo">当前: 1080 × 1920 (9:16)</span>
+      </div>
+    </div>
+
+    <!-- 背景图片 -->
+    <div class="control-group">
+      <div class="control-group-title">
+        <span class="icon">&#127748;</span> 背景图片选择
+      </div>
+      <div class="drop-zone" id="bgDropZone">
+        <button class="btn-block btn-blue" id="bgBtn">选择背景图片（支持多选）</button>
+        <div class="file-name" id="bgFileName"></div>
+        <input type="file" class="file-input" id="bgInput" accept="image/*" multiple>
+      </div>
+      <!-- 已上传的背景模板列表 -->
+      <div id="bgTemplateList" style="margin-top:8px;display:none;">
+        <div style="font-size:12px;color:#666;margin-bottom:6px;">已上传模板（点击选中）：</div>
+        <div id="bgTemplateGrid" style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px;"></div>
+      </div>
+    </div>
+
+    <!-- 预设模板库 -->
+    <div class="control-group">
+      <div class="control-group-title">预设模板库</div>
+      <div id="presetGrid" style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px;"></div>
+    </div>
+
+    <!-- 字体设置 -->
+    <div class="control-group">
+      <div class="control-group-title">标题字体设置</div>
+      <div class="form-row">
+        <label>字体</label>
+        <select id="fontFamily">
+          <optgroup label="── 中文字体 ──">
+            <option value="Microsoft YaHei, sans-serif">微软雅黑</option>
+            <option value="PingFang SC, sans-serif">苹方</option>
+            <option value="SimHei, sans-serif">黑体</option>
+            <option value="SimSun, serif">宋体</option>
+            <option value="KaiTi, serif">楷体</option>
+            <option value="FangSong, serif">仿宋</option>
+            <option value="STKaiti, serif">华文楷体</option>
+            <option value="STSong, serif" selected>华文宋体</option>
+            <option value="STHeiti, sans-serif">华文黑体</option>
+            <option value="STFangsong, serif">华文仿宋</option>
+            <option value="LiSu, sans-serif">隶书</option>
+            <option value="STLiti, sans-serif">华文隶书</option>
+            <option value="YouYuan, sans-serif">幼圆</option>
+            <option value="STXihei, sans-serif">华文细黑</option>
+            <option value="STZhongsong, serif">华文中宋</option>
+            <option value="Huawei Sans, sans-serif">鸿蒙黑体</option>
+            <option value="Source Han Sans SC, sans-serif">思源黑体</option>
+            <option value="Source Han Serif SC, serif">思源宋体</option>
+            <option value="Noto Sans SC, sans-serif">Noto Sans 中文</option>
+            <option value="Noto Serif SC, serif">Noto Serif 中文</option>
+          </optgroup>
+          <optgroup label="── 大字报/海报字体 ──">
+            <option value="Impact, sans-serif">Impact（粗犷）</option>
+            <option value="Arial Black, sans-serif">Arial Black（加粗）</option>
+            <option value="Haettenschweiler, sans-serif">Haettenschweiler（窄粗）</option>
+            <option value="Franklin Gothic Medium, sans-serif">Franklin Gothic</option>
+            <option value="Arial Narrow Bold, sans-serif">Arial Narrow Bold</option>
+          </optgroup>
+          <optgroup label="── 英文字体 ──">
+            <option value="Arial, sans-serif">Arial</option>
+            <option value="Helvetica, sans-serif">Helvetica</option>
+            <option value="Georgia, serif">Georgia</option>
+            <option value="Times New Roman, serif">Times New Roman</option>
+            <option value="Verdana, sans-serif">Verdana</option>
+            <option value="Trebuchet MS, sans-serif">Trebuchet MS</option>
+            <option value="Comic Sans MS, cursive">Comic Sans MS</option>
+            <option value="Courier New, monospace">Courier New</option>
+            <option value="Palatino Linotype, serif">Palatino</option>
+            <option value="Segoe UI, sans-serif">Segoe UI</option>
+            <option value="Tahoma, sans-serif">Tahoma</option>
+            <option value="Century Gothic, sans-serif">Century Gothic</option>
+          </optgroup>
+          <optgroup label="── 手写/艺术风格 ──">
+            <option value="Brush Script MT, cursive">Brush Script</option>
+            <option value="Candara, sans-serif">Candara</option>
+            <option value="Corbel, sans-serif">Corbel</option>
+            <option value="Cambria, serif">Cambria</option>
+            <option value="Consolas, monospace">Consolas</option>
+          </optgroup>
+        </select>
+      </div>
+      <div class="form-row">
+        <label>颜色</label>
+        <input type="color" id="fontColor" value="#000000">
+        <label style="min-width:auto;margin-left:8px;">大小</label>
+        <input type="number" class="input-small" id="fontSize" value="120" min="12" max="500">
+      </div>
+      <div class="form-row">
+        <label>描边</label>
+        <input type="checkbox" id="strokeEnabled">
+        <input type="color" id="strokeColor" value="#ff0000" style="width:28px;height:22px;padding:0;border:none;">
+        <label style="min-width:auto;margin-left:12px;">加粗</label>
+        <input type="checkbox" id="boldEnabled" checked>
+      </div>
+      <div class="form-row" style="margin-top:8px;">
+        <label>阴影</label>
+        <input type="checkbox" id="shadowEnabled">
+        <input type="color" id="shadowColor" value="#000000" style="width:28px;height:22px;padding:0;border:none;">
+        <label style="min-width:auto;margin-left:8px;">X</label>
+        <input type="number" class="input-small" id="shadowX" value="4" min="-50" max="50">
+        <label style="min-width:auto;margin-left:4px;">Y</label>
+        <input type="number" class="input-small" id="shadowY" value="4" min="-50" max="50">
+        <label style="min-width:auto;margin-left:4px;">模糊</label>
+        <input type="number" class="input-small" id="shadowBlur" value="8" min="0" max="100">
+      </div>
+      <div class="form-row" style="margin-top:8px;">
+        <label>透明度</label>
+        <input type="range" id="textOpacity" min="0" max="100" value="100" style="flex:1;">
+        <span id="textOpacityVal" style="font-size:12px;min-width:36px;text-align:right;">100%</span>
+        <label style="min-width:auto;margin-left:12px;">旋转</label>
+        <input type="number" class="input-small" id="textRotation" value="0" min="-180" max="180">
+        <span style="font-size:11px;color:#999;margin-left:2px;">°</span>
+      </div>
+    </div>
+
+    <!-- 位置与对齐 -->
+    <div class="control-group">
+      <div class="control-group-title">位置与对齐</div>
+      <div class="form-row">
+        <label>对齐</label>
+        <select id="textAlign">
+          <option value="left">左对齐</option>
+          <option value="center">居中</option>
+          <option value="right">右对齐</option>
+        </select>
+      </div>
+      <div class="form-row">
+        <label>位置X</label>
+        <input type="number" class="input-small" id="posX" value="90">
+        <label style="min-width:auto;margin-left:12px;">位置Y</label>
+        <input type="number" class="input-small" id="posY" value="300">
+      </div>
+      <div class="form-row" style="margin-top:6px;">
+        <label>行间距</label>
+        <input type="number" class="input-small" id="lineSpacing" value="120" min="0" max="200">
+        <span style="font-size:11px;color:#999;margin-left:4px;">多行标题时行与行的间距</span>
+      </div>
+    </div>
+
+    <!-- 自动换行 -->
+    <div class="control-group">
+      <div class="control-group-title">自动换行</div>
+      <div class="form-row">
+        <label>启用</label>
+        <input type="checkbox" id="autoWrap">
+        <label style="min-width:auto;margin-left:12px;">最大宽度</label>
+        <input type="number" class="input-small" id="maxWidth" value="900" min="100" max="1080">
+      </div>
+      <div class="form-row" style="margin-top:4px;">
+        <span style="font-size:11px;color:#999;">开启后，超长文字会按最大宽度自动折行，换行符仍然有效</span>
+      </div>
+    </div>
+
+    <!-- 标题编辑 -->
+    <div class="control-group" id="editGroup" style="display:none;">
+      <div class="control-group-title">标题编辑 (当前)</div>
+      <div class="form-row" style="flex-direction:column;align-items:stretch;gap:4px;">
+        <label style="min-width:auto;">标题内容（支持换行）</label>
+        <textarea class="textarea-box" id="editTitle" rows="4"></textarea>
+      </div>
+      <div class="form-row" style="margin-top:8px;">
+        <label>ID值</label>
+        <input type="text" id="editId" readonly style="background:#f5f5f5;">
+      </div>
+      <button class="btn-block btn-blue" id="updateCurrentBtn" style="margin-top:10px;">更新当前预览</button>
+      <button class="btn-block" id="saveCsvBtn" style="margin-top:6px;background:linear-gradient(135deg, #FF6B81, #FF2442);display:none;">
+        💾 保存修改到CSV文件
+      </button>
+    </div>
+
+    <!-- 导出设置 -->
+    <div class="control-group">
+      <div class="control-group-title">导出设置</div>
+      <div class="form-row">
+        <label>格式</label>
+        <select id="exportFormat">
+          <option value="png">PNG（无损）</option>
+          <option value="jpg">JPG（有损，体积小）</option>
+        </select>
+      </div>
+      <div class="form-row" id="jpgQualityRow" style="display:none;">
+        <label>质量</label>
+        <input type="range" id="jpgQuality" min="10" max="100" value="85" style="flex:1;">
+        <span id="jpgQualityVal" style="font-size:12px;min-width:36px;text-align:right;">85%</span>
+      </div>
+      <div class="form-row" id="jpgBgRow" style="display:none;">
+        <label>底色</label>
+        <input type="color" id="jpgBgColor" value="#ffffff" style="width:36px;height:28px;padding:0;border:none;">
+        <span style="font-size:11px;color:#999;margin-left:4px;">JPG 不支持透明，需设置底色</span>
+      </div>
+    </div>
+
+    <!-- 副标题设置 -->
+    <div class="control-group">
+      <div class="control-group-title">副标题设置</div>
+      <div class="form-row">
+        <label>启用</label>
+        <input type="checkbox" id="subEnabled">
+        <span style="font-size:11px;color:#999;margin-left:8px;">从CSV第三列读取，或手动输入</span>
+      </div>
+      <div class="form-row">
+        <label>字体</label>
+        <select id="subFontFamily">
+          <option value="Microsoft YaHei, sans-serif">微软雅黑</option>
+          <option value="PingFang SC, sans-serif">苹方</option>
+          <option value="SimHei, sans-serif">黑体</option>
+          <option value="STSong, serif" selected>华文宋体</option>
+          <option value="KaiTi, serif">楷体</option>
+          <option value="Source Han Sans SC, sans-serif">思源黑体</option>
+          <option value="Source Han Serif SC, serif">思源宋体</option>
+          <option value="Arial, sans-serif">Arial</option>
+          <option value="Georgia, serif">Georgia</option>
+        </select>
+      </div>
+      <div class="form-row">
+        <label>颜色</label>
+        <input type="color" id="subFontColor" value="#666666">
+        <label style="min-width:auto;margin-left:8px;">大小</label>
+        <input type="number" class="input-small" id="subFontSize" value="60" min="12" max="500">
+      </div>
+      <div class="form-row">
+        <label>位置X</label>
+        <input type="number" class="input-small" id="subPosX" value="90">
+        <label style="min-width:auto;margin-left:12px;">位置Y</label>
+        <input type="number" class="input-small" id="subPosY" value="600">
+      </div>
+      <div class="form-row">
+        <label>对齐</label>
+        <select id="subTextAlign">
+          <option value="left">左对齐</option>
+          <option value="center">居中</option>
+          <option value="right">右对齐</option>
+        </select>
+        <label style="min-width:auto;margin-left:8px;">加粗</label>
+        <input type="checkbox" id="subBoldEnabled">
+      </div>
+    </div>
+
+    <!-- 水印设置 -->
+    <div class="control-group">
+      <div class="control-group-title">水印设置</div>
+      <div class="form-row">
+        <label>启用</label>
+        <input type="checkbox" id="watermarkEnabled">
+        <input type="text" id="watermarkText" value="原创" placeholder="水印文字" style="flex:1;min-width:0;">
+      </div>
+      <div class="form-row">
+        <label>字体</label>
+        <select id="watermarkFontFamily">
+          <option value="Microsoft YaHei, sans-serif">微软雅黑</option>
+          <option value="PingFang SC, sans-serif">苹方</option>
+          <option value="STSong, serif">华文宋体</option>
+          <option value="Arial, sans-serif" selected>Arial</option>
+        </select>
+      </div>
+      <div class="form-row">
+        <label>颜色</label>
+        <input type="color" id="watermarkColor" value="#cccccc">
+        <label style="min-width:auto;margin-left:8px;">大小</label>
+        <input type="number" class="input-small" id="watermarkFontSize" value="48" min="12" max="200">
+      </div>
+      <div class="form-row">
+        <label>透明度</label>
+        <input type="range" id="watermarkOpacity" min="5" max="100" value="30" style="flex:1;">
+        <span id="watermarkOpacityVal" style="font-size:12px;min-width:36px;text-align:right;">30%</span>
+      </div>
+      <div class="form-row">
+        <label>旋转</label>
+        <input type="number" class="input-small" id="watermarkRotation" value="-30" min="-180" max="180">
+        <span style="font-size:11px;color:#999;margin-left:2px;">°</span>
+        <label style="min-width:auto;margin-left:12px;">位置</label>
+        <select id="watermarkPosition">
+          <option value="center">居中</option>
+          <option value="tile">平铺</option>
+          <option value="bottom-right">右下角</option>
+          <option value="bottom-left">左下角</option>
+          <option value="top-right">右上角</option>
+          <option value="top-left">左上角</option>
+        </select>
+      </div>
+    </div>
+
+    <!-- 贴图/小图片 -->
+    <div class="control-group">
+      <div class="control-group-title">
+        <span class="icon">&#128248;</span> 贴图/小图片
+      </div>
+      <div class="drop-zone" id="stickerDropZone" style="padding:10px;">
+        <button class="btn-block btn-blue" id="stickerBtn" style="font-size:13px;padding:8px 0;">上传贴图（支持PNG透明）</button>
+        <input type="file" class="file-input" id="stickerInput" accept="image/*" multiple>
+      </div>
+      <div class="deco-list" id="stickerList"></div>
+      <div class="deco-props" id="stickerProps">
+        <div class="form-row">
+          <label>位置X</label>
+          <input type="number" class="input-small" id="stickerPosX" value="100">
+          <label style="min-width:auto;margin-left:8px;">位置Y</label>
+          <input type="number" class="input-small" id="stickerPosY" value="100">
+        </div>
+        <div class="form-row">
+          <label>宽度</label>
+          <input type="number" class="input-small" id="stickerWidth" value="200" min="10" max="2000">
+          <label style="min-width:auto;margin-left:8px;">等比</label>
+          <input type="checkbox" id="stickerKeepRatio" checked>
+        </div>
+        <div class="form-row">
+          <label>透明度</label>
+          <input type="range" id="stickerOpacity" min="0" max="100" value="100" style="flex:1;">
+          <span id="stickerOpacityVal" style="font-size:12px;min-width:36px;text-align:right;">100%</span>
+        </div>
+        <div class="form-row">
+          <label>旋转</label>
+          <input type="number" class="input-small" id="stickerRotation" value="0" min="-180" max="180">
+          <span style="font-size:11px;color:#999;margin-left:2px;">°</span>
+        </div>
+      </div>
+      <div class="tag-hint" style="margin-top:8px;">上传PNG透明底贴图，可在画布上拖拽调整位置。支持多张贴图叠加。</div>
+    </div>
+
+    <!-- Emoji 表情 -->
+    <div class="control-group">
+      <div class="control-group-title">
+        <span class="icon">&#128522;</span> Emoji 表情
+      </div>
+      <div class="emoji-grid" id="emojiGrid"></div>
+      <div class="deco-list" id="emojiList" style="margin-top:8px;"></div>
+      <div class="deco-props" id="emojiProps">
+        <div class="form-row">
+          <label>位置X</label>
+          <input type="number" class="input-small" id="emojiPosX" value="100">
+          <label style="min-width:auto;margin-left:8px;">位置Y</label>
+          <input type="number" class="input-small" id="emojiPosY" value="100">
+        </div>
+        <div class="form-row">
+          <label>大小</label>
+          <input type="number" class="input-small" id="emojiSize" value="80" min="12" max="500">
+        </div>
+        <div class="form-row">
+          <label>透明度</label>
+          <input type="range" id="emojiOpacity" min="0" max="100" value="100" style="flex:1;">
+          <span id="emojiOpacityVal" style="font-size:12px;min-width:36px;text-align:right;">100%</span>
+        </div>
+        <div class="form-row">
+          <label>旋转</label>
+          <input type="number" class="input-small" id="emojiRotation" value="0" min="-180" max="180">
+          <span style="font-size:11px;color:#999;margin-left:2px;">°</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- 一键加载示例 -->
+    <div class="control-group" style="border-bottom:none;">
+      <button class="btn-block" id="sampleBtn" style="background: linear-gradient(135deg, #FF2442, #FF6B81);">
+        一键加载示例数据，快速体验
+      </button>
+    </div>
+
+  </aside>
+</div>
+
+<script>
+// ===================== 全局状态 =====================
+let csvData = [];        // [{id, title, subtitle}]
+let csvRawHeaders = [];  // 原始 CSV 列头（用于列映射）
+let csvFileName = '';     // 导入的 CSV 文件名
+let csvEncoding = 'utf-8'; // 导入的 CSV 编码
+let bgImage = null;      // 当前选中的 Image 对象
+let bgFileName = '';     // 背景图文件名
+let bgTemplates = [];    // [{id, img: Image, src: dataUrl, name}] 上传的背景模板列表
+let activeBgId = null;   // 当前激活的背景 ID
+let activePresetId = null; // 当前激活的预设模板 ID
+let currentIndex = 0;    // 当前预览索引
+let generatedImages = []; // {id, dataUrl}[]
+let isDragging = false;   // 是否正在拖拽文字
+let dragStartX = 0, dragStartY = 0;  // 拖拽起始鼠标位置
+let dragStartPosX = 0, dragStartPosY = 0; // 拖拽起始文字位置
+
+// 装饰元素系统
+let stickers = [];       // [{id, img: Image, src: dataUrl, name, x, y, width, height, origWidth, origHeight, opacity, rotation}]
+let emojis = [];         // [{id, emoji, x, y, size, opacity, rotation}]
+let selectedDecoType = null; // 'sticker' | 'emoji' | null
+let selectedDecoId = null;   // 选中的装饰元素 ID
+let isDraggingDeco = false;  // 是否正在拖拽装饰元素
+let dragDecoStartX = 0, dragDecoStartY = 0; // 拖拽装饰元素起始位置
+let dragDecoOrigX = 0, dragDecoOrigY = 0;    // 装饰元素原始坐标
+
+// DOM 引用
+const $ = id => document.getElementById(id);
+
+// ===================== Toast 通知系统 =====================
+function showToast(message, type = 'info', duration = 3000) {
+  const container = $('toastContainer');
+  const toast = document.createElement('div');
+  toast.className = `toast ${type}`;
+  toast.textContent = message;
+  container.appendChild(toast);
+  setTimeout(() => {
+    toast.classList.add('out');
+    setTimeout(() => toast.remove(), 300);
+  }, duration);
+}
+
+// ===================== 防抖工具 =====================
+function debounce(fn, delay) {
+  let timer = null;
+  return function(...args) {
+    clearTimeout(timer);
+    timer = setTimeout(() => fn.apply(this, args), delay);
+  };
+}
+
+// ===================== 工具函数 =====================
+
+// 智能读取文本文件：自动检测编码（UTF-8 / GBK / GB2312）
+// 返回 { text, encoding }
+function readTextFileEx(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = function(e) {
+      const buffer = e.target.result;
+      const uint8 = new Uint8Array(buffer);
+
+      // 检测 BOM
+      if (uint8.length >= 3 && uint8[0] === 0xEF && uint8[1] === 0xBB && uint8[2] === 0xBF) {
+        const text = new TextDecoder('utf-8').decode(uint8.slice(3));
+        resolve({ text, encoding: 'utf-8' });
+        return;
+      }
+
+      // 先尝试 UTF-8 解码
+      const utf8Text = new TextDecoder('utf-8', { fatal: false }).decode(uint8);
+      const replacementCount = (utf8Text.match(/\uFFFD/g) || []).length;
+      const chineseCount = (utf8Text.match(/[\u4e00-\u9fff]/g) || []).length;
+
+      if (replacementCount === 0 && chineseCount > 0) {
+        resolve({ text: utf8Text, encoding: 'utf-8' });
+        return;
+      }
+
+      // 尝试 GBK 解码
+      try {
+        const gbkText = new TextDecoder('gbk', { fatal: false }).decode(uint8);
+        const gbkChinese = (gbkText.match(/[\u4e00-\u9fff]/g) || []).length;
+        const gbkReplacement = (gbkText.match(/\uFFFD/g) || []).length;
+
+        if (gbkChinese > 0 && gbkReplacement === 0) {
+          resolve({ text: gbkText, encoding: 'gbk' });
+          return;
+        }
+        if (gbkChinese > chineseCount) {
+          resolve({ text: gbkText, encoding: 'gbk' });
+          return;
+        }
+      } catch (err) {
+        // GBK 解码失败，忽略
+      }
+
+      resolve({ text: utf8Text, encoding: 'utf-8' });
+    };
+    reader.onerror = reject;
+    reader.readAsArrayBuffer(file);
+  });
+}
+
+function readTextFile(file) {
+  return readTextFileEx(file).then(r => r.text);
+}
+
+function loadImage(src) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = reject;
+    img.src = src;
+  });
+}
+
+// 解析 CSV（RFC 4180 规范：正确处理引号内的换行和逗号）
+// 返回 { headers: string[], data: [{id, title, subtitle, _raw: {}}] }
+function parseCSVWithHeaders(text) {
+  // 移除 BOM
+  if (text.charCodeAt(0) === 0xFEFF) text = text.slice(1);
+
+  // 第一步：将原始文本拆分为「逻辑行」（引号内的换行不拆行）
+  const rows = [];
+  let currentRow = '';
+  let inQuotes = false;
+
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+
+    if (ch === '"') {
+      // 双引号转义："" 表示引号内的一个双引号
+      if (inQuotes && i + 1 < text.length && text[i + 1] === '"') {
+        currentRow += '""';
+        i++; // 跳过第二个引号
+      } else {
+        inQuotes = !inQuotes;
+        currentRow += ch;
+      }
+    } else if ((ch === '\n' || ch === '\r') && !inQuotes) {
+      // 引号外的换行 = 行结束
+      if (ch === '\r' && i + 1 < text.length && text[i + 1] === '\n') i++; // 跳过 \r\n
+      if (currentRow.trim()) {
+        rows.push(currentRow);
+      }
+      currentRow = '';
+    } else {
+      currentRow += ch;
+    }
+  }
+  // 最后一行
+  if (currentRow.trim()) rows.push(currentRow);
+
+  if (rows.length < 2) return { headers: [], data: [] };
+
+  // 第二步：解析每行为字段
+  const headers = splitCSVLine(rows[0]);
+  const result = [];
+
+  for (let i = 1; i < rows.length; i++) {
+    const cols = splitCSVLine(rows[i]);
+    if (cols.length < 2) continue;
+
+    const row = {};
+    headers.forEach((h, idx) => {
+      row[h.trim()] = cols[idx] !== undefined ? cols[idx].trim() : '';
+    });
+
+    // 保存原始行数据，用于列映射
+    row._cols = cols;
+
+    // 提取关键字段（默认映射）
+    const idVal = row['宝贝id'] || row['ID值'] || row['id'] || row['ID'] || cols[0] || '';
+    let title = row['标题'] || row['title'] || row['主标题'] || cols[1] || '';
+    title = title.replace(/\\n/g, '\n');
+    let subtitle = row['副标题'] || row['subtitle'] || row['简介'] || row['描述'] || cols[2] || '';
+    subtitle = subtitle.replace(/\\n/g, '\n');
+
+    if (idVal && title) {
+      result.push({ id: idVal, title, subtitle, _raw: row });
+    }
+  }
+  return { headers: headers.map(h => h.trim()), data: result };
+}
+
+// 兼容旧的 parseCSV
+function parseCSV(text) {
+  return parseCSVWithHeaders(text).data;
+}
+
+function splitCSVLine(line) {
+  const result = [];
+  let cur = '';
+  let inQuotes = false;
+  for (let i = 0; i < line.length; i++) {
+    const c = line[i];
+    if (c === '"') {
+      if (inQuotes && i + 1 < line.length && line[i+1] === '"') {
+        cur += '"'; i++; // 转义双引号
+      } else {
+        inQuotes = !inQuotes;
+      }
+    } else if (c === ',' && !inQuotes) {
+      result.push(cur); cur = '';
+    } else {
+      cur += c;
+    }
+  }
+  result.push(cur);
+  return result;
+}
+
+// ===================== 渲染核心 =====================
+function renderCanvas(item, canvas) {
+  const ctx = canvas.getContext('2d');
+  const { W, H } = getOutputSize();
+  canvas.width = W;
+  canvas.height = H;
+
+  // 获取导出设置
+  const exportFormat = $('exportFormat').value;
+  const jpgBgColor = $('jpgBgColor').value;
+
+  // 背景
+  if (bgImage) {
+    ctx.drawImage(bgImage, 0, 0, W, H);
+  } else {
+    ctx.fillStyle = (exportFormat === 'jpg') ? jpgBgColor : '#ffffff';
+    ctx.fillRect(0, 0, W, H);
+  }
+
+  // 获取设置
+  const fontFamily = $('fontFamily').value;
+  const fontSize = parseInt($('fontSize').value) || 120;
+  const fontColor = $('fontColor').value;
+  const strokeEnabled = $('strokeEnabled').checked;
+  const strokeColor = $('strokeColor').value;
+  const boldEnabled = $('boldEnabled').checked;
+  const shadowEnabled = $('shadowEnabled').checked;
+  const shadowColor = $('shadowColor').value;
+  const shadowX = parseInt($('shadowX').value) || 0;
+  const shadowY = parseInt($('shadowY').value) || 0;
+  const shadowBlur = parseInt($('shadowBlur').value) || 0;
+  const posX = parseInt($('posX').value) || 90;
+  const posY = parseInt($('posY').value) || 300;
+  const lineSpacing = parseInt($('lineSpacing').value) || 120;
+  const textAlign = $('textAlign').value;
+  const autoWrap = $('autoWrap').checked;
+  const maxWidth = parseInt($('maxWidth').value) || 900;
+  const textOpacity = (parseInt($('textOpacity').value) || 100) / 100;
+  const textRotation = (parseInt($('textRotation').value) || 0) * Math.PI / 180;
+
+  // 绘制标题（支持多行换行 + 对齐 + 自动换行 + 阴影 + 透明度 + 旋转）
+  if (item.title) {
+    ctx.save();
+    ctx.font = `${boldEnabled ? 'bold ' : ''}${fontSize}px ${fontFamily}`;
+    ctx.fillStyle = fontColor;
+    ctx.textBaseline = 'top';
+    ctx.textAlign = textAlign;
+    ctx.globalAlpha = textOpacity;
+
+    // 设置阴影
+    if (shadowEnabled) {
+      ctx.shadowColor = shadowColor;
+      ctx.shadowOffsetX = shadowX;
+      ctx.shadowOffsetY = shadowY;
+      ctx.shadowBlur = shadowBlur;
+    }
+
+    // 计算 X 锚点：左对齐用 posX，居中用 posX + maxWidth/2，右对齐用 posX + maxWidth
+    let anchorX = posX;
+    if (textAlign === 'center') anchorX = posX + maxWidth / 2;
+    else if (textAlign === 'right') anchorX = posX + maxWidth;
+
+    // 将标题按 \n 拆分为基础行
+    const rawLines = item.title.split('\n');
+
+    // 自动换行：将超长行按 maxWidth 拆分
+    const lines = [];
+    if (autoWrap) {
+      for (const raw of rawLines) {
+        if (ctx.measureText(raw).width <= maxWidth) {
+          lines.push(raw);
+        } else {
+          // 逐字符换行（支持中英文混排）
+          let current = '';
+          for (let ci = 0; ci < raw.length; ci++) {
+            const testLine = current + raw[ci];
+            if (ctx.measureText(testLine).width > maxWidth && current.length > 0) {
+              lines.push(current);
+              current = raw[ci];
+            } else {
+              current = testLine;
+            }
+          }
+          if (current) lines.push(current);
+        }
+      }
+    } else {
+      lines.push(...rawLines);
+    }
+
+    const lineHeight = fontSize + lineSpacing;
+
+    // 旋转：以文字区域中心为旋转原点
+    if (textRotation !== 0) {
+      // 计算文字块的总高度
+      const totalTextHeight = lines.length * lineHeight;
+      // 计算文字块的水平中心
+      const centerX = textAlign === 'center' ? anchorX :
+                      textAlign === 'right' ? anchorX - maxWidth / 2 :
+                      anchorX + maxWidth / 2;
+      const centerY = posY + totalTextHeight / 2;
+      ctx.translate(centerX, centerY);
+      ctx.rotate(textRotation);
+      ctx.translate(-centerX, -centerY);
+    }
+
+    lines.forEach((line, i) => {
+      const y = posY + i * lineHeight;
+      if (strokeEnabled) {
+        // 描边时关闭阴影，避免双重阴影
+        const savedShadow = shadowEnabled;
+        if (shadowEnabled) { ctx.shadowColor = 'transparent'; ctx.shadowBlur = 0; }
+        ctx.strokeStyle = strokeColor;
+        ctx.lineWidth = Math.max(3, fontSize / 25);
+        ctx.lineJoin = 'round';
+        ctx.strokeText(line, anchorX, y);
+        if (savedShadow) {
+          ctx.shadowColor = shadowColor;
+          ctx.shadowOffsetX = shadowX;
+          ctx.shadowOffsetY = shadowY;
+          ctx.shadowBlur = shadowBlur;
+        }
+      }
+      ctx.fillText(line, anchorX, y);
+    });
+
+    // 重置阴影
+    ctx.shadowColor = 'transparent';
+    ctx.shadowOffsetX = 0;
+    ctx.shadowOffsetY = 0;
+    ctx.shadowBlur = 0;
+
+    ctx.restore(); // 恢复 globalAlpha 和 transform
+  }
+
+  // ===== 副标题 =====
+  const subEnabled = $('subEnabled').checked;
+  if (subEnabled && item.subtitle) {
+    const subFontFamily = $('subFontFamily').value;
+    const subFontSize = parseInt($('subFontSize').value) || 60;
+    const subFontColor = $('subFontColor').value;
+    const subBoldEnabled = $('subBoldEnabled').checked;
+    const subPosX = parseInt($('subPosX').value) || 90;
+    const subPosY = parseInt($('subPosY').value) || 600;
+    const subTextAlign = $('subTextAlign').value;
+
+    ctx.save();
+    ctx.font = `${subBoldEnabled ? 'bold ' : ''}${subFontSize}px ${subFontFamily}`;
+    ctx.fillStyle = subFontColor;
+    ctx.textBaseline = 'top';
+    ctx.textAlign = subTextAlign;
+
+    let subAnchorX = subPosX;
+    if (subTextAlign === 'center') subAnchorX = subPosX + maxWidth / 2;
+    else if (subTextAlign === 'right') subAnchorX = subPosX + maxWidth;
+
+    const subLines = item.subtitle.split('\n');
+    const subLineHeight = subFontSize + Math.max(20, subFontSize * 0.3);
+    subLines.forEach((line, i) => {
+      ctx.fillText(line, subAnchorX, subPosY + i * subLineHeight);
+    });
+    ctx.restore();
+  }
+
+  // ===== 水印 =====
+  const wmEnabled = $('watermarkEnabled').checked;
+  const wmText = $('watermarkText').value;
+  if (wmEnabled && wmText) {
+    const wmFontFamily = $('watermarkFontFamily').value;
+    const wmFontSize = parseInt($('watermarkFontSize').value) || 48;
+    const wmColor = $('watermarkColor').value;
+    const wmOpacity = (parseInt($('watermarkOpacity').value) || 30) / 100;
+    const wmRotation = (parseInt($('watermarkRotation').value) || 0) * Math.PI / 180;
+    const wmPosition = $('watermarkPosition').value;
+
+    ctx.save();
+    ctx.font = `${wmFontSize}px ${wmFontFamily}`;
+    ctx.fillStyle = wmColor;
+    ctx.textBaseline = 'middle';
+    ctx.textAlign = 'center';
+    ctx.globalAlpha = wmOpacity;
+
+    if (wmPosition === 'tile') {
+      // 平铺水印
+      const gapX = wmFontSize * 6;
+      const gapY = wmFontSize * 4;
+      for (let ty = -H * 0.5; ty < H * 1.5; ty += gapY) {
+        for (let tx = -W * 0.5; tx < W * 1.5; tx += gapX) {
+          ctx.save();
+          ctx.translate(tx, ty);
+          ctx.rotate(wmRotation);
+          ctx.fillText(wmText, 0, 0);
+          ctx.restore();
+        }
+      }
+    } else {
+      // 单个水印
+      let wx, wy;
+      const margin = 60;
+      switch (wmPosition) {
+        case 'center':       wx = W / 2; wy = H / 2; break;
+        case 'bottom-right': wx = W - margin; wy = H - margin; ctx.textAlign = 'right'; break;
+        case 'bottom-left':  wx = margin; wy = H - margin; ctx.textAlign = 'left'; break;
+        case 'top-right':    wx = W - margin; wy = margin; ctx.textAlign = 'right'; break;
+        case 'top-left':     wx = margin; wy = margin; ctx.textAlign = 'left'; break;
+        default:             wx = W / 2; wy = H / 2;
+      }
+      ctx.translate(wx, wy);
+      ctx.rotate(wmRotation);
+      ctx.fillText(wmText, 0, 0);
+    }
+    ctx.restore();
+  }
+
+  // ===== 贴图/小图片 =====
+  if (stickers.length > 0) {
+    stickers.forEach(st => {
+      if (!st.img) return;
+      ctx.save();
+      ctx.globalAlpha = st.opacity;
+      // 以贴图中心为旋转原点
+      const cx = st.x + st.width / 2;
+      const cy = st.y + st.height / 2;
+      ctx.translate(cx, cy);
+      ctx.rotate(st.rotation * Math.PI / 180);
+      ctx.drawImage(st.img, -st.width / 2, -st.height / 2, st.width, st.height);
+      ctx.restore();
+    });
+  }
+
+  // ===== Emoji 表情 =====
+  if (emojis.length > 0) {
+    emojis.forEach(em => {
+      ctx.save();
+      ctx.globalAlpha = em.opacity;
+      ctx.font = `${em.size}px "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif`;
+      ctx.textBaseline = 'top';
+      ctx.textAlign = 'left';
+      // 以Emoji中心为旋转原点
+      const cx = em.x + em.size / 2;
+      const cy = em.y + em.size / 2;
+      ctx.translate(cx, cy);
+      ctx.rotate(em.rotation * Math.PI / 180);
+      ctx.fillText(em.emoji, -em.size / 2, -em.size / 2);
+      ctx.restore();
+    });
+  }
+
+  // 导出
+  if (exportFormat === 'jpg') {
+    const quality = (parseInt($('jpgQuality').value) || 85) / 100;
+    return canvas.toDataURL('image/jpeg', quality);
+  }
+  return canvas.toDataURL('image/png');
+}
+
+function updatePreview() {
+  if (!csvData.length) return;
+  const item = csvData[currentIndex];
+  const canvas = $('previewCanvas');
+  renderCanvas(item, canvas);
+  canvas.style.display = 'block';
+  $('previewPlaceholder').style.display = 'none';
+  $('pageInfo').textContent = `${currentIndex + 1} / ${csvData.length}`;
+  $('prevBtn').disabled = currentIndex === 0;
+  $('nextBtn').disabled = currentIndex === csvData.length - 1;
+
+  // 更新编辑区
+  $('editGroup').style.display = 'block';
+  $('editTitle').value = item.title;
+  $('editId').value = item.id;
+  // 有CSV数据时显示保存按钮
+  if (csvFileName) $('saveCsvBtn').style.display = 'block';
+}
+
+function updateTemplatePreview() {
+  const img = $('templateImg');
+  const placeholder = $('templatePlaceholder');
+  if (!img || !placeholder) return;
+  if (bgImage) {
+    img.src = bgImage.src;
+    img.style.display = 'block';
+    placeholder.style.display = 'none';
+  } else {
+    img.style.display = 'none';
+    placeholder.style.display = '';
+  }
+}
+
+// ===================== 背景模板管理 =====================
+
+// 选择背景模板
+function selectBgTemplate(id) {
+  const tpl = bgTemplates.find(t => t.id === id);
+  if (!tpl) return;
+  activeBgId = id;
+  activePresetId = null;
+  bgImage = tpl.img;
+  bgFileName = tpl.name;
+  $('bgFileName').textContent = '当前: ' + tpl.name;
+  updateTemplatePreview();
+  renderBgTemplateGrid();
+  renderPresetGrid();
+  if (csvData.length) updatePreview();
+}
+
+// 删除背景模板
+function removeBgTemplate(id, ev) {
+  if (ev) ev.stopPropagation();
+  bgTemplates = bgTemplates.filter(t => t.id !== id);
+  if (activeBgId === id) {
+    activeBgId = null;
+    bgImage = null;
+    bgFileName = '';
+    $('bgFileName').textContent = '';
+    const img = $('templateImg');
+    const placeholder = $('templatePlaceholder');
+    if (img) img.style.display = 'none';
+    if (placeholder) placeholder.style.display = '';
+    if (bgTemplates.length > 0) {
+      selectBgTemplate(bgTemplates[0].id);
+    }
+  }
+  renderBgTemplateGrid();
+  showToast('已删除背景模板', 'info');
+}
+
+// 渲染已上传模板网格
+function renderBgTemplateGrid() {
+  const grid = $('bgTemplateGrid');
+  const listWrap = $('bgTemplateList');
+  if (bgTemplates.length === 0) {
+    listWrap.style.display = 'none';
+    return;
+  }
+  listWrap.style.display = 'block';
+  grid.innerHTML = '';
+  bgTemplates.forEach(tpl => {
+    const div = document.createElement('div');
+    div.className = 'bg-thumb' + (activeBgId === tpl.id ? ' active' : '');
+    div.innerHTML = `<img src="${tpl.src}"><button class="remove-btn" title="删除">&times;</button>`;
+    div.addEventListener('click', () => selectBgTemplate(tpl.id));
+    div.querySelector('.remove-btn').addEventListener('click', (ev) => removeBgTemplate(tpl.id, ev));
+    grid.appendChild(div);
+  });
+}
+
+// ===================== 预设模板库 =====================
+const presetTemplates = [
+  { id: 'p_black',     name: '纯黑',    type: 'solid',    color: '#000000' },
+  { id: 'p_white',     name: '纯白',    type: 'solid',    color: '#ffffff' },
+  { id: 'p_cream',     name: '米白',    type: 'solid',    color: '#FFF8E7' },
+  { id: 'p_pink',      name: '樱花粉',  type: 'solid',    color: '#FFE4E1' },
+  { id: 'p_blush',     name: '腮红',    type: 'solid',    color: '#FFF0F2' },
+  { id: 'p_warm',      name: '暖杏',    type: 'solid',    color: '#FFF1E6' },
+  { id: 'p_sunset',    name: '日落渐变', type: 'gradient', colors: ['#FF6B35', '#F7931E', '#FFD700'] },
+  { id: 'p_xhs',       name: '小红书',   type: 'gradient', colors: ['#FF2442', '#FF6B81'] },
+  { id: 'p_rose',      name: '玫瑰渐变', type: 'gradient', colors: ['#ee9ca7', '#ffdde1'] },
+  { id: 'p_peach',     name: '蜜桃渐变', type: 'gradient', colors: ['#FFDDE1', '#EE9CA7'] },
+  { id: 'p_late',      name: '暮色渐变', type: 'gradient', colors: ['#2c3e50', '#fd746c'] },
+  { id: 'p_cherry',    name: '樱花渐变', type: 'gradient', colors: ['#FFB7C5', '#FF69B4'] },
+];
+
+// 生成预设模板的 Canvas dataUrl
+function generatePresetDataUrl(preset) {
+  const { W, H } = getOutputSize();
+  const c = document.createElement('canvas');
+  c.width = W; c.height = H;
+  const ctx = c.getContext('2d');
+  if (preset.type === 'solid') {
+    ctx.fillStyle = preset.color;
+    ctx.fillRect(0, 0, W, H);
+  } else if (preset.type === 'gradient') {
+    const grad = ctx.createLinearGradient(0, 0, 0, H);
+    const colors = preset.colors;
+    colors.forEach((c, i) => grad.addColorStop(i / (colors.length - 1), c));
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, W, H);
+  }
+  return c.toDataURL('image/png');
+}
+
+// 选择预设模板
+function selectPreset(id) {
+  const preset = presetTemplates.find(p => p.id === id);
+  if (!preset) return;
+  activePresetId = id;
+  activeBgId = null;
+  const dataUrl = generatePresetDataUrl(preset);
+  loadImage(dataUrl).then(img => {
+    bgImage = img;
+    bgFileName = preset.name;
+    $('bgFileName').textContent = '当前: ' + preset.name + '（预设）';
+    updateTemplatePreview();
+    renderBgTemplateGrid();
+    renderPresetGrid();
+    if (csvData.length) updatePreview();
+    showToast(`已选择预设模板「${preset.name}」`, 'info');
+  });
+}
+
+// 渲染预设模板网格
+function renderPresetGrid() {
+  const grid = $('presetGrid');
+  grid.innerHTML = '';
+  presetTemplates.forEach(preset => {
+    const div = document.createElement('div');
+    div.className = 'preset-thumb' + (activePresetId === preset.id ? ' active' : '');
+    if (preset.type === 'solid') {
+      div.style.background = preset.color;
+      div.style.color = preset.color === '#000000' ? 'rgba(255,255,255,0.9)' : 'rgba(0,0,0,0.5)';
+    } else {
+      div.style.background = `linear-gradient(180deg, ${preset.colors.join(', ')})`;
+    }
+    div.textContent = preset.name;
+    div.addEventListener('click', () => selectPreset(preset.id));
+    grid.appendChild(div);
+  });
+}
+
+// 初始化预设模板网格
+renderPresetGrid();
+
+// ===================== 事件绑定 =====================
+
+// CSV 上传
+$('csvInput').addEventListener('change', async (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  try {
+    const { text, encoding } = await readTextFileEx(file);
+    csvFileName = file.name;
+    csvEncoding = encoding;
+    const result = parseCSVWithHeaders(text);
+    csvRawHeaders = result.headers;
+    csvData = result.data;
+    if (csvData.length) {
+      $('csvStatus').textContent = `成功导入 ${csvData.length} 条数据！\n文件名: ${file.name} | ${csvRawHeaders.length} 列 | 编码: ${encoding.toUpperCase()}`;
+      $('csvStatus').classList.add('show');
+      currentIndex = 0;
+      showToast(`成功导入 ${csvData.length} 条数据`, 'success');
+      // 显示列映射面板
+      setupColMapping(csvRawHeaders);
+      if (bgImage) updatePreview();
+    } else {
+      $('csvStatus').textContent = '未能解析到有效数据，请检查 CSV 格式';
+      $('csvStatus').classList.add('show');
+    }
+  } catch (err) {
+    $('csvStatus').textContent = '读取文件失败: ' + err.message;
+    $('csvStatus').classList.add('show');
+  }
+});
+
+// CSV 拖拽
+const csvDrop = $('csvDropZone');
+csvDrop.addEventListener('dragover', e => { e.preventDefault(); csvDrop.classList.add('dragover'); });
+csvDrop.addEventListener('dragleave', () => csvDrop.classList.remove('dragover'));
+csvDrop.addEventListener('drop', e => {
+  e.preventDefault();
+  csvDrop.classList.remove('dragover');
+  const files = e.dataTransfer.files;
+  if (files.length) {
+    $('csvInput').files = files;
+    $('csvInput').dispatchEvent(new Event('change'));
+  }
+});
+
+// 背景图上传（支持多选）
+$('bgInput').addEventListener('change', async (e) => {
+  const files = Array.from(e.target.files);
+  if (!files.length) return;
+  let addedCount = 0;
+  for (const file of files) {
+    try {
+      const dataUrl = await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = ev => resolve(ev.target.result);
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
+      const img = await loadImage(dataUrl);
+      const id = 'bg_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6);
+      bgTemplates.push({ id, img, src: dataUrl, name: file.name });
+      addedCount++;
+    } catch (err) {
+      showToast(`背景图 "${file.name}" 加载失败`, 'error');
+    }
+  }
+  if (addedCount > 0) {
+    // 自动选中新上传的第一张
+    activePresetId = null;
+    selectBgTemplate(bgTemplates[bgTemplates.length - addedCount].id);
+    renderBgTemplateGrid();
+    showToast(`已添加 ${addedCount} 张背景模板`, 'success');
+  }
+});
+
+// 背景图拖拽
+const bgDrop = $('bgDropZone');
+bgDrop.addEventListener('dragover', e => { e.preventDefault(); bgDrop.classList.add('dragover'); });
+bgDrop.addEventListener('dragleave', () => bgDrop.classList.remove('dragover'));
+bgDrop.addEventListener('drop', e => {
+  e.preventDefault();
+  bgDrop.classList.remove('dragover');
+  const files = e.dataTransfer.files;
+  if (files.length) {
+    $('bgInput').files = files;
+    $('bgInput').dispatchEvent(new Event('change'));
+  }
+});
+
+// 上一页 / 下一页
+// 翻页前自动保存当前编辑
+function autoSaveCurrentEdit() {
+  if (!csvData.length) return;
+  const editTitle = $('editTitle');
+  if (editTitle && editTitle.value !== csvData[currentIndex].title) {
+    csvData[currentIndex].title = editTitle.value;
+    syncTitleToRaw(csvData[currentIndex]);
+    $('saveCsvBtn').style.display = 'block';
+  }
+}
+
+$('prevBtn').addEventListener('click', () => {
+  autoSaveCurrentEdit();
+  if (currentIndex > 0) { currentIndex--; updatePreview(); }
+});
+$('nextBtn').addEventListener('click', () => {
+  autoSaveCurrentEdit();
+  if (currentIndex < csvData.length - 1) { currentIndex++; updatePreview(); }
+});
+
+// 撤销 / 重做按钮
+$('undoBtn').addEventListener('click', undo);
+$('redoBtn').addEventListener('click', redo);
+
+// 实时更新预览（当设置改变时）— 50ms 防抖
+const debouncedPreview = debounce(() => {
+  if (csvData.length) updatePreview();
+}, 50);
+['fontFamily','fontSize','fontColor','strokeEnabled','strokeColor','boldEnabled','shadowEnabled','shadowColor','shadowX','shadowY','shadowBlur','textOpacity','textRotation','posX','posY','lineSpacing','textAlign','autoWrap','maxWidth','subEnabled','subFontFamily','subFontSize','subFontColor','subPosX','subPosY','subTextAlign','subBoldEnabled','watermarkEnabled','watermarkText','watermarkFontFamily','watermarkFontSize','watermarkColor','watermarkOpacity','watermarkRotation','watermarkPosition'].forEach(id => {
+  $(id).addEventListener('input', debouncedPreview);
+  $(id).addEventListener('change', debouncedPreview);
+});
+
+// 导出格式切换 — 显示/隐藏 JPG 选项
+$('exportFormat').addEventListener('change', () => {
+  const isJpg = $('exportFormat').value === 'jpg';
+  $('jpgQualityRow').style.display = isJpg ? 'flex' : 'none';
+  $('jpgBgRow').style.display = isJpg ? 'flex' : 'none';
+});
+
+// JPG 质量滑块实时显示
+$('jpgQuality').addEventListener('input', () => {
+  $('jpgQualityVal').textContent = $('jpgQuality').value + '%';
+});
+
+// 文字透明度滑块实时显示
+$('textOpacity').addEventListener('input', () => {
+  $('textOpacityVal').textContent = $('textOpacity').value + '%';
+});
+
+// 水印透明度滑块实时显示
+$('watermarkOpacity').addEventListener('input', () => {
+  $('watermarkOpacityVal').textContent = $('watermarkOpacity').value + '%';
+});
+
+// ===================== CSV 列映射 =====================
+let csvAllRows = []; // 保存所有原始行数据，用于重新映射
+
+function setupColMapping(headers) {
+  const group = $('colMappingGroup');
+  if (!headers || headers.length < 2) { group.style.display = 'none'; return; }
+  group.style.display = 'block';
+
+  // 填充下拉选项
+  ['colId', 'colTitle', 'colSubtitle'].forEach(selectId => {
+    const sel = $(selectId);
+    sel.innerHTML = '';
+    if (selectId === 'colSubtitle') {
+      sel.innerHTML = '<option value="">（不使用）</option>';
+    }
+    headers.forEach((h, i) => {
+      const opt = document.createElement('option');
+      opt.value = i;
+      opt.textContent = h || `第${i+1}列`;
+      sel.appendChild(opt);
+    });
+  });
+
+  // 自动猜测列映射
+  const idIdx = headers.findIndex(h => /id|宝贝|编号/i.test(h));
+  const titleIdx = headers.findIndex(h => /标题|title|主标题/i.test(h));
+  const subIdx = headers.findIndex(h => /副标题|subtitle|简介|描述/i.test(h));
+  if (idIdx >= 0) $('colId').value = idIdx;
+  if (titleIdx >= 0) $('colTitle').value = titleIdx;
+  if (subIdx >= 0) $('colSubtitle').value = subIdx;
+
+  // 保存原始行数据
+  csvAllRows = csvData.map(item => item._raw || {});
+}
+
+// 应用列映射
+$('applyMappingBtn').addEventListener('click', () => {
+  if (!csvData.length) return;
+  const idCol = parseInt($('colId').value);
+  const titleCol = parseInt($('colTitle').value);
+  const subCol = $('colSubtitle').value === '' ? -1 : parseInt($('colSubtitle').value);
+
+  // 重新映射所有行
+  csvData.forEach(item => {
+    const raw = item._raw;
+    if (!raw || !raw._cols) return;
+    const cols = raw._cols;
+    if (cols[idCol] !== undefined) item.id = cols[idCol].trim();
+    if (cols[titleCol] !== undefined) item.title = cols[titleCol].trim().replace(/\\n/g, '\n');
+    if (subCol >= 0 && cols[subCol] !== undefined) {
+      item.subtitle = cols[subCol].trim().replace(/\\n/g, '\n');
+    } else {
+      item.subtitle = '';
+    }
+  });
+
+  currentIndex = 0;
+  if (bgImage) updatePreview();
+  showToast('列映射已应用', 'success');
+});
+
+// ===================== 输出尺寸 =====================
+function getOutputSize() {
+  const preset = $('sizePreset').value;
+  if (preset === 'custom') {
+    return {
+      W: parseInt($('customWidth').value) || 1080,
+      H: parseInt($('customHeight').value) || 1920
+    };
+  }
+  const [w, h] = preset.split('x').map(Number);
+  return { W: w, H: h };
+}
+
+// 更新尺寸信息显示 + 同步预览框比例
+function updateSizeInfo() {
+  const { W, H } = getOutputSize();
+  const gcd = (a, b) => b ? gcd(b, a % b) : a;
+  const g = gcd(W, H);
+  $('sizeInfo').textContent = `当前: ${W} × ${H} (${W/g}:${H/g})`;
+
+  // 同步预览框和模板框的 aspect-ratio
+  const previewBox = $('previewBox');
+  const templateFrame = $('templateFrame');
+  if (previewBox) previewBox.style.aspectRatio = `${W}/${H}`;
+  if (templateFrame) templateFrame.style.aspectRatio = `${W}/${H}`;
+
+  // 更新缩略图的 aspect-ratio（通过 CSS 变量）
+  document.documentElement.style.setProperty('--thumb-ratio', `${W}/${H}`);
+}
+
+$('sizePreset').addEventListener('change', () => {
+  const isCustom = $('sizePreset').value === 'custom';
+  $('customSizeRow').style.display = isCustom ? 'flex' : 'none';
+  updateSizeInfo();
+  if (csvData.length) updatePreview();
+});
+
+$('customWidth').addEventListener('input', () => { updateSizeInfo(); if (csvData.length) updatePreview(); });
+$('customHeight').addEventListener('input', () => { updateSizeInfo(); if (csvData.length) updatePreview(); });
+
+updateSizeInfo();
+
+// 更新当前项
+$('updateCurrentBtn').addEventListener('click', () => {
+  if (!csvData.length) return;
+  csvData[currentIndex].title = $('editTitle').value;
+  // 同步修改回 _raw._cols 中对应的标题列
+  syncTitleToRaw(csvData[currentIndex]);
+  $('saveCsvBtn').style.display = 'block';
+  updatePreview();
+  showToast('已更新当前标题，可点击「保存修改到CSV文件」导出', 'success', 2500);
+});
+
+// ===================== 保存修改到 CSV =====================
+
+// 将修改后的 title/subtitle 同步回 _raw._cols
+function syncTitleToRaw(item) {
+  if (!item._raw || !item._raw._cols) return;
+  const cols = item._raw._cols;
+  const headers = csvRawHeaders;
+
+  // 优先使用列映射下拉框的值，如果没有则自动匹配列名
+  let titleColIdx, subColIdx;
+  const colTitleSel = $('colTitle');
+  const colSubSel = $('colSubtitle');
+
+  if (colTitleSel && colTitleSel.value !== '') {
+    titleColIdx = parseInt(colTitleSel.value);
+  } else {
+    titleColIdx = headers.findIndex(h => /标题|title|主标题/i.test(h));
+    if (titleColIdx < 0) titleColIdx = 1;
+  }
+
+  if (colSubSel && colSubSel.value !== '') {
+    subColIdx = parseInt(colSubSel.value);
+  } else {
+    subColIdx = headers.findIndex(h => /副标题|subtitle|简介|描述/i.test(h));
+  }
+
+  // 写入标题（将换行转回 \n 文本）
+  if (titleColIdx >= 0 && titleColIdx < cols.length) {
+    cols[titleColIdx] = item.title.replace(/\n/g, '\\n');
+  }
+
+  // 写入副标题
+  if (subColIdx >= 0 && subColIdx < cols.length) {
+    cols[subColIdx] = (item.subtitle || '').replace(/\n/g, '\\n');
+  }
+}
+
+// 将 csvData 导出为 CSV 字符串（RFC 4180 格式）
+function buildCSVString() {
+  const headers = csvRawHeaders;
+  const lines = [];
+
+  // 表头行
+  lines.push(headers.map(h => csvEscapeField(h)).join(','));
+
+  // 数据行
+  csvData.forEach(item => {
+    const raw = item._raw;
+    if (!raw || !raw._cols) return;
+    const cols = raw._cols;
+
+    // 确保列数和表头一致
+    const fields = headers.map((_, idx) => {
+      const val = idx < cols.length ? cols[idx] : '';
+      return csvEscapeField(val || '');
+    });
+    lines.push(fields.join(','));
+  });
+
+  return lines.join('\r\n');
+}
+
+// CSV 字段转义（RFC 4180）
+function csvEscapeField(val) {
+  const str = String(val);
+  // 如果包含逗号、双引号、换行，需要用双引号包裹
+  if (str.includes(',') || str.includes('"') || str.includes('\n') || str.includes('\r')) {
+    return '"' + str.replace(/"/g, '""') + '"';
+  }
+  return str;
+}
+
+// 保存修改到 CSV 文件（下载）
+$('saveCsvBtn').addEventListener('click', () => {
+  if (!csvData.length) { showToast('没有可保存的数据', 'warning'); return; }
+
+  // 先同步所有项的修改到 _raw._cols
+  csvData.forEach(item => syncTitleToRaw(item));
+
+  const csvText = buildCSVString();
+  const baseName = csvFileName ? csvFileName.replace(/\.\w+$/, '') : 'export';
+  const outFileName = baseName + '_已修改.csv';
+
+  // 根据原始编码生成文件
+  let blob;
+  if (csvEncoding === 'gbk') {
+    // GBK 编码：使用 TextEncoder 生成 GBK 字节
+    const encoder = new TextEncoder();
+    // 注意：TextEncoder 只支持 UTF-8，GBK 需要用 TextDecoder 反向操作
+    // 方案：直接用 UTF-8 输出并加 BOM，Excel 兼容性更好
+    // 但如果用户明确需要 GBK，使用下面的方式
+    try {
+      // 尝试用 TextEncoder/TextDecoder 做 GBK 编码
+      const uint8 = new TextEncoder().encode(csvText);
+      blob = new Blob([new Uint8Array([0xEF, 0xBB, 0xBF]), uint8], { type: 'text/csv;charset=utf-8' });
+    } catch (e) {
+      blob = new Blob(['\ufeff' + csvText], { type: 'text/csv;charset=utf-8' });
+    }
+  } else {
+    // UTF-8 with BOM（Excel 兼容）
+    const uint8 = new TextEncoder().encode(csvText);
+    blob = new Blob([new Uint8Array([0xEF, 0xBB, 0xBF]), uint8], { type: 'text/csv;charset=utf-8' });
+  }
+
+  // 下载文件
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = outFileName;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+
+  showToast(`已保存修改到 ${outFileName}`, 'success');
+});
+
+// 生成全部 — 分批异步渲染 + IndexedDB 存储
+$('generateBtn').addEventListener('click', async () => {
+  if (!csvData.length) { showToast('请先导入 CSV 文件', 'warning'); return; }
+  if (!bgImage) { showToast('请先选择背景图片', 'warning'); return; }
+
+  // 清空旧数据
+  generatedImages = [];
+  await idbClear();
+  thumbCache = {}; // 清空缩略图缓存
+
+  const total = csvData.length;
+  $('progressWrap').classList.add('show');
+  $('thumbList').style.display = 'grid';
+  $('thumbList').innerHTML = '';
+
+  // 分批渲染，每批 10 张，用 requestAnimationFrame 让 UI 呼吸
+  const BATCH = 10;
+  for (let batchStart = 0; batchStart < total; batchStart += BATCH) {
+    const batchEnd = Math.min(batchStart + BATCH, total);
+
+    for (let i = batchStart; i < batchEnd; i++) {
+      const c = document.createElement('canvas');
+      const dataUrl = renderCanvas(csvData[i], c);
+      const item = { id: csvData[i].id, dataUrl };
+      generatedImages.push(item);
+      // 存入 IndexedDB
+      await idbPut(i, item);
+    }
+
+    // 更新进度
+    const pct = (batchEnd / total * 100).toFixed(0);
+    $('progressFill').style.width = pct + '%';
+    $('progressText').textContent = `${batchEnd} / ${total}`;
+
+    // 让 UI 有呼吸时间
+    await new Promise(r => requestAnimationFrame(r));
+  }
+
+  // 初始化虚拟滚动缩略图
+  initVirtualScroll();
+
+  showToast(`已生成 ${total} 张图片`, 'success');
+});
+
+// 下载单张
+async function downloadOne(idx) {
+  let item = generatedImages[idx];
+  // 如果内存中没有，从 IndexedDB 取
+  if (!item) item = await idbGet(idx);
+  if (!item) return;
+  const ext = $('exportFormat').value === 'jpg' ? 'jpg' : 'png';
+  const a = document.createElement('a');
+  a.href = item.dataUrl;
+  a.download = item.id + '.' + ext;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+}
+
+// ZIP 下载 — 从 IndexedDB 读取全部数据
+$('downloadBtn').addEventListener('click', async () => {
+  if (!generatedImages.length) { showToast('请先生成图片', 'warning'); return; }
+  showToast('正在打包 ZIP，请稍候...', 'info', 5000);
+
+  // 从 IndexedDB 读取全部图片（避免内存溢出）
+  const allImages = [];
+  for (let i = 0; i < generatedImages.length; i++) {
+    let item = generatedImages[i];
+    if (!item) item = await idbGet(i);
+    if (item) allImages.push(item);
+  }
+
+  const zip = createZipFromImages(allImages);
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(zip);
+  a.download = '爆款素材_' + new Date().getTime() + '.zip';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(a.href);
+  showToast(`已下载 ${allImages.length} 张图片的 ZIP 包`, 'success');
+});
+
+// ===================== 示例数据 =====================
+$('sampleBtn').addEventListener('click', () => {
+  csvData = [
+    { id: '68678db0ae962f00150d0a9e', title: '超市运营管理\n资料模板', subtitle: '全套模板直接用' },
+    { id: '69c3f45d20b4e20001e44dc4', title: '抖音短视频运营\n完整SOP流程', subtitle: '从0到1保姆级教程' },
+    { id: '69c3fd92a20c2100014261b3', title: '小红书起号攻略\n7天涨粉1000+', subtitle: '新手必看' },
+    { id: '69c3fdded6abc6000133beef', title: '私域流量运营\n微信社群玩法', subtitle: '高转化秘籍' },
+    { id: '69c3fe29ff00dc0001534127', title: '电商选品指南\n爆款打造方法', subtitle: '月销10W+打法' },
+  ];
+  $('csvStatus').textContent = '已加载 5 条示例数据（点击"生成全部图片"开始预览）';
+  $('csvStatus').classList.add('show');
+  showToast('已加载 5 条示例数据', 'success');
+  currentIndex = 0;
+  if (bgImage) updatePreview();
+});
+
+// ===================== IndexedDB 内存管理 =====================
+const IDB_NAME = 'XhsGeneratorDB';
+const IDB_STORE = 'images';
+let idb = null;
+
+function idbOpen() {
+  return new Promise((resolve, reject) => {
+    if (idb) { resolve(idb); return; }
+    const req = indexedDB.open(IDB_NAME, 1);
+    req.onupgradeneeded = (e) => {
+      const db = e.target.result;
+      if (!db.objectStoreNames.contains(IDB_STORE)) {
+        db.createObjectStore(IDB_STORE, { keyPath: 'idx' });
+      }
+    };
+    req.onsuccess = (e) => { idb = e.target.result; resolve(idb); };
+    req.onerror = (e) => reject(e.target.error);
+  });
+}
+
+async function idbPut(idx, item) {
+  try {
+    const db = await idbOpen();
+    const tx = db.transaction(IDB_STORE, 'readwrite');
+    tx.objectStore(IDB_STORE).put({ idx, ...item });
+  } catch (e) { /* 静默失败，不影响主流程 */ }
+}
+
+async function idbGet(idx) {
+  try {
+    const db = await idbOpen();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(IDB_STORE, 'readonly');
+      const req = tx.objectStore(IDB_STORE).get(idx);
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error);
+    });
+  } catch (e) { return null; }
+}
+
+async function idbClear() {
+  try {
+    const db = await idbOpen();
+    const tx = db.transaction(IDB_STORE, 'readwrite');
+    tx.objectStore(IDB_STORE).clear();
+  } catch (e) { /* 静默 */ }
+}
+
+// ===================== 虚拟滚动缩略图 =====================
+let thumbCache = {};       // idx -> dataUrl 缓存
+let virtualScrollRAF = null;
+
+function initVirtualScroll() {
+  const container = $('thumbList');
+  // 固定高度容器
+  container.style.maxHeight = '240px';
+  container.style.overflowY = 'auto';
+  container.style.position = 'relative';
+
+  // 生成占位 DOM（每项高度约 120px，3列网格）
+  const total = generatedImages.length;
+  const COLS = 3;
+  const ITEM_H = 180; // 缩略图高度（含间距）
+  const totalRows = Math.ceil(total / COLS);
+  const totalHeight = totalRows * ITEM_H;
+
+  // 用一个内部容器撑高度
+  container.innerHTML = '';
+  const spacer = document.createElement('div');
+  spacer.style.height = totalHeight + 'px';
+  spacer.style.position = 'relative';
+  container.appendChild(spacer);
+
+  // 缓存缩略图 dataUrl（小尺寸版，节省内存）
+  for (let i = 0; i < total; i++) {
+    if (generatedImages[i]) {
+      thumbCache[i] = generatedImages[i].dataUrl;
+    }
+  }
+
+  // 滚动事件：只渲染可视区域的缩略图
+  const renderVisible = () => {
+    if (virtualScrollRAF) return;
+    virtualScrollRAF = requestAnimationFrame(() => {
+      virtualScrollRAF = null;
+      const scrollTop = container.scrollTop;
+      const viewHeight = container.clientHeight;
+      const startRow = Math.floor(scrollTop / ITEM_H);
+      const endRow = Math.ceil((scrollTop + viewHeight) / ITEM_H);
+      const startIdx = startRow * COLS;
+      const endIdx = Math.min(endRow * COLS, total);
+
+      // 移除旧缩略图
+      spacer.querySelectorAll('.v-thumb').forEach(el => {
+        const idx = parseInt(el.dataset.idx);
+        if (idx < startIdx || idx >= endIdx) el.remove();
+      });
+
+      // 添加可见缩略图
+      for (let i = startIdx; i < endIdx; i++) {
+        if (spacer.querySelector(`.v-thumb[data-idx="${i}"]`)) continue;
+        const row = Math.floor(i / COLS);
+        const col = i % COLS;
+        const left = col * (100 / COLS);
+        const top = row * ITEM_H;
+
+        const thumb = document.createElement('div');
+        thumb.className = 'thumb-item v-thumb' + (i === currentIndex ? ' active' : '');
+        thumb.dataset.idx = i;
+        thumb.style.cssText = `position:absolute;left:${left}%;top:${top}px;width:calc(${100/COLS}% - 6px);aspect-ratio:9/16;`;
+
+        if (thumbCache[i]) {
+          thumb.innerHTML = `<img src="${thumbCache[i]}"><button class="dl-btn" data-idx="${i}">&#11015;</button>`;
+        } else {
+          thumb.innerHTML = `<div style="display:flex;align-items:center;justify-content:center;height:100%;color:#999;font-size:11px;">${i+1}</div>`;
+        }
+
+        // 点击切换
+        thumb.addEventListener('click', (ev) => {
+          if (ev.target.classList.contains('dl-btn')) return;
+          autoSaveCurrentEdit();
+          spacer.querySelectorAll('.v-thumb').forEach(t => t.classList.remove('active'));
+          thumb.classList.add('active');
+          currentIndex = i;
+          updatePreview();
+        });
+
+        // 单个下载
+        const dlBtn = thumb.querySelector('.dl-btn');
+        if (dlBtn) {
+          dlBtn.addEventListener('click', (ev) => {
+            ev.stopPropagation();
+            downloadOne(i);
+          });
+        }
+
+        spacer.appendChild(thumb);
+      }
+    });
+  };
+
+  container.addEventListener('scroll', renderVisible);
+  // 初始渲染
+  renderVisible();
+}
+
+// ===================== 纯二进制 ZIP 实现（全程 Uint8Array，不用字符串）=====================
+
+// dataURL base64 → Uint8Array
+function dataUrlToBytes(dataUrl) {
+  const base64 = dataUrl.split(',')[1];
+  const binaryStr = atob(base64);
+  const bytes = new Uint8Array(binaryStr.length);
+  for (let i = 0; i < binaryStr.length; i++) bytes[i] = binaryStr.charCodeAt(i);
+  return bytes;
+}
+
+// 字符串 → UTF-8 Uint8Array
+function strToBytes(str) {
+  return new TextEncoder().encode(str);
+}
+
+// 写入小端数值
+function writeU16(buf, off, v) { buf[off] = v & 0xFF; buf[off+1] = (v >>> 8) & 0xFF; }
+function writeU32(buf, off, v) {
+  buf[off]   =  v        & 0xFF;
+  buf[off+1] = (v >>> 8) & 0xFF;
+  buf[off+2] = (v >>> 16) & 0xFF;
+  buf[off+3] = (v >>> 24) & 0xFF;
+}
+
+// CRC-32（对 Uint8Array 操作，不涉及字符串）
+function crc32Bytes(data) {
+  let tbl = crc32Bytes._tbl;
+  if (!tbl) {
+    tbl = crc32Bytes._tbl = new Uint32Array(256);
+    for (let i = 0; i < 256; i++) {
+      let c = i;
+      for (let j = 0; j < 8; j++) c = (c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1);
+      tbl[i] = c;
+    }
+  }
+  let crc = 0xFFFFFFFF;
+  for (let i = 0; i < data.length; i++) crc = tbl[(crc ^ data[i]) & 0xFF] ^ (crc >>> 8);
+  return (crc ^ 0xFFFFFFFF) >>> 0;
+}
+
+// 拼接多个 Uint8Array
+function concatBytes(parts) {
+  let total = 0;
+  for (const p of parts) total += p.length;
+  const out = new Uint8Array(total);
+  let pos = 0;
+  for (const p of parts) { out.set(p, pos); pos += p.length; }
+  return out;
+}
+
+// 构建一个小端 Uint8Array（按字节数组 spec）
+function makeBytes(...vals) {
+  const b = [];
+  for (const v of vals) {
+    if (v instanceof Uint8Array) for (const x of v) b.push(x);
+    else b.push(v & 0xFF);
+  }
+  return new Uint8Array(b);
+}
+
+function u16(n) { return [n & 0xFF, (n >>> 8) & 0xFF]; }
+function u32(n) { return [n & 0xFF, (n >>> 8) & 0xFF, (n >>> 16) & 0xFF, (n >>> 24) & 0xFF]; }
+
+// 主函数：生成合法 ZIP Blob
+// 构建单条 ZIP entry（目录 or 文件），返回 { local, cd } Uint8Array
+function makeZipEntry(nameStr, fileData, localOffset) {
+  const nameBytes = strToBytes(nameStr);
+  const isDir = nameStr.endsWith('/');
+  const data = isDir ? new Uint8Array(0) : fileData;
+  const crc  = isDir ? 0 : crc32Bytes(data);
+  const size = data.length;
+  const externalAttr = isDir ? (0x10 << 16) : 0; // 0x10 = MS-DOS directory flag
+
+  // Local file header (30 bytes) + name + data
+  const local = new Uint8Array(30 + nameBytes.length + size);
+  local.set([0x50,0x4B,0x03,0x04], 0);
+  writeU16(local, 4,  20);
+  writeU16(local, 6,   0);
+  writeU16(local, 8,   0);   // method: STORE
+  writeU16(local, 10,  0);
+  writeU16(local, 12,  0);
+  writeU32(local, 14, crc);
+  writeU32(local, 18, size);
+  writeU32(local, 22, size);
+  writeU16(local, 26, nameBytes.length);
+  writeU16(local, 28, 0);
+  local.set(nameBytes, 30);
+  if (size > 0) local.set(data, 30 + nameBytes.length);
+
+  // Central directory entry (46 bytes) + name
+  const cd = new Uint8Array(46 + nameBytes.length);
+  cd.set([0x50,0x4B,0x01,0x02], 0);
+  writeU16(cd, 4,  20);
+  writeU16(cd, 6,  20);
+  writeU16(cd, 8,   0);
+  writeU16(cd, 10,  0);
+  writeU16(cd, 12,  0);
+  writeU16(cd, 14,  0);
+  writeU32(cd, 16, crc);
+  writeU32(cd, 20, size);
+  writeU32(cd, 24, size);
+  writeU16(cd, 28, nameBytes.length);
+  writeU16(cd, 30, 0);
+  writeU16(cd, 32, 0);
+  writeU16(cd, 34, 0);
+  writeU16(cd, 36, 0);
+  writeU32(cd, 38, externalAttr);
+  writeU32(cd, 42, localOffset);
+  cd.set(nameBytes, 46);
+
+  return { local, cd };
+}
+
+// 主函数：生成合法 ZIP Blob，目录结构匹配爆款素材格式
+// 结构：{id}_1/{id}.png 或 {id}_1/{id}.jpg（根据导出格式）
+function createZipFromImages(images) {
+  const exportFormat = $('exportFormat').value;
+  const ext = exportFormat === 'jpg' ? 'jpg' : 'png';
+
+  const localParts = [];
+  const cdParts    = [];
+  let offset = 0;
+  let totalEntries = 0;
+
+  for (const img of images) {
+    const id      = img.id;
+    const dirName = id + '_1/';           // 子目录：{id}_1/
+    const fileName = dirName + id + '.' + ext; // 文件：{id}_1/{id}.{ext}
+
+    const fileData = dataUrlToBytes(img.dataUrl);
+
+    // ① 目录 entry
+    const dirEntry = makeZipEntry(dirName, null, offset);
+    localParts.push(dirEntry.local);
+    cdParts.push(dirEntry.cd);
+    offset += dirEntry.local.length;
+    totalEntries++;
+
+    // ② 文件 entry
+    const fileEntry = makeZipEntry(fileName, fileData, offset);
+    localParts.push(fileEntry.local);
+    cdParts.push(fileEntry.cd);
+    offset += fileEntry.local.length;
+    totalEntries++;
+  }
+
+  // End of central directory
+  const cdOffset = offset;
+  const cdBytes  = concatBytes(cdParts);
+  const eocd = new Uint8Array(22);
+  eocd.set([0x50,0x4B,0x05,0x06], 0);
+  writeU16(eocd, 4,  0);
+  writeU16(eocd, 6,  0);
+  writeU16(eocd, 8,  totalEntries);
+  writeU16(eocd, 10, totalEntries);
+  writeU32(eocd, 12, cdBytes.length);
+  writeU32(eocd, 16, cdOffset);
+  writeU16(eocd, 20, 0);
+
+  const zipBytes = concatBytes([...localParts, cdBytes, eocd]);
+  return new Blob([zipBytes], { type: 'application/zip' });
+}
+
+// ===================== Canvas 拖拽定位 =====================
+const canvas = $('previewCanvas');
+const previewBox = $('previewBox');
+
+// 计算鼠标在 Canvas 上的实际坐标（处理 CSS 缩放）
+function canvasCoord(e) {
+  const rect = canvas.getBoundingClientRect();
+  const scaleX = canvas.width / rect.width;
+  const scaleY = canvas.height / rect.height;
+  return {
+    x: (e.clientX - rect.left) * scaleX,
+    y: (e.clientY - rect.top) * scaleY
+  };
+}
+
+// 判断点击位置是否在文字区域内
+function hitTestText(mx, my) {
+  if (!csvData.length) return false;
+  const item = csvData[currentIndex];
+  if (!item || !item.title) return false;
+
+  const fontFamily = $('fontFamily').value;
+  const fontSize = parseInt($('fontSize').value) || 120;
+  const boldEnabled = $('boldEnabled').checked;
+  const posX = parseInt($('posX').value) || 90;
+  const posY = parseInt($('posY').value) || 300;
+  const lineSpacing = parseInt($('lineSpacing').value) || 120;
+  const textAlign = $('textAlign').value;
+  const autoWrap = $('autoWrap').checked;
+  const maxWidth = parseInt($('maxWidth').value) || 900;
+
+  // 创建临时 canvas 来测量文字宽度
+  const tempCtx = canvas.getContext('2d');
+  tempCtx.font = `${boldEnabled ? 'bold ' : ''}${fontSize}px ${fontFamily}`;
+
+  const rawLines = item.title.split('\n');
+  const lines = [];
+  if (autoWrap) {
+    for (const raw of rawLines) {
+      if (tempCtx.measureText(raw).width <= maxWidth) {
+        lines.push(raw);
+      } else {
+        let current = '';
+        for (let ci = 0; ci < raw.length; ci++) {
+          const testLine = current + raw[ci];
+          if (tempCtx.measureText(testLine).width > maxWidth && current.length > 0) {
+            lines.push(current);
+            current = raw[ci];
+          } else {
+            current = testLine;
+          }
+        }
+        if (current) lines.push(current);
+      }
+    }
+  } else {
+    lines.push(...rawLines);
+  }
+
+  const lineHeight = fontSize + lineSpacing;
+  const padding = 30; // 点击容差
+
+  for (let i = 0; i < lines.length; i++) {
+    const lineY = posY + i * lineHeight;
+    const textWidth = tempCtx.measureText(lines[i]).width;
+
+    let left, right;
+    if (textAlign === 'center') {
+      const anchorX = posX + maxWidth / 2;
+      left = anchorX - textWidth / 2;
+      right = anchorX + textWidth / 2;
+    } else if (textAlign === 'right') {
+      const anchorX = posX + maxWidth;
+      left = anchorX - textWidth;
+      right = anchorX;
+    } else {
+      left = posX;
+      right = posX + textWidth;
+    }
+
+    if (mx >= left - padding && mx <= right + padding &&
+        my >= lineY - padding && my <= lineY + fontSize + padding) {
+      return true;
+    }
+  }
+  return false;
+}
+
+// mousedown — 检测是否点中装饰元素或文字，开始拖拽
+canvas.addEventListener('mousedown', (e) => {
+  if (!csvData.length) return;
+  const coord = canvasCoord(e);
+
+  // 优先检测装饰元素（贴图/Emoji在上层）
+  const decoHit = hitTestDecoration(coord.x, coord.y);
+  if (decoHit) {
+    isDraggingDeco = true;
+    selectedDecoType = decoHit.type;
+    selectedDecoId = decoHit.item.id;
+    dragDecoStartX = coord.x;
+    dragDecoStartY = coord.y;
+    dragDecoOrigX = decoHit.item.x;
+    dragDecoOrigY = decoHit.item.y;
+    previewBox.classList.add('dragging');
+    // 选中该装饰元素，更新属性面板
+    selectDeco(decoHit.type, decoHit.item.id);
+    $('dragHint').textContent = `${decoHit.type === 'emoji' ? 'Emoji' : '贴图'} X: ${decoHit.item.x}  Y: ${decoHit.item.y}`;
+    e.preventDefault();
+    return;
+  }
+
+  // 其次检测文字
+  if (hitTestText(coord.x, coord.y)) {
+    isDragging = true;
+    dragStartX = coord.x;
+    dragStartY = coord.y;
+    dragStartPosX = parseInt($('posX').value) || 90;
+    dragStartPosY = parseInt($('posY').value) || 300;
+    previewBox.classList.add('dragging');
+    $('dragHint').textContent = `X: ${dragStartPosX}  Y: ${dragStartPosY}`;
+    e.preventDefault();
+  }
+});
+
+// mousemove — 拖拽中实时更新位置
+canvas.addEventListener('mousemove', (e) => {
+  const coord = canvasCoord(e);
+
+  if (isDraggingDeco) {
+    // 拖拽装饰元素
+    const dx = coord.x - dragDecoStartX;
+    const dy = coord.y - dragDecoStartY;
+    const newX = Math.round(dragDecoOrigX + dx);
+    const newY = Math.round(dragDecoOrigY + dy);
+
+    if (selectedDecoType === 'sticker') {
+      const st = stickers.find(s => s.id === selectedDecoId);
+      if (st) { st.x = newX; st.y = newY; }
+      $('stickerPosX').value = newX;
+      $('stickerPosY').value = newY;
+      $('dragHint').textContent = `贴图 X: ${newX}  Y: ${newY}`;
+    } else if (selectedDecoType === 'emoji') {
+      const em = emojis.find(e2 => e2.id === selectedDecoId);
+      if (em) { em.x = newX; em.y = newY; }
+      $('emojiPosX').value = newX;
+      $('emojiPosY').value = newY;
+      $('dragHint').textContent = `Emoji X: ${newX}  Y: ${newY}`;
+    }
+    if (csvData.length) updatePreview();
+    e.preventDefault();
+  } else if (isDragging) {
+    // 拖拽文字
+    const dx = coord.x - dragStartX;
+    const dy = coord.y - dragStartY;
+    const newX = Math.round(dragStartPosX + dx);
+    const newY = Math.round(dragStartPosY + dy);
+    $('posX').value = newX;
+    $('posY').value = newY;
+    $('dragHint').textContent = `X: ${newX}  Y: ${newY}`;
+    // 直接渲染，不走防抖（拖拽必须丝滑）
+    if (csvData.length) updatePreview();
+    e.preventDefault();
+  } else {
+    // 光标样式提示
+    const decoHit = hitTestDecoration(coord.x, coord.y);
+    if (decoHit) {
+      previewBox.classList.add('can-drag');
+    } else if (hitTestText(coord.x, coord.y)) {
+      previewBox.classList.add('can-drag');
+    } else {
+      previewBox.classList.remove('can-drag');
+    }
+  }
+});
+
+// mouseup — 结束拖拽
+function endDrag() {
+  if (isDragging) {
+    isDragging = false;
+    previewBox.classList.remove('dragging');
+    $('dragHint').textContent = '拖拽文字或装饰元素调整位置';
+    pushHistory();
+  }
+  if (isDraggingDeco) {
+    isDraggingDeco = false;
+    previewBox.classList.remove('dragging');
+    $('dragHint').textContent = '拖拽文字或装饰元素调整位置';
+    saveDecorations();
+    pushHistory();
+  }
+}
+canvas.addEventListener('mouseup', endDrag);
+canvas.addEventListener('mouseleave', endDrag);
+
+// ===================== 主题切换 =====================
+// 嵌入黑猫智记AI：固定暗色，与宿主统一
+let currentTheme = 'dark';
+function applyTheme(theme) {
+  currentTheme = theme;
+  document.documentElement.setAttribute('data-theme', theme);
+}
+applyTheme(currentTheme);
+
+// ===================== 全屏预览 =====================
+let isFullscreen = false;
+
+function openFullscreen() {
+  if (!csvData.length || !bgImage) { showToast('请先导入数据并选择背景', 'warning'); return; }
+  isFullscreen = true;
+  const overlay = $('fullscreenOverlay');
+  overlay.classList.add('show');
+  renderFullscreen();
+  showToast('按 ESC 或点击关闭全屏预览', 'info', 2000);
+}
+
+function closeFullscreen() {
+  isFullscreen = false;
+  $('fullscreenOverlay').classList.remove('show');
+}
+
+function renderFullscreen() {
+  if (!isFullscreen || !csvData.length) return;
+  const item = csvData[currentIndex];
+  const canvas = $('fullscreenCanvas');
+  renderCanvas(item, canvas);
+  $('fsPageInfo').textContent = `${currentIndex + 1} / ${csvData.length}`;
+}
+
+$('fullscreenClose').addEventListener('click', closeFullscreen);
+$('fullscreenOverlay').addEventListener('click', (e) => {
+  if (e.target === $('fullscreenOverlay') || e.target === $('fullscreenCanvas')) {
+    // 点击画布不关闭，只关闭按钮和空白区域关闭
+  }
+});
+
+// 在预览区添加双击全屏
+$('previewBox').addEventListener('dblclick', openFullscreen);
+
+// ===================== 键盘快捷键 =====================
+document.addEventListener('keydown', (e) => {
+  // 如果正在输入框中，不处理快捷键
+  const tag = e.target.tagName.toLowerCase();
+  if (tag === 'input' || tag === 'textarea' || tag === 'select') return;
+
+  switch (e.key) {
+    case 'ArrowLeft':
+      e.preventDefault();
+      if (currentIndex > 0) { currentIndex--; updatePreview(); if (isFullscreen) renderFullscreen(); }
+      break;
+    case 'ArrowRight':
+      e.preventDefault();
+      if (currentIndex < csvData.length - 1) { currentIndex++; updatePreview(); if (isFullscreen) renderFullscreen(); }
+      break;
+    case 'f':
+    case 'F':
+      e.preventDefault();
+      if (isFullscreen) closeFullscreen(); else openFullscreen();
+      break;
+    case 'Escape':
+      if (isFullscreen) closeFullscreen();
+      break;
+  }
+
+  // Ctrl 组合键
+  if (e.ctrlKey || e.metaKey) {
+    if (e.key === 'g' || e.key === 'G') {
+      e.preventDefault();
+      $('generateBtn').click();
+    } else if (e.key === 's' || e.key === 'S') {
+      e.preventDefault();
+      $('downloadBtn').click();
+    }
+  }
+});
+
+// ===================== localStorage 持久化 =====================
+const SETTINGS_KEY = 'xhs-generator-settings';
+
+// 需要持久化的控件 ID 列表
+const persistIds = [
+  'fontFamily', 'fontSize', 'fontColor', 'strokeEnabled', 'strokeColor',
+  'boldEnabled', 'shadowEnabled', 'shadowColor', 'shadowX', 'shadowY', 'shadowBlur',
+  'textOpacity', 'textRotation',
+  'posX', 'posY', 'lineSpacing', 'textAlign',
+  'autoWrap', 'maxWidth',
+  'subEnabled', 'subFontFamily', 'subFontSize', 'subFontColor', 'subPosX', 'subPosY', 'subTextAlign', 'subBoldEnabled',
+  'watermarkEnabled', 'watermarkText', 'watermarkFontFamily', 'watermarkFontSize', 'watermarkColor', 'watermarkOpacity', 'watermarkRotation', 'watermarkPosition',
+  'exportFormat', 'jpgQuality', 'jpgBgColor',
+  'sizePreset', 'customWidth', 'customHeight'
+];
+
+// 保存当前设置到 localStorage
+function saveSettings() {
+  const settings = {};
+  persistIds.forEach(id => {
+    const el = $(id);
+    if (!el) return;
+    if (el.type === 'checkbox') settings[id] = el.checked;
+    else if (el.type === 'range' || el.type === 'number') settings[id] = el.value;
+    else settings[id] = el.value;
+  });
+  try {
+    localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
+  } catch (e) { /* 静默 */ }
+}
+
+// 从 localStorage 恢复设置
+function loadSettings() {
+  try {
+    const raw = localStorage.getItem(SETTINGS_KEY);
+    if (!raw) return;
+    const settings = JSON.parse(raw);
+    persistIds.forEach(id => {
+      if (settings[id] === undefined) return;
+      const el = $(id);
+      if (!el) return;
+      if (el.type === 'checkbox') el.checked = settings[id];
+      else el.value = settings[id];
+    });
+    // 恢复 JPG 选项显示状态
+    const isJpg = $('exportFormat').value === 'jpg';
+    $('jpgQualityRow').style.display = isJpg ? 'flex' : 'none';
+    $('jpgBgRow').style.display = isJpg ? 'flex' : 'none';
+    $('jpgQualityVal').textContent = $('jpgQuality').value + '%';
+  } catch (e) { /* 静默 */ }
+}
+
+// 监听所有持久化控件的变化，自动保存
+const debouncedSave = debounce(saveSettings, 300);
+persistIds.forEach(id => {
+  const el = $(id);
+  if (!el) return;
+  el.addEventListener('input', debouncedSave);
+  el.addEventListener('change', debouncedSave);
+});
+
+// 页面加载时恢复设置
+loadSettings();
+
+// ===================== 撤销/重做系统 =====================
+const MAX_HISTORY = 50;
+let history = [];
+let historyIndex = -1;
+let historyPaused = false; // 撤销/重做时暂停记录
+
+// 获取当前状态快照
+function captureSnapshot() {
+  const snapshot = {};
+  persistIds.forEach(id => {
+    const el = $(id);
+    if (!el) return;
+    if (el.type === 'checkbox') snapshot[id] = el.checked;
+    else snapshot[id] = el.value;
+  });
+  snapshot._currentIndex = currentIndex;
+  return snapshot;
+}
+
+// 应用快照
+function applySnapshot(snapshot) {
+  historyPaused = true;
+  persistIds.forEach(id => {
+    if (snapshot[id] === undefined) return;
+    const el = $(id);
+    if (!el) return;
+    if (el.type === 'checkbox') el.checked = snapshot[id];
+    else el.value = snapshot[id];
+  });
+  // 恢复页码
+  if (snapshot._currentIndex !== undefined && csvData.length > 0) {
+    currentIndex = Math.min(snapshot._currentIndex, csvData.length - 1);
+  }
+  // 恢复 JPG 选项显示状态
+  const isJpg = $('exportFormat').value === 'jpg';
+  $('jpgQualityRow').style.display = isJpg ? 'flex' : 'none';
+  $('jpgBgRow').style.display = isJpg ? 'flex' : 'none';
+  $('jpgQualityVal').textContent = $('jpgQuality').value + '%';
+  // 更新预览
+  if (csvData.length) updatePreview();
+  historyPaused = false;
+}
+
+// 记录一次操作（在关键操作后手动调用）
+function pushHistory() {
+  if (historyPaused) return;
+  const snapshot = captureSnapshot();
+  // 如果和上一条一样，跳过
+  if (history.length > 0 && JSON.stringify(history[historyIndex]) === JSON.stringify(snapshot)) return;
+  // 截断后面的历史
+  history = history.slice(0, historyIndex + 1);
+  history.push(snapshot);
+  if (history.length > MAX_HISTORY) history.shift();
+  historyIndex = history.length - 1;
+  updateUndoRedoUI();
+}
+
+// 撤销
+function undo() {
+  if (historyIndex <= 0) { showToast('没有更多可撤销的操作', 'info', 1500); return; }
+  historyIndex--;
+  applySnapshot(history[historyIndex]);
+  updateUndoRedoUI();
+  showToast('已撤销', 'info', 1000);
+}
+
+// 重做
+function redo() {
+  if (historyIndex >= history.length - 1) { showToast('没有更多可重做的操作', 'info', 1500); return; }
+  historyIndex++;
+  applySnapshot(history[historyIndex]);
+  updateUndoRedoUI();
+  showToast('已重做', 'info', 1000);
+}
+
+// 更新撤销/重做按钮状态
+function updateUndoRedoUI() {
+  const undoBtn = $('undoBtn');
+  const redoBtn = $('redoBtn');
+  if (undoBtn) undoBtn.disabled = historyIndex <= 0;
+  if (redoBtn) redoBtn.disabled = historyIndex >= history.length - 1;
+}
+
+// 初始化历史记录
+pushHistory();
+
+// 对关键操作记录历史（使用防抖避免频繁记录）
+const debouncedPushHistory = debounce(pushHistory, 500);
+persistIds.forEach(id => {
+  const el = $(id);
+  if (!el) return;
+  el.addEventListener('change', debouncedPushHistory);
+  el.addEventListener('input', debounce(pushHistory, 800));
+});
+
+// 拖拽结束后记录（覆盖原来的 endDragWithHistory）
+// 注意：endDrag 已包含 pushHistory，此处只需确保事件绑定正确
+// 移除旧的重新绑定，因为 endDrag 已经包含 pushHistory 调用
+// canvas 事件监听器已在上面绑定 endDrag
+
+// 键盘快捷键增加撤销/重做
+document.addEventListener('keydown', (e) => {
+  if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !e.shiftKey) {
+    e.preventDefault();
+    undo();
+  } else if ((e.ctrlKey || e.metaKey) && (e.key === 'y' || (e.key === 'z' && e.shiftKey))) {
+    e.preventDefault();
+    redo();
+  }
+});
+
+// ===================== 装饰元素：贴图系统 =====================
+
+// 贴图上传
+$('stickerInput').addEventListener('change', async (e) => {
+  const files = Array.from(e.target.files);
+  if (!files.length) return;
+  let addedCount = 0;
+  for (const file of files) {
+    try {
+      const dataUrl = await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = ev => resolve(ev.target.result);
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
+      const img = await loadImage(dataUrl);
+      const id = 'stk_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6);
+      // 默认宽度200，等比缩放
+      const scale = 200 / img.width;
+      stickers.push({
+        id, img, src: dataUrl, name: file.name,
+        x: 100, y: 100,
+        width: Math.round(img.width * scale),
+        height: Math.round(img.height * scale),
+        origWidth: img.width,
+        origHeight: img.height,
+        opacity: 1, rotation: 0
+      });
+      addedCount++;
+    } catch (err) {
+      showToast(`贴图 "${file.name}" 加载失败`, 'error');
+    }
+  }
+  if (addedCount > 0) {
+    renderStickerList();
+    if (csvData.length) updatePreview();
+    showToast(`已添加 ${addedCount} 张贴图`, 'success');
+    saveDecorations();
+  }
+  e.target.value = ''; // 允许重复上传
+});
+
+// 贴图拖拽上传
+const stickerDrop = $('stickerDropZone');
+stickerDrop.addEventListener('dragover', e => { e.preventDefault(); stickerDrop.classList.add('dragover'); });
+stickerDrop.addEventListener('dragleave', () => stickerDrop.classList.remove('dragover'));
+stickerDrop.addEventListener('drop', e => {
+  e.preventDefault();
+  stickerDrop.classList.remove('dragover');
+  const files = e.dataTransfer.files;
+  if (files.length) {
+    $('stickerInput').files = files;
+    $('stickerInput').dispatchEvent(new Event('change'));
+  }
+});
+
+// 渲染贴图列表
+function renderStickerList() {
+  const list = $('stickerList');
+  list.innerHTML = '';
+  stickers.forEach(st => {
+    const div = document.createElement('div');
+    div.className = 'deco-item' + (selectedDecoType === 'sticker' && selectedDecoId === st.id ? ' selected' : '');
+    div.innerHTML = `
+      <div class="deco-preview"><img src="${st.src}" alt="贴图"></div>
+      <div class="deco-name">${st.name}</div>
+      <button class="deco-remove" title="删除">&times;</button>
+    `;
+    div.addEventListener('click', (e) => {
+      if (e.target.classList.contains('deco-remove')) return;
+      selectDeco('sticker', st.id);
+    });
+    div.querySelector('.deco-remove').addEventListener('click', (e) => {
+      e.stopPropagation();
+      removeSticker(st.id);
+    });
+    list.appendChild(div);
+  });
+}
+
+// 删除贴图
+function removeSticker(id) {
+  stickers = stickers.filter(s => s.id !== id);
+  if (selectedDecoType === 'sticker' && selectedDecoId === id) {
+    selectedDecoType = null;
+    selectedDecoId = null;
+    $('stickerProps').classList.remove('show');
+  }
+  renderStickerList();
+  if (csvData.length) updatePreview();
+  saveDecorations();
+  showToast('已删除贴图', 'info');
+}
+
+// 选择装饰元素
+function selectDeco(type, id) {
+  selectedDecoType = type;
+  selectedDecoId = id;
+
+  if (type === 'sticker') {
+    const st = stickers.find(s => s.id === id);
+    if (!st) return;
+    $('stickerProps').classList.add('show');
+    $('emojiProps').classList.remove('show');
+    $('stickerPosX').value = st.x;
+    $('stickerPosY').value = st.y;
+    $('stickerWidth').value = st.width;
+    $('stickerOpacity').value = Math.round(st.opacity * 100);
+    $('stickerOpacityVal').textContent = Math.round(st.opacity * 100) + '%';
+    $('stickerRotation').value = st.rotation;
+    $('stickerKeepRatio').checked = true;
+  } else if (type === 'emoji') {
+    const em = emojis.find(e => e.id === id);
+    if (!em) return;
+    $('emojiProps').classList.add('show');
+    $('stickerProps').classList.remove('show');
+    $('emojiPosX').value = em.x;
+    $('emojiPosY').value = em.y;
+    $('emojiSize').value = em.size;
+    $('emojiOpacity').value = Math.round(em.opacity * 100);
+    $('emojiOpacityVal').textContent = Math.round(em.opacity * 100) + '%';
+    $('emojiRotation').value = em.rotation;
+  }
+
+  renderStickerList();
+  renderEmojiList();
+  if (csvData.length) updatePreview();
+}
+
+// 贴图属性变更
+['stickerPosX', 'stickerPosY', 'stickerWidth', 'stickerOpacity', 'stickerRotation'].forEach(id => {
+  $(id).addEventListener('input', () => {
+    if (selectedDecoType !== 'sticker' || !selectedDecoId) return;
+    const st = stickers.find(s => s.id === selectedDecoId);
+    if (!st) return;
+    st.x = parseInt($('stickerPosX').value) || 0;
+    st.y = parseInt($('stickerPosY').value) || 0;
+    const newWidth = parseInt($('stickerWidth').value) || 200;
+    if ($('stickerKeepRatio').checked && st.origWidth > 0) {
+      const ratio = st.origHeight / st.origWidth;
+      st.width = newWidth;
+      st.height = Math.round(newWidth * ratio);
+    } else {
+      st.width = newWidth;
+    }
+    st.opacity = (parseInt($('stickerOpacity').value) || 100) / 100;
+    st.rotation = parseInt($('stickerRotation').value) || 0;
+    $('stickerOpacityVal').textContent = $('stickerOpacity').value + '%';
+    if (csvData.length) updatePreview();
+  });
+  $(id).addEventListener('change', () => {
+    saveDecorations();
+    pushHistory();
+  });
+});
+
+// ===================== 装饰元素：Emoji 系统 =====================
+
+// Emoji 分类数据
+const emojiCategories = [
+  { label: '常用', emojis: ['😀','😁','😂','🤣','😃','😄','😅','😆','😉','😊','😋','😎','😍','🥰','😘','😗','😙','😚','🙂','🤗','🤩','🤔','😐','😑','😶','🙄','😏','😣','😥','😮','🤐','😯','😪','😫','😴','😌','😛','😜','😝','🤤','😒','😓','😔','😕','🙃','🤑','😲','🙁','😖','😞','😟','😤','😢','😭','😦','😧','😨','😩','🤯','😬','😰','😱','😳','🤪','😵','😡','😠','🤬','😷','🤒','🤕','🤢','🤮','🥴','😇','🥳','🥺','🤠','🤡','🤥','🤫','🤭','🧐','🤓','😈','👿'] },
+  { label: '手势', emojis: ['👍','👎','👌','✌️','🤞','🤟','🤘','🤙','👋','🤚','✋','🖖','👏','🙌','🤝','🙏','💪','🤛','🤜','🖕'] },
+  { label: '心形', emojis: ['❤️','🧡','💛','💚','💙','💜','🖤','🤍','🤎','💔','❣️','💕','💞','💓','💗','💖','💘','💝','💟','♥️'] },
+  { label: '自然', emojis: ['🔥','⭐','🌟','✨','💫','🌈','☀️','🌙','⛅','🌊','🌸','🌺','🌻','🌹','🍀','🍁','🍂','🍃','🌸','💐'] },
+  { label: '物品', emojis: ['🎉','🎊','🎈','🎁','🎀','🏆','🥇','💯','💰','💎','📱','💻','📷','🎵','🎶','🎸','🎤','🎧','📚','✏️'] },
+  { label: '食物', emojis: ['🍎','🍊','🍋','🍇','🍓','🍒','🍑','🥝','🍌','🥑','🍕','🍔','🍟','🌭','🧁','🍰','🎂','🍩','🍪','☕'] },
+  { label: '符号', emojis: ['✅','❌','⭕','❗','❓','⚠️','♻️','🔴','🟠','🟡','🟢','🔵','🟣','⬛','⬜','🔶','🔷','🔸','🔹'] },
+];
+
+// 初始化 Emoji 选择器
+function initEmojiGrid() {
+  const grid = $('emojiGrid');
+  grid.innerHTML = '';
+  emojiCategories.forEach(cat => {
+    // 分类标签
+    const label = document.createElement('div');
+    label.className = 'emoji-category-label';
+    label.textContent = cat.label;
+    grid.appendChild(label);
+    // Emoji 按钮
+    cat.emojis.forEach(emoji => {
+      const btn = document.createElement('button');
+      btn.className = 'emoji-btn';
+      btn.textContent = emoji;
+      btn.title = emoji;
+      btn.addEventListener('click', () => addEmoji(emoji));
+      grid.appendChild(btn);
+    });
+  });
+}
+initEmojiGrid();
+
+// 添加 Emoji
+function addEmoji(emoji) {
+  const id = 'emj_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6);
+  emojis.push({
+    id, emoji,
+    x: 100, y: 100,
+    size: 80,
+    opacity: 1, rotation: 0
+  });
+  renderEmojiList();
+  selectDeco('emoji', id);
+  if (csvData.length) updatePreview();
+  saveDecorations();
+  showToast(`已添加表情 ${emoji}`, 'success', 1500);
+}
+
+// 渲染 Emoji 列表
+function renderEmojiList() {
+  const list = $('emojiList');
+  list.innerHTML = '';
+  emojis.forEach(em => {
+    const div = document.createElement('div');
+    div.className = 'deco-item' + (selectedDecoType === 'emoji' && selectedDecoId === em.id ? ' selected' : '');
+    div.innerHTML = `
+      <div class="deco-preview" style="font-size:24px;">${em.emoji}</div>
+      <div class="deco-name">${em.emoji} (${em.size}px)</div>
+      <button class="deco-remove" title="删除">&times;</button>
+    `;
+    div.addEventListener('click', (e) => {
+      if (e.target.classList.contains('deco-remove')) return;
+      selectDeco('emoji', em.id);
+    });
+    div.querySelector('.deco-remove').addEventListener('click', (e) => {
+      e.stopPropagation();
+      removeEmoji(em.id);
+    });
+    list.appendChild(div);
+  });
+}
+
+// 删除 Emoji
+function removeEmoji(id) {
+  emojis = emojis.filter(e => e.id !== id);
+  if (selectedDecoType === 'emoji' && selectedDecoId === id) {
+    selectedDecoType = null;
+    selectedDecoId = null;
+    $('emojiProps').classList.remove('show');
+  }
+  renderEmojiList();
+  if (csvData.length) updatePreview();
+  saveDecorations();
+  showToast('已删除表情', 'info');
+}
+
+// Emoji 属性变更
+['emojiPosX', 'emojiPosY', 'emojiSize', 'emojiOpacity', 'emojiRotation'].forEach(id => {
+  $(id).addEventListener('input', () => {
+    if (selectedDecoType !== 'emoji' || !selectedDecoId) return;
+    const em = emojis.find(e => e.id === selectedDecoId);
+    if (!em) return;
+    em.x = parseInt($('emojiPosX').value) || 0;
+    em.y = parseInt($('emojiPosY').value) || 0;
+    em.size = parseInt($('emojiSize').value) || 80;
+    em.opacity = (parseInt($('emojiOpacity').value) || 100) / 100;
+    em.rotation = parseInt($('emojiRotation').value) || 0;
+    $('emojiOpacityVal').textContent = $('emojiOpacity').value + '%';
+    if (csvData.length) updatePreview();
+  });
+  $(id).addEventListener('change', () => {
+    saveDecorations();
+    pushHistory();
+  });
+});
+
+// ===================== 装饰元素：Canvas 拖拽 =====================
+
+// 判断点击是否命中贴图（从上层到下层检测）
+function hitTestSticker(mx, my) {
+  // 逆序检测（后添加的在上层）
+  for (let i = stickers.length - 1; i >= 0; i--) {
+    const st = stickers[i];
+    // 考虑旋转后的命中检测：将鼠标坐标反向旋转到贴图本地坐标系
+    const cx = st.x + st.width / 2;
+    const cy = st.y + st.height / 2;
+    const rad = -st.rotation * Math.PI / 180;
+    const dx = mx - cx;
+    const dy = my - cy;
+    const localX = dx * Math.cos(rad) - dy * Math.sin(rad) + st.width / 2;
+    const localY = dx * Math.sin(rad) + dy * Math.cos(rad) + st.height / 2;
+    const padding = 15;
+    if (localX >= -padding && localX <= st.width + padding && localY >= -padding && localY <= st.height + padding) {
+      return st;
+    }
+  }
+  return null;
+}
+
+// 判断点击是否命中 Emoji（从上层到下层检测）
+function hitTestEmoji(mx, my) {
+  for (let i = emojis.length - 1; i >= 0; i--) {
+    const em = emojis[i];
+    const cx = em.x + em.size / 2;
+    const cy = em.y + em.size / 2;
+    const rad = -em.rotation * Math.PI / 180;
+    const dx = mx - cx;
+    const dy = my - cy;
+    const localX = dx * Math.cos(rad) - dy * Math.sin(rad) + em.size / 2;
+    const localY = dx * Math.sin(rad) + dy * Math.cos(rad) + em.size / 2;
+    const padding = 15;
+    if (localX >= -padding && localX <= em.size + padding && localY >= -padding && localY <= em.size + padding) {
+      return em;
+    }
+  }
+  return null;
+}
+
+// 综合命中检测：返回 { type, item } 或 null
+function hitTestDecoration(mx, my) {
+  // Emoji 在贴图上层
+  const em = hitTestEmoji(mx, my);
+  if (em) return { type: 'emoji', item: em };
+  const st = hitTestSticker(mx, my);
+  if (st) return { type: 'sticker', item: st };
+  return null;
+}
+
+// ===================== 装饰元素：localStorage 持久化 =====================
+const DECO_KEY = 'xhs-generator-decorations';
+
+function saveDecorations() {
+  try {
+    const data = {
+      stickers: stickers.map(s => ({
+        id: s.id, src: s.src, name: s.name,
+        x: s.x, y: s.y, width: s.width, height: s.height,
+        origWidth: s.origWidth, origHeight: s.origHeight,
+        opacity: s.opacity, rotation: s.rotation
+      })),
+      emojis: emojis.map(e => ({
+        id: e.id, emoji: e.emoji,
+        x: e.x, y: e.y, size: e.size,
+        opacity: e.opacity, rotation: e.rotation
+      }))
+    };
+    localStorage.setItem(DECO_KEY, JSON.stringify(data));
+  } catch (e) { /* 静默 */ }
+}
+
+async function loadDecorations() {
+  try {
+    const raw = localStorage.getItem(DECO_KEY);
+    if (!raw) return;
+    const data = JSON.parse(raw);
+
+    // 恢复贴图
+    if (data.stickers && data.stickers.length) {
+      for (const s of data.stickers) {
+        try {
+          const img = await loadImage(s.src);
+          stickers.push({
+            id: s.id, img, src: s.src, name: s.name,
+            x: s.x, y: s.y, width: s.width, height: s.height,
+            origWidth: s.origWidth, origHeight: s.origHeight,
+            opacity: s.opacity, rotation: s.rotation
+          });
+        } catch (e) { /* 加载失败跳过 */ }
+      }
+      renderStickerList();
+    }
+
+    // 恢复 Emoji
+    if (data.emojis && data.emojis.length) {
+      emojis = data.emojis;
+      renderEmojiList();
+    }
+
+    if (csvData.length) updatePreview();
+  } catch (e) { /* 静默 */ }
+}
+
+// 页面加载时恢复装饰元素
+loadDecorations();
+
+// ===================== 初始化 =====================
+console.log('批量制作原创爆款素材 - 已加载');
+</script>
+</body>
+</html>

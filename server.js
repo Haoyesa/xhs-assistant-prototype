@@ -489,9 +489,9 @@ const server = http.createServer(async (req, res) => {
       return sendFile(res, path.join(PUBLIC, rel));
     }
 
-    // 批量作图：直接读取外部参考页面（iframe 内加载，隔离全局变量冲突）
+    // 批量作图：读取项目内置副本（public/generator.html，iframe 内加载隔离全局变量冲突）
     if (method === 'GET' && p === '/generator') {
-      return sendFile(res, 'D:\\project\\xhs-generator\\index.html');
+      return sendFile(res, path.join(PUBLIC, 'generator.html'));
     }
 
     // 设置

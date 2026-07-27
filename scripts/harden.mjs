@@ -118,6 +118,12 @@ for (const root of ['server.js', 'qianfan-scraper.js', 'cdp-publisher.js', 'imag
 syncFresh(path.join(ROOT, 'electron'), path.join(SRC, 'electron'));
 // 前端（桌面 GUI）也打包在 asar 内的 public/，需同步最新版本，否则 UI 改动不会进 EXE
 syncFresh(path.join(ROOT, 'public'), path.join(SRC, 'public'));
+// 新增的 public 静态资源（如 generator.html）syncFresh 只覆盖已存在文件、不会带进来，此处显式复制
+for (const f of ['generator.html']) {
+  const sp = path.join(ROOT, 'public', f);
+  const dp = path.join(SRC, 'public', f);
+  if (fs.existsSync(sp)) fs.copyFileSync(sp, dp);
+}
 
 console.log('--- 3) drop obfuscated files into asar tree ---');
 for (const t of TARGETS) {
