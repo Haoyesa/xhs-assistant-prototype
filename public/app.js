@@ -333,6 +333,7 @@ async function loadSettings() {
   $('#setBrowserUrl').value = s.cdpBrowserUrl || '';
   $('#setChromePath').value = s.cdpChromePath || '';
   $('#setImagesRoot').value = s.imagesRoot || '';
+  $('#setCsvExportDir').value = s.csvExportDir || '';
   $('#setGenTitle').checked = !!s.generateTitle;
   $('#setGenContent').checked = !!s.generateContent;
   $('#setGenTopics').checked = !!s.enableAiTopics;
@@ -366,6 +367,7 @@ $('#saveSetBtn').addEventListener('click', async () => {
     topicsCount: +$('#setTopicsCount').value, randomEmoji: +$('#setEmoji').value, autoSubmit: $('#setAutoSubmit').checked,
     publishIntervalSeconds: +$('#setInterval').value, publishIntervalRandomDelaySeconds: +$('#setRandomDelay').value, singleProductRepeatLimit: +$('#setRepeat').value,
     titlePrompt: $('#setTitlePrompt').value, contentPrompt: $('#setContentPrompt').value, topicsPrompt: $('#setTopicsPrompt').value,
+    imagesRoot: $('#setImagesRoot').value, csvExportDir: $('#setCsvExportDir').value,
   });
   $('#setMsg').textContent = '✅ 已保存';
   setTimeout(() => ($('#setMsg').textContent = ''), 2000);

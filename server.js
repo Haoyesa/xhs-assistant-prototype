@@ -140,7 +140,7 @@ const DEFAULT_SETTINGS = {
   publishIntervalRandomDelaySeconds: 200,
   singleProductRepeatLimit: 0,
   imagesRoot: '',
-  csvExportDir: '', // 商品 CSV 导出目录；空则默认 Desktop/小红书开店/csv
+  csvExportDir: '', // 商品 CSV 导出目录；空则默认 数据目录/csv
 };
 
 let lastNextPublishAt = 0; // 插件上报的「下一篇最早发布时刻(ms)」，供桌面批量发布页做倒计时展示
@@ -460,13 +460,15 @@ function sanitizeFileName(name) {
   return s || '商品导出';
 }
 function resolveCsvExportDir(settings) {
-  let dir = String((settings && settings.csvExportDir) || '').trim();
-  if (!dir) {
-    const home = process.env.USERPROFILE || process.env.HOME || '.';
-    dir = path.join(home, 'Desktop', '小红书开店', 'csv');
+  const s = (settings && settings.csvExportDir) || '';
+  if (s && s.trim()) return path.resolve(s.trim());
+  // 与图片根目录同规则：绿色免安装版用 exe 同级目录下的 csv/，node 直接跑时回退到 DATA/csv
+  if (process.versions && process.versions.electron) {
+    const root = path.join(path.dirname(process.execPath), 'csv');
+    console.log('[XHS] CSV 导出目录(默认):', root);
+    return root;
   }
-  try { fs.mkdirSync(dir, { recursive: true }); } catch (e) { /* ignore */ }
-  return dir;
+  return path.join(DATA, 'csv');
 }
 
 const server = http.createServer(async (req, res) => {
@@ -860,7 +862,7 @@ const server = http.createServer(async (req, res) => {
       primeImages(added.flatMap((p) => (p.images && p.images.length ? p.images : (p.image ? [p.image] : []))), UPLOADS);
       return sendJSON(res, 200, { ok: true, added: added.length, updated, products: added });
     }
-    // 导出当页商品 id+标题 为本地 CSV（落盘到 csvExportDir，默认 Desktop/小红书开店/csv）
+    // 导出当页商品 id+标题 为本地 CSV（落盘到 csvExportDir，默认 数据目录/csv）
     if (p === '/api/ext/export-csv' && method === 'POST') {
       const body = await readBody(req);
       const rows = Array.isArray(body.rows) ? body.rows.slice(0, 20000) : [];
