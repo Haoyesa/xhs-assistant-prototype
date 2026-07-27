@@ -17,7 +17,7 @@ const DEFAULTS = {
 };
 
 // 创作者图文发布页（每篇都开一个全新的标签页，地址固定为此）
-const CREATOR_URL = 'https://creator.xiaohongshu.com/publish/publish?source=&published=true&from=tab_switch';
+const CREATOR_URL = 'https://creator.xiaohongshu.com/publish/publish?source=&published=true&from=tab_switch&target=image';
 
 function storageGet() {
   return new Promise((resolve) => {
@@ -167,9 +167,10 @@ async function fillTab(tabId) {
     const next = await pullNext();
     if (!next || !next.ok) { busy = false; return; }
     if (!next.task) {
-      // 队列已空：停掉调度
+      // 队列已空：停掉调度并清除倒计时（storage + 后端），两侧不再显示读秒
       busy = false;
       schedulerActive = false;
+      clearSchedule();
       broadcast({ kind: 'idle', msg: '队列已空，没有待发任务了 ✓' });
       return;
     }
@@ -265,8 +266,20 @@ function resolveCurrent(kind, detail, reportTabId, delayMs) {
 }
 
 // 等配置延时后开下一篇（用 nextAllowedAt 保证延时，并每次 SW 唤醒都重新 arm 定时器，抗 SW 回收）
-function scheduleNext() {
+async function scheduleNext() {
   if (!schedulerActive || paused) return;
+  // 先确认还有待发任务，避免「最后一篇已发完」却写出一条虚假的「下一篇」倒计时（两侧误读秒）
+  let hasPending = true;
+  try {
+    const q = await api('/api/batch/queue', { method: 'GET' });
+    hasPending = !!(q && q.tasks && q.tasks.some((t) => t.status === 'queued' || t.status === 'picked'));
+  } catch (e) { hasPending = true; } // 查不到时保守继续，最终由 fillTab 空路径兜底清除
+  if (!hasPending) {
+    schedulerActive = false;
+    clearSchedule();
+    broadcast({ kind: 'idle', msg: '队列已空，没有待发任务了 ✓' });
+    return;
+  }
   nextAllowedAt = Date.now() + lastDelayMs;
   // 写入 storage，供创作者页 Toast 显示「下一篇倒计时」（同时持久化调度状态，抗 SW 回收）
   chrome.storage.local.set({ nextPublishAt: nextAllowedAt }).catch(() => {});
@@ -275,6 +288,12 @@ function scheduleNext() {
   notifyServerSchedule(nextAllowedAt);
   // 真正挂定时器（每次都会重新计算剩余时间，SW 回收后由 pump/schedulerStep 重新 arm）
   armNextTimer();
+}
+// 清除「下一篇倒计时」：重置内存态、清 storage、上报后端 0（两侧都不再显示读秒）
+function clearSchedule() {
+  nextAllowedAt = 0;
+  chrome.storage.local.set({ nextPublishAt: 0 }).catch(() => {});
+  notifyServerSchedule(0);
 }
 // 把「下一篇最早发布时刻」上报给后端（桌面批量发布页需要它做倒计时）
 async function notifyServerSchedule(at) {

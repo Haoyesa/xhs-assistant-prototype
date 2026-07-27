@@ -294,23 +294,40 @@ function fileNameOf(u) {
 // 在页面中查找图片上传控件（优先可见的）
 function findFileInput() {
   const inputs = [...document.querySelectorAll('input[type="file"]')];
-  const vis = inputs.find((el) => el.offsetParent !== null);
-  return vis || inputs[0] || null;
+  if (!inputs.length) return null;
+  // 小红书笔记图片上传框通常是 accept 含 image 且 multiple 的隐藏 input（覆盖在「上传图片」拖拽区之上）。
+  // 优先选「multiple + accept 含 image」的笔记上传框；它即使被视觉隐藏，正是 XHS 监听上传 change 事件的目标。
+  const imageInputs = inputs.filter((el) => (el.getAttribute('accept') || '').toLowerCase().includes('image'));
+  const cand = imageInputs.length ? imageInputs : inputs;
+  const multi = cand.find((el) => el.multiple);
+  if (multi) return multi;
+  const vis = cand.find((el) => el.offsetParent !== null);
+  // 都没命中就用第一个（兜底）
+  return vis || cand[0];
 }
 async function injectImages(urls, serverUrl, fileInput) {
-  if (!urls || !urls.length) return { ok: true, skipped: true };
+  if (!urls || !urls.length) {
+    console.log('[XHS] injectImages: 任务无图片（images 为空）。小红书图文笔记须至少 1 张图，上传区不渲染则标题/正文框不会出现');
+    return { ok: true, skipped: true, noImages: true };
+  }
   // 同一任务图片已注入过则跳过（防止重复下发 / 重复执行导致同一张图被加两次）
   const taskId = window.__xhsCurrentTaskId;
   if (taskId && window.__xhsInjected && window.__xhsInjected.has(taskId)) {
+    console.log('[XHS] injectImages: 本任务图片已注入，跳过重复注入');
     return { ok: true, skipped: true, detail: '本任务图片已注入，跳过重复注入' };
   }
   let input = fileInput || findFileInput();
+  console.log('[XHS] injectImages: 初始 fileInput=', input ? (input.tagName + (input.multiple ? '[multiple]' : '') + ' .' + (input.getAttribute('class') || '').slice(0, 30)) : 'null', 'accept=', input ? (input.getAttribute('accept') || '') : '-');
   // 上传区可能尚未渲染：轮询等待 file input 出现（最多 10s）
   if (!input) {
     const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
     for (let i = 0; i < 20; i++) { await sleep(500); input = findFileInput(); if (input) break; }
   }
-  if (!input) return { ok: false, detail: '未找到图片上传控件（请确认已处在「图文」上传模式）' };
+  if (!input) {
+    console.log('[XHS] injectImages: 未找到图片上传控件（请确认已处在「图文」上传模式，URL 需带 target=image）');
+    return { ok: false, detail: '未找到图片上传控件（请确认已处在「图文」上传模式）' };
+  }
+  console.log('[XHS] injectImages: 选用上传框=', input.tagName, 'multiple=', input.multiple, 'accept=', input.getAttribute('accept') || '', 'class=', (input.getAttribute('class') || '').slice(0, 40), 'serverUrl=', serverUrl || '-', 'urls=', urls.length);
   const base = (serverUrl || '').replace(/\/+$/, '');
   const files = [];
   const fetchWithTimeout = (u, opts, ms) => {
@@ -323,28 +340,43 @@ async function injectImages(urls, serverUrl, fileInput) {
     const proxied = isLocalServed ? u : (base ? `${base}/api/image?url=${encodeURIComponent(u)}` : u);
     try {
       const r = await fetchWithTimeout(proxied, { mode: 'cors' }, 8000);
-      if (!r.ok) continue;
+      if (!r.ok) { console.log('[XHS] injectImages: 拉取失败', r.status, String(u).slice(0, 60)); continue; }
       const blob = await r.blob();
       const rawName = fileNameOf(u);
       const ext = (rawName.includes('.') ? rawName.split('.').pop() : 'jpg').slice(0, 8).toLowerCase();
       const name = ((rawName.replace(/\.[^.]+$/, '') || 'img').slice(0, 40)) + '.' + ext;
       files.push(new File([blob], name, { type: blob.type || 'image/jpeg' }));
-    } catch { /* 跳过单张失败/超时 */ }
+      console.log('[XHS] injectImages: 已拉取', files.length, name, blob.size, 'bytes');
+    } catch (e) { console.log('[XHS] injectImages: 拉取异常', String(u).slice(0, 60), e.message); /* 跳过单张失败/超时 */ }
   }
-  if (!files.length) return { ok: false, detail: '图片经代理仍拉取失败，请手动添加' };
+  if (!files.length) {
+    console.log('[XHS] injectImages: 没有任何图片拉取成功（代理/网络/防盗链问题），请手动添加');
+    return { ok: false, detail: '图片经代理仍拉取失败，请手动添加' };
+  }
   const dt = new DataTransfer();
   files.forEach((f) => dt.items.add(f));
   try {
     const desc = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'files');
     if (!desc || !desc.set) {
-      fileInput.files = dt.files;
+      input.files = dt.files;
     } else {
-      desc.set.call(fileInput, dt.files);
+      desc.set.call(input, dt.files);
     }
-    fileInput.dispatchEvent(new Event('change', { bubbles: true }));
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+    console.log('[XHS] injectImages: 已注入', files.length, '张并触发 change 事件');
     if (taskId) { (window.__xhsInjected = window.__xhsInjected || new Set()).add(taskId); }
-    return { ok: true, count: files.length };
+    // 注入后验证：轮询等待标题/正文表单出现（XHS 上传成功后才渲染）。最多 20s。
+    const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+    let appeared = false;
+    for (let i = 0; i < 40; i++) {
+      const f = allFields();
+      if (f.length) { appeared = true; console.log('[XHS] injectImages: 注入后表单已渲染，可见字段', f.length, '个'); break; }
+      await sleep(500);
+    }
+    if (!appeared) console.log('[XHS] injectImages: 注入后 20s 表单仍未渲染（上传可能未生效，标题/正文将无法定位）');
+    return { ok: true, count: files.length, formAppeared: appeared };
   } catch (e) {
+    console.log('[XHS] injectImages: 注入异常', e.message);
     return { ok: false, detail: '注入失败：' + e.message };
   }
 }
@@ -1522,7 +1554,7 @@ async function autoPublish(status, summary, task) {
 
 async function fillTask(task, autoSubmit, serverUrl, humanTyping = true) {
   const status = (window.__xhsHelper?.status) || (() => {});
-  console.log('[XHS] fillTask 开始 task=', (task.title || '').slice(0, 24), 'bodyLen=', (task.body || '').length, 'autoSubmit=', autoSubmit, 'humanTyping=', humanTyping);
+  console.log('[XHS] fillTask 开始 task=', (task.title || '').slice(0, 24), 'bodyLen=', (task.body || '').length, 'autoSubmit=', autoSubmit, 'humanTyping=', humanTyping, 'images=', Array.isArray(task.images) ? task.images.length : 0, 'firstImg=', Array.isArray(task.images) && task.images[0] ? String(task.images[0]).slice(0, 80) : '-', 'serverUrl=', serverUrl || '-');
   const FILL_TOTAL_MS = 150 * 1000;
   const withDeadline = (p, ms, label) => Promise.race([
     p,
@@ -1548,7 +1580,9 @@ async function fillTask(task, autoSubmit, serverUrl, humanTyping = true) {
       status('正在准备上传区并注入图片…');
       const uploadInput = await ensureUploadReady(status);
       const img = await injectImages(task.images, serverUrl, uploadInput);
-      if (!img.ok && !img.skipped) status('⚠ ' + (img.detail || '图片注入失败'));
+      if (img.noImages) status('⚠ 该笔记无图片：小红书图文必须至少 1 张图，请回到创建笔记处补充图片/封面图');
+      else if (!img.ok && !img.skipped) status('⚠ ' + (img.detail || '图片注入失败'));
+      else if (img.ok && img.count) status(`已注入 ${img.count} 张图片` + (img.formAppeared ? '，表单已渲染' : '（表单未渲染，可能上传未生效）'));
 
       // 传图后等待标题/正文表单出现，再填充
       status('正在查找标题输入框…');

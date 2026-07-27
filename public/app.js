@@ -1,7 +1,7 @@
 // app.js — 前端逻辑
 const $ = (s) => document.querySelector(s);
 const $$ = (s) => Array.from(document.querySelectorAll(s));
-const api = async (method, path, body) => {
+const callApi = async (method, path, body) => {
   const opt = { method, headers: {} };
   if (body !== undefined) { opt.headers['Content-Type'] = 'application/json'; opt.body = JSON.stringify(body); }
   const r = await fetch(path, opt);
@@ -18,6 +18,7 @@ const thumbStrip = (imgs) => (imgs && imgs.length)
 
 let pollTimer = null;
 let nextPublishAtAt = 0; // 插件上报的「下一篇最早发布时刻(ms)」，用于批量发布页倒计时
+let queueHasPending = false; // 队列是否还有 queued/picked 待发任务（用于决定是否显示倒计时）
 
 // ---- 标签页 ----
 const PAGE_TITLES = { products: '采集商品', batch: '批量发布', history: '历史', settings: '设置' };
@@ -40,18 +41,24 @@ function setConn(kind, text) {
   if (txt) txt.textContent = text;
 }
 async function checkConn() {
+  const url = (location.origin || 'http://127.0.0.1:5199') + '/api/settings';
   try {
-    const r = await fetch('/api/settings');
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 6000);
+    const r = await fetch(url, { signal: ctrl.signal });
+    clearTimeout(timer);
     if (r.ok) setConn('ok', '后端已连接');
     else setConn('bad', '后端异常（HTTP ' + r.status + '）');
-  } catch {
-    setConn('bad', '后端未连接 · 检查端口 5199 是否被占用');
+  } catch (e) {
+    const reason = e && e.name === 'AbortError' ? '请求超时(6s)' : (e && e.message ? e.message : String(e));
+    setConn('bad', '连接失败：' + reason + ' ｜ ' + url);
+    console.error('[checkConn] fetch 失败:', e, 'url=', url, 'origin=', location.origin);
   }
 }
 async function loadStats() {
   try {
     const [products, queue, history] = await Promise.all([
-      api('GET', '/api/products'), api('GET', '/api/batch/queue'), api('GET', '/api/history'),
+      callApi('GET', '/api/products'), callApi('GET', '/api/batch/queue'), callApi('GET', '/api/history'),
     ]);
     const tasks = queue.tasks || [];
     const queued = tasks.filter((t) => ['queued', 'picked', 'running', 'submitting', 'waiting_submit', 'manual_hold', 'verify_result'].includes(t.status)).length;
@@ -65,7 +72,8 @@ async function loadStats() {
 }
 // 每隔一段时间刷新连接与统计
 setInterval(() => { checkConn(); if ($('.tab.active')?.dataset.tab !== 'settings') loadStats(); }, 8000);
-// 打开即立即探一次连接，避免一直停在「连接中…」且能立刻暴露真实错误
+// 打开即立即探一次连接，并先给出「检测中」状态，避免一直停在「连接中…」且能立刻暴露真实错误
+setConn('connecting', '正在检测后端连接…');
 checkConn();
 
 // ---- Toast ----
@@ -82,7 +90,7 @@ function toast(text, kind = '') {
 // ---- 选品 ----
 const SRC_LABEL = { extension: '插件', qianfan: '千帆', manual: '手动', import: '导入' };
 async function loadProducts() {
-  const list = await api('GET', '/api/products');
+  const list = await callApi('GET', '/api/products');
   $('#prodCount').textContent = list.length;
   if (!list.length) {
     $('#productList').innerHTML = '<div class="empty"><span class="em">📦</span>商品库还是空的。<br/>在千帆页用插件「采集本页商品」，或上方手动/导入添加。</div>';
@@ -100,20 +108,20 @@ async function loadProducts() {
       </div>
     </div>`).join('');
   $$('#productList .del').forEach((b) => b.addEventListener('click', async () => {
-    await api('POST', `/api/products/${b.dataset.id}/delete`); loadProducts();
+    await callApi('POST', `/api/products/${b.dataset.id}/delete`); loadProducts();
   }));
 }
 
 $('#fetchQianfanBtn').addEventListener('click', async () => {
   $('#fetchMsg').textContent = '抓取中…';
-  const r = await api('POST', '/api/qianfan/fetch', {});
+  const r = await callApi('POST', '/api/qianfan/fetch', {});
   $('#fetchMsg').textContent = r.ok ? `✅ 抓到 ${r.count} 个商品` : '❌ ' + (r.detail || '失败');
   if (r.ok) { loadProducts(); toast(`已抓取 ${r.count} 个商品`, 'ok'); }
   else toast('千帆抓取失败：' + (r.detail || ''), 'err');
 });
 
 $('#addProductBtn').addEventListener('click', async () => {
-  const r = await api('POST', '/api/products', {
+  const r = await callApi('POST', '/api/products', {
     itemId: $('#mItemId').value, productName: $('#mName').value, price: $('#mPrice').value,
     image: $('#mImage').value, description: $('#mDesc').value, source: 'manual',
   });
@@ -132,7 +140,7 @@ $('#importBtn').addEventListener('click', async () => {
       return { productName: (productName || '').trim(), price: (price || '').trim(), itemId: (itemId || '').trim() };
     });
   }
-  const r = await api('POST', '/api/products/import', { products });
+  const r = await callApi('POST', '/api/products/import', { products });
   $('#importMsg').textContent = `✅ 导入 ${r.added} 个`;
   toast(`已导入 ${r.added} 个商品`, 'ok'); loadProducts();
 });
@@ -143,7 +151,7 @@ $('#refreshProdBtn').addEventListener('click', () => { loadProducts(); loadStats
 async function loadImageFolders() {
   const box = $('#imageFolderList'); if (!box) return;
   let data;
-  try { data = await api('GET', '/api/images-folders'); } catch { return; }
+  try { data = await callApi('GET', '/api/images-folders'); } catch { return; }
   const prev = $('#imagesRootPreview'); if (prev) prev.textContent = data.root || '—';
   if (!data.exists) {
     box.innerHTML = `<div class="empty"><span class="em">📁</span>图片根目录不存在：<code>${esc(data.root)}</code><br/>请在软件数据目录建一个 <code>images/</code>，其下每个子文件夹（名即 id）放一组笔记图片，然后点「扫描图片文件夹」。</div>`;
@@ -169,7 +177,7 @@ async function loadImageFolders() {
 $('#scanAndImportBtn').addEventListener('click', async () => {
   $('#imgFolderMsg').textContent = '扫描并导入中…';
   await loadImageFolders();
-  const r = await api('POST', '/api/images-folders/import', { matchedOnly: true });
+  const r = await callApi('POST', '/api/images-folders/import', { matchedOnly: true });
   if (r.ok) {
     $('#imgFolderMsg').textContent = `✅ 已导入 ${r.created} 组（仅「有图片且匹配商品库」）并生成笔记入队`;
     toast(`已导入 ${r.created} 组图片笔记`, 'ok');
@@ -182,8 +190,9 @@ $('#scanAndImportBtn').addEventListener('click', async () => {
 
 // ---- 批量发布 ----
 async function loadQueue() {
-  const data = await api('GET', '/api/batch/queue');
+  const data = await callApi('GET', '/api/batch/queue');
   const tasks = data.tasks;
+  queueHasPending = !!(tasks && tasks.some((t) => t.status === 'queued' || t.status === 'picked'));
   nextPublishAtAt = data.nextPublishAt || 0;
   renderCountdown();
   $('#queueList').innerHTML = tasks.length ? tasks.map((t) => `
@@ -196,7 +205,7 @@ async function loadQueue() {
       ${t.status === 'queued' ? `<button class="mini cancel" data-id="${t.id}">取消</button>` : ''}
     </div>`).join('') : '<div class="empty"><span class="em">🚀</span>队列为空。<br/>去「采集商品」页的本地图片文件夹扫描并导入生成笔记。</div>';
   $$('#queueList .cancel').forEach((b) => b.addEventListener('click', async () => {
-    await api('POST', `/api/batch/${b.dataset.id}/cancel`); loadQueue();
+    await callApi('POST', `/api/batch/${b.dataset.id}/cancel`); loadQueue();
   }));
 }
 function startPoll() { stopPoll(); loadQueue(); pollTimer = setInterval(loadQueue, 2000); }
@@ -211,6 +220,14 @@ function fmtCountdown(ms) {
 function renderCountdown() {
   const el = document.getElementById('nextCountdown');
   if (!el) return;
+  // 队列已空（无待发任务）：不再显示倒计时
+  if (!queueHasPending) {
+    el.style.display = 'none';
+    el.textContent = '';
+    el.classList.remove('active');
+    return;
+  }
+  el.style.display = '';
   if (!nextPublishAtAt || nextPublishAtAt <= Date.now()) {
     el.textContent = '⏳ 距下一篇发布：—（到点即发布）';
     el.classList.remove('active');
@@ -228,13 +245,13 @@ $('#pumpBtn').addEventListener('click', async () => {
     toast('插件模式：请到创作者发布台用插件拉取发布', 'warn');
     return;
   }
-  await api('POST', '/api/batch/pump'); $('#pumpMsg').textContent = '▶ 执行中'; startPoll(); toast('已开始批量发布', 'ok');
+  await callApi('POST', '/api/batch/pump'); $('#pumpMsg').textContent = '▶ 执行中'; startPoll(); toast('已开始批量发布', 'ok');
 });
-$('#pauseBtn').addEventListener('click', async () => { await api('POST', '/api/batch/pause'); $('#pumpMsg').textContent = '⏸ 已暂停'; });
-$('#resumeBtn').addEventListener('click', async () => { await api('POST', '/api/batch/resume'); $('#pumpMsg').textContent = '⏵ 继续'; });
-$('#stopBtn').addEventListener('click', async () => { await api('POST', '/api/batch/stop'); $('#pumpMsg').textContent = '⏹ 已停止'; });
+$('#pauseBtn').addEventListener('click', async () => { await callApi('POST', '/api/batch/pause'); $('#pumpMsg').textContent = '⏸ 已暂停'; });
+$('#resumeBtn').addEventListener('click', async () => { await callApi('POST', '/api/batch/resume'); $('#pumpMsg').textContent = '⏵ 继续'; });
+$('#stopBtn').addEventListener('click', async () => { await callApi('POST', '/api/batch/stop'); $('#pumpMsg').textContent = '⏹ 已停止'; });
 $('#retryBtn').addEventListener('click', async () => {
-  const r = await api('POST', '/api/batch/retry', {});
+  const r = await callApi('POST', '/api/batch/retry', {});
   if (r.ok) {
     $('#pumpMsg').textContent = `🔁 已重置 ${r.requed || 0} 条失败任务`;
     toast(`已重置 ${r.requed || 0} 条到待发布`, 'ok');
@@ -244,7 +261,7 @@ $('#retryBtn').addEventListener('click', async () => {
 
 // ---- 历史 ----
 async function loadHistory() {
-  const h = await api('GET', '/api/history');
+  const h = await callApi('GET', '/api/history');
   $('#historyList').innerHTML = h.length ? h.map((r) => `
     <div class="qitem">
       <span class="badge ${r.status}">${esc(r.status)}</span>
@@ -256,7 +273,7 @@ async function loadHistory() {
 
 // ---- 设置 ----
 async function loadSettings() {
-  const s = await api('GET', '/api/settings');
+  const s = await callApi('GET', '/api/settings');
   $('#setProvider').value = s.aiProvider || 'deepseek';
   $('#setKey').value = s.aiApiKey || '';
   $('#setBaseUrl').value = s.aiBaseUrl || '';
@@ -292,7 +309,7 @@ function updatePublishHint() {
 }
 $('#setPublish').addEventListener('change', updatePublishHint);
 $('#saveSetBtn').addEventListener('click', async () => {
-  await api('POST', '/api/settings', {
+  await callApi('POST', '/api/settings', {
     aiProvider: $('#setProvider').value, aiApiKey: $('#setKey').value, aiBaseUrl: $('#setBaseUrl').value, aiModel: $('#setModel').value,
     publishMode: $('#setPublish').value, qianfanUrl: $('#setQianfanUrl').value, cdpBrowserUrl: $('#setBrowserUrl').value, cdpChromePath: $('#setChromePath').value,
     generateTitle: $('#setGenTitle').checked, generateContent: $('#setGenContent').checked, enableAiTopics: $('#setGenTopics').checked,
@@ -308,7 +325,7 @@ $('#clearDataBtn').addEventListener('click', async () => {
   if (!confirm('确定清除全部发布数据吗？\n将删除：采集商品、发布任务、发布历史、已上传图片。\n（AI 配置与账号设置保留）')) return;
   $('#clearMsg').textContent = '清除中…';
   try {
-    const r = await api('POST', '/api/data/clear', { targets: ['tasks', 'products', 'history', 'uploads'] });
+    const r = await callApi('POST', '/api/data/clear', { targets: ['tasks', 'products', 'history', 'uploads'] });
     if (r.ok) {
       const c = (r.result && r.result.cleared) || [];
       $('#clearMsg').textContent = '✅ 已清除：' + c.join('、');
@@ -322,17 +339,17 @@ $('#clearDataBtn').addEventListener('click', async () => {
   setTimeout(() => ($('#clearMsg').textContent = ''), 5000);
 });
 $('#aiTestBtn').addEventListener('click', async () => {
-  const r = await api('POST', '/api/ai/test', {
+  const r = await callApi('POST', '/api/ai/test', {
     aiProvider: $('#setProvider').value, aiApiKey: $('#setKey').value, aiBaseUrl: $('#setBaseUrl').value, aiModel: $('#setModel').value,
   });
   $('#aiTestMsg').textContent = r.ok ? '✅ ' + (r.detail || '连通') : '❌ ' + (r.detail || '失败');
 });
 $('#cdpTestBtn').addEventListener('click', async () => {
-  const r = await api('POST', '/api/cdp/status', { cdpBrowserUrl: $('#setBrowserUrl').value });
+  const r = await callApi('POST', '/api/cdp/status', { cdpBrowserUrl: $('#setBrowserUrl').value });
   $('#cdpMsg').textContent = r.ok ? '✅ ' + r.detail : '❌ ' + (r.detail || '未连接');
 });
 $('#cdpLaunchBtn').addEventListener('click', async () => {
-  const r = await api('POST', '/api/cdp/launch', { cdpChromePath: $('#setChromePath').value });
+  const r = await callApi('POST', '/api/cdp/launch', { cdpChromePath: $('#setChromePath').value });
   $('#cdpMsg').textContent = r.ok ? '✅ ' + r.detail : '❌ ' + (r.detail || '失败');
 });
 
