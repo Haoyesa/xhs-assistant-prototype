@@ -19,7 +19,7 @@ process.env.XHS_DATA_DIR = userDataDir;
 
 const MAIN_URL = `http://127.0.0.1:${PORT}`;
 const ACTIVATION_FILE = path.join(__dirname, 'activation.html');
-const PRELOAD = path.join(__dirname, 'preload.mjs');
+const PRELOAD = path.join(__dirname, 'preload.cjs');
 
 let mainWin = null;
 
