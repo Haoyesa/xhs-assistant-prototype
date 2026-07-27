@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>黑猫智记AI · 激活</title>
+    <style>
+      :root {
+        --bg: #0f1115;
+        --card: #171a21;
+        --line: #2a2f3a;
+        --text: #e8eaf0;
+        --muted: #9aa3b2;
+        --brand: #7f77dd;
+        --brand2: #1d9e75;
+        --err: #e24b4a;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        min-height: 100vh;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: var(--bg);
+        color: var(--text);
+        font-family: -apple-system, "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+      }
+      .card {
+        width: 420px;
+        max-width: 92vw;
+        background: var(--card);
+        border: 1px solid var(--line);
+        border-radius: 16px;
+        padding: 28px 26px;
+      }
+      h1 { margin: 0; font-size: 22px; font-weight: 600; }
+      .sub { margin: 6px 0 20px; color: var(--muted); font-size: 13px; }
+      .mc-row {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        background: #0e1117;
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        padding: 10px 12px;
+      }
+      .mc-row code { flex: 1; font-size: 12px; word-break: break-all; color: var(--text); }
+      .section-title { font-size: 12px; color: var(--muted); margin: 18px 0 8px; }
+      .online { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+      select, button, textarea {
+        font: inherit;
+        border-radius: 10px;
+        border: 1px solid var(--line);
+        background: #0e1117;
+        color: var(--text);
+        padding: 9px 12px;
+      }
+      select { flex: 1; min-width: 120px; }
+      button {
+        cursor: pointer;
+        border: none;
+        background: var(--brand);
+        color: #fff;
+        font-weight: 500;
+      }
+      button.ghost { background: #232833; }
+      button:hover { filter: brightness(1.08); }
+      hr { border: none; border-top: 1px solid var(--line); margin: 18px 0; }
+      textarea { width: 100%; height: 70px; resize: vertical; font-family: monospace; font-size: 12px; }
+      #status { margin-top: 12px; font-size: 13px; min-height: 18px; color: var(--muted); }
+      #status.ok { color: var(--brand2); }
+      #status.err { color: var(--err); }
+    </style>
+  </head>
+  <body>
+    <div class="card">
+      <h1>黑猫智记AI</h1>
+      <div class="sub">激活后使用自动批量发布</div>
+
+      <div class="mc-row">
+        <code id="mc">加载中…</code>
+        <button class="ghost" id="copy">复制</button>
+      </div>
+
+      <div class="section-title">在线获取激活码</div>
+      <div class="online">
+        <select id="plan">
+          <option value="basic">基础版 ¥9 / 月</option>
+          <option value="pro" selected>专业版 ¥19 / 月</option>
+        </select>
+        <select id="billing">
+          <option value="monthly">月付</option>
+          <option value="yearly">年付（送 2 个月）</option>
+        </select>
+        <button id="online">获取并激活</button>
+      </div>
+
+      <hr />
+
+      <div class="section-title">或粘贴完整激活码</div>
+      <textarea id="token" placeholder="在此粘贴激活码"></textarea>
+      <div style="height: 8px"></div>
+      <button id="activate" style="width: 100%">使用激活码激活</button>
+
+      <div id="status"></div>
+    </div>
+    <script src="activation.js"></script>
+  </body>
+</html>

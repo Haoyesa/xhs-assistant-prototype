@@ -1,0 +1,10 @@
+{
+  "name": "license-server",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "黑猫智记AI 轻量激活/心跳服务器（零外部依赖）",
+  "scripts": {
+    "start": "node index.mjs"
+  }
+}

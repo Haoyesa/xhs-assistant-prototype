@@ -9,6 +9,8 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { scrapeQianfanProducts } from './qianfan-scraper.js';
 import { CdpPublisher, ChallengeDetectedError, StepFailedError } from './cdp-publisher.js';
 import { downloadOne, downloadToLocal, primeImages } from './image-util.js';
+import { currentPlan } from './electron/license.mjs';
+import { FREQ_DELAY } from './electron/plans.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PUBLIC = path.join(__dirname, 'public');
@@ -17,6 +19,25 @@ const DATA = process.env.XHS_DATA_DIR
   : path.join(__dirname, 'data');
 const UPLOADS = path.join(DATA, 'uploads');
 fs.mkdirSync(UPLOADS, { recursive: true });
+
+// ---- 套餐约束（订阅制）----
+// 未激活或免费版：autoSubmit 强制 false（人工复核）；专业版以上才允许按用户设置自动。
+// 频率档位映射到发布间隔（秒），供插件端 getIntervalMs 使用。
+function resolvedPlan() {
+  try {
+    return currentPlan(DATA);
+  } catch {
+    return { key: 'free', autoSubmit: false, freqTier: 'standard' };
+  }
+}
+function planIntervalSeconds() {
+  const tier = resolvedPlan().freqTier || 'standard';
+  const d = FREQ_DELAY[tier] || FREQ_DELAY.standard;
+  return {
+    publishIntervalSeconds: d.min,
+    publishIntervalRandomDelaySeconds: Math.max(0, d.max - d.min),
+  };
+}
 
 const PORT = process.env.PORT || 5199;
 
@@ -259,6 +280,8 @@ function chooseBetter(a, b) {
 
 async function runPump(settings) {
   if (pump.running) return;
+  // 套餐约束：基础版(autoSubmit=false)强制人工复核；专业版以上才允许按用户设置自动
+  const effAuto = resolvedPlan().autoSubmit ? settings.autoSubmit : false;
   pump.running = true; pump.stop = false; pump.paused = false;
   try {
     const tasks = await readStore(stores.tasks, []);
@@ -282,7 +305,7 @@ async function runPump(settings) {
           // 发布前把远程商品图下载到本地（CDP 上传需要本地文件路径）
           const localImgs = await downloadToLocal(task.images, UPLOADS);
           const res = await publisher.publishNote({ ...task, images: localImgs }, {
-            autoSubmit: settings.autoSubmit,
+            autoSubmit: effAuto,
             onStep: async (step, detail) => {
               task.step = step; task.statusDetail = detail; task.updatedAt = nowISO();
               await writeStore(stores.tasks, mergeTask(tasks, task));
@@ -303,8 +326,8 @@ async function runPump(settings) {
             await writeStore(stores.tasks, mergeTask(tasks, task));
             await new Promise((r) => setTimeout(r, 250));
           }
-          task.status = settings.autoSubmit ? 'success' : 'waiting_submit';
-          task.statusDetail = settings.autoSubmit ? '[模拟] 发布成功' : '[模拟] 已填好，等待人工提交';
+          task.status = effAuto ? 'success' : 'waiting_submit';
+          task.statusDetail = effAuto ? '[模拟] 发布成功' : '[模拟] 已填好，等待人工提交';
         }
         // 写入历史
         const history = await readStore(stores.history, []);
@@ -454,7 +477,15 @@ const server = http.createServer(async (req, res) => {
     // 设置
     if (p === '/api/settings' && method === 'GET') {
       const s = await readStore(stores.settings, {});
-      return sendJSON(res, 200, { appVersion: APP_VERSION, ...DEFAULT_SETTINGS, ...s });
+      const merged = { ...DEFAULT_SETTINGS, ...s };
+      const iv = planIntervalSeconds();
+      const plan = resolvedPlan();
+      return sendJSON(res, 200, {
+        appVersion: APP_VERSION,
+        ...merged,
+        ...iv, // 频率档位覆盖用户自定义间隔：套餐决定两篇之间的延时
+        plan: { key: plan.key, label: plan.label, autoSubmit: plan.autoSubmit, freqTier: plan.freqTier },
+      });
     }
     if (p === '/api/settings' && method === 'POST') {
       const body = await readBody(req);
@@ -816,15 +847,17 @@ const server = http.createServer(async (req, res) => {
       task.updatedAt = task.pickedAt;
       await writeStore(stores.tasks, mergeTask(tasks, task));
       const settings = { ...DEFAULT_SETTINGS, ...(await readStore(stores.settings, {})) };
+      const effAuto = resolvedPlan().autoSubmit ? settings.autoSubmit : false;
+      const iv = planIntervalSeconds();
       return sendJSON(res, 200, {
         ok: true, task,
         serverUrl: `http://127.0.0.1:${PORT}`,
-        autoSubmit: settings.autoSubmit,
+        autoSubmit: effAuto,
         humanTyping: settings.humanTyping,
         qianfanUrl: settings.qianfanUrl,
-        // 供插件调度器计算「两篇笔记之间的延时」：默认 publishIntervalSeconds(500)+随机 publishIntervalRandomDelaySeconds(200)
-        publishIntervalSeconds: settings.publishIntervalSeconds || 500,
-        publishIntervalRandomDelaySeconds: settings.publishIntervalRandomDelaySeconds || 200,
+        // 发布间隔按套餐频率档位下发（标准/优先/极速）
+        publishIntervalSeconds: iv.publishIntervalSeconds,
+        publishIntervalRandomDelaySeconds: iv.publishIntervalRandomDelaySeconds,
       });
     }
     // 插件上报「下一篇最早发布时刻」：供桌面批量发布页同步显示倒计时
