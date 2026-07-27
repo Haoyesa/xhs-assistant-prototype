@@ -10,6 +10,7 @@ dist-bak-*/
 tmp_*/
 _harden_src/
 _harden_out/
+_tmp_asar_repack/
 
 # asar 备份
 *.bak
