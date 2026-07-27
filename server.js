@@ -494,6 +494,38 @@ const server = http.createServer(async (req, res) => {
       return sendFile(res, path.join(PUBLIC, 'generator.html'));
     }
 
+    // 批量作图：图片入库 — 把生成的图片保存到项目设置的图片根目录
+    if (p === '/api/generator/import-chunk' && method === 'POST') {
+      try {
+        const body = await readBody(req);
+        const settings = { ...DEFAULT_SETTINGS, ...(await readStore(stores.settings, {})) };
+        const root = resolveImagesRoot(settings);
+        if (!root) return sendJSON(res, 400, { ok: false, error: '图片根目录未配置' });
+
+        const { folderName: fnIn, index, total, id, mime, dataUrl } = body || {};
+        if (typeof index !== 'number' || typeof total !== 'number' || !id || !dataUrl) {
+          return sendJSON(res, 400, { ok: false, error: '参数不完整' });
+        }
+
+        const folder = fnIn && String(fnIn).trim() ? String(fnIn).trim() : `generator_${new Date().toISOString().slice(0, 19).replace(/[-T:]/g, '')}`;
+        const dir = path.join(root, folder);
+        fs.mkdirSync(dir, { recursive: true });
+
+        const mimeMap = {
+          'image/png': 'png', 'image/jpeg': 'jpg', 'image/jpg': 'jpg', 'image/webp': 'webp', 'image/gif': 'gif', 'image/avif': 'avif', 'image/bmp': 'bmp'
+        };
+        const ext = mimeMap[(mime || 'image/png').toLowerCase()] || 'png';
+        const file = path.join(dir, `${String(id).replace(/[\\/:*?"<>|]/g, '_')}.${ext}`);
+        const buf = Buffer.from(dataUrl, 'base64');
+        await fsp.writeFile(file, buf);
+
+        return sendJSON(res, 200, { ok: true, folderName: folder, saved: index + 1, total });
+      } catch (err) {
+        console.error('[generator/import-chunk]', err);
+        return sendJSON(res, 500, { ok: false, error: err.message || '保存失败' });
+      }
+    }
+
     // 设置
     if (p === '/api/settings' && method === 'GET') {
       const s = await readStore(stores.settings, {});
