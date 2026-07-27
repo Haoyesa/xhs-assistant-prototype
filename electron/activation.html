@@ -83,6 +83,14 @@
         <button class="ghost" id="copy">复制</button>
       </div>
 
+      <div id="info" style="display:none; background:#0e1117; border:1px solid var(--line); border-radius:10px; padding:10px 12px; margin-bottom:8px;">
+        <div style="font-size:12px; color:var(--muted);">当前套餐：<b id="info-plan" style="color:var(--text);">—</b></div>
+        <div style="font-size:12px; color:var(--muted); margin-top:4px;">到期时间：<b id="info-exp" style="color:var(--text);">—</b></div>
+      </div>
+
+      <button id="unbind" style="display:none; width:100%; margin-bottom:14px; background:var(--err);">解绑此设备</button>
+
+      <div id="form" style="display:none;">
       <div class="section-title">在线获取激活码</div>
       <div class="online">
         <select id="plan">
@@ -102,6 +110,7 @@
       <textarea id="token" placeholder="在此粘贴激活码"></textarea>
       <div style="height: 8px"></div>
       <button id="activate" style="width: 100%">使用激活码激活</button>
+      </div>
 
       <div id="status"></div>
     </div>

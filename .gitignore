@@ -27,6 +27,7 @@ Thumbs.db
 # 激活服务器私钥（绝不可提交，否则任何人可伪造激活码）
 license-server/keys/private.pem
 license-server/revoked.json
+license-server/revoked-tokens.json
 
 # 沙箱专用测试脚本（含本机绝对 node 路径，不入库）
 _test_*.mjs

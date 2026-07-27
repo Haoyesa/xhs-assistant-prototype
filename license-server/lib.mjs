@@ -44,6 +44,8 @@ export function verifyToken(token) {
   }
   const now = Date.now();
   if (payload.expireAt && payload.expireAt < now) return { ok: false, reason: 'expired' };
+  // token 级吊销（自助解绑后旧 token 失效，但机器码本身不被封禁）
+  if (payload.jti && isTokenRevoked(payload.jti)) return { ok: false, reason: 'token-revoked', payload };
   return { ok: true, payload };
 }
 
@@ -68,12 +70,38 @@ export function isRevoked(mc) {
   return loadRevoked().has(mc);
 }
 
+// 按 token（jti）吊销：解绑某次激活而不封禁机器码，
+// 这样同机换新指纹后仍可重新激活（应对机器码漂移）。
+const REVOKED_TOKENS_FILE = path.join(__dirname, 'revoked-tokens.json');
+function loadRevokedTokens() {
+  try {
+    return new Set(JSON.parse(fs.readFileSync(REVOKED_TOKENS_FILE, 'utf8')));
+  } catch {
+    return new Set();
+  }
+}
+function saveRevokedTokens(set) {
+  fs.writeFileSync(REVOKED_TOKENS_FILE, JSON.stringify([...set], null, 2));
+}
+export function revokeToken(jti) {
+  if (!jti) return;
+  const s = loadRevokedTokens();
+  s.add(jti);
+  saveRevokedTokens(s);
+}
+export function isTokenRevoked(jti) {
+  if (!jti) return false;
+  return loadRevokedTokens().has(jti);
+}
+
 // 按套餐 + 计费周期签发（monthly=30天, yearly=365天）。
-export function issue(plan, billing, machineCode) {
+// 每个 token 带唯一 jti，供自助解绑时精确吊销单个激活。
+export function issue(plan, billing, machineCode, jti) {
   resolvePlan(plan); // 校验 plan 存在
   const days = billing === 'yearly' ? 365 : 30;
   const expireAt = Date.now() + days * 86400000;
   return signToken({
+    jti: jti || crypto.randomBytes(8).toString('hex'),
     machineCode,
     plan,
     billing: billing || 'monthly',

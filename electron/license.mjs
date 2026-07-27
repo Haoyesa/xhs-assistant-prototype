@@ -82,6 +82,17 @@ export function clearLicense(userDataDir) {
   }
 }
 
+// 读取本地存储的原始 token 字符串（不校验），用于漂移时把旧 token 交给服务端解绑。
+export function readRawToken(userDataDir) {
+  const file = path.join(userDataDir, 'license.json');
+  if (!fs.existsSync(file)) return null;
+  try {
+    return fs.readFileSync(file, 'utf8').trim();
+  } catch {
+    return null;
+  }
+}
+
 // 解析出当前生效的套餐配置对象（无效/缺省→免费试用）。
 export function currentPlan(userDataDir) {
   const lic = loadLicense(userDataDir);

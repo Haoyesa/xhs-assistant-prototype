@@ -4,7 +4,7 @@ import { app, BrowserWindow, dialog, ipcMain } from 'electron';
 import path from 'node:path';
 import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { loadLicense, saveLicense, clearLicense, currentPlan } from './license.mjs';
+import { loadLicense, saveLicense, clearLicense, currentPlan, readRawToken } from './license.mjs';
 import { getMachineCode } from './machine-id.mjs';
 import { startHeartbeat } from './heartbeat.mjs';
 import { LICENSE_SERVER_URL } from './config.mjs';
@@ -49,6 +49,13 @@ ipcMain.handle('lic:activate', (_e, token) => {
   const r = saveLicense(userDataDir, token);
   if (r.ok) switchToMain();
   return r;
+});
+// 读取本地原始 token（不校验，供漂移时解绑旧设备）
+ipcMain.handle('lic:getRawToken', () => readRawToken(userDataDir));
+// 清除本地授权（解绑后由激活窗口触发）
+ipcMain.handle('lic:clearLicense', () => {
+  clearLicense(userDataDir);
+  return { ok: true };
 });
 
 function switchToMain() {

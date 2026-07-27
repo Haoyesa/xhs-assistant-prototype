@@ -10,5 +10,7 @@ contextBridge.exposeInMainWorld('api', {
   activate: (token) => ipcRenderer.invoke('lic:activate', token),
   getPlan: () => ipcRenderer.invoke('lic:getPlan'),
   getServerUrl: () => ipcRenderer.invoke('lic:getServerUrl'),
+  getRawToken: () => ipcRenderer.invoke('lic:getRawToken'),
+  clearLicense: () => ipcRenderer.invoke('lic:clearLicense'),
   onRevoked: (cb) => ipcRenderer.on('lic:revoked', () => cb()),
 });
