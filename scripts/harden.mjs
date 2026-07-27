@@ -1,0 +1,122 @@
+// scripts/harden.mjs — 授权/门禁代码加固构建
+// 把敏感模块（验签、门禁决策、机器码、套餐、激活 UI、主进程入口）混淆后重打包进 app.asar。
+// 源文件保持明文留在 git；本脚本只产出「发布用」的 app.asar，可重复执行。
+//
+// 用法：node scripts/harden.mjs
+import { createRequire } from 'node:module';
+import { fileURLToPath } from 'node:url';
+import fs from 'node:fs';
+import path from 'node:path';
+import asar from '@electron/asar';
+
+const require = createRequire(import.meta.url);
+const OBF_PATH = 'C:/Users/25147/.workbuddy/binaries/node/workspace/node_modules/javascript-obfuscator';
+const obf = require(OBF_PATH);
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const ROOT = path.resolve(__dirname, '..');
+const RES = path.join(ROOT, 'dist', 'win-unpacked', 'resources');
+const ASAR = path.join(RES, 'app.asar');
+const OUT = path.join(ROOT, '_harden_out');
+const SRC = path.join(ROOT, '_harden_src');
+
+const HEAVY = {
+  compact: true,
+  controlFlowFlattening: true,
+  controlFlowFlatteningThreshold: 0.6,
+  deadCodeInjection: true,
+  deadCodeInjectionThreshold: 0.3,
+  stringArray: true,
+  stringArrayEncoding: ['base64'],
+  stringArrayThreshold: 0.75,
+  stringArrayWrappersCount: 2,
+  stringArrayWrappersChainedCalls: true,
+  identifierNamesGenerator: 'hexadecimal',
+  renameGlobals: false,
+  transformObjectKeys: false,
+  selfDefending: false,
+  debugProtection: false,
+};
+
+const LIGHT = {
+  compact: true,
+  controlFlowFlattening: false,
+  deadCodeInjection: false,
+  stringArray: true,
+  stringArrayEncoding: ['base64'],
+  stringArrayThreshold: 0.5,
+  identifierNamesGenerator: 'hexadecimal',
+  renameGlobals: false,
+  transformObjectKeys: false,
+  selfDefending: false,
+  debugProtection: false,
+};
+
+// 目标文件：rel 路径 -> { config, target }
+const TARGETS = [
+  { rel: 'electron/license.mjs', cfg: HEAVY, target: 'node' },
+  { rel: 'electron/gating.mjs', cfg: HEAVY, target: 'node' },
+  { rel: 'electron/machine-id.mjs', cfg: HEAVY, target: 'node' },
+  { rel: 'electron/plans.mjs', cfg: HEAVY, target: 'node' },
+  { rel: 'electron/activation.js', cfg: HEAVY, target: 'browser' },
+  { rel: 'electron/main.mjs', cfg: LIGHT, target: 'node' },
+];
+
+function obfuscateFile(rel, cfg, target) {
+  const srcPath = path.join(ROOT, rel);
+  const src = fs.readFileSync(srcPath, 'utf8');
+  const out = obf.obfuscate(src, { ...cfg, target }).getObfuscatedCode();
+  const dest = path.join(OUT, rel);
+  fs.mkdirSync(path.dirname(dest), { recursive: true });
+  fs.writeFileSync(dest, out);
+  console.log(`obfuscated ${rel.padEnd(26)} ${out.length} bytes`);
+}
+
+function rmrf(p) {
+  if (fs.existsSync(p)) fs.rmSync(p, { recursive: true, force: true });
+}
+
+console.log('--- 1) obfuscate sources ---');
+for (const t of TARGETS) obfuscateFile(t.rel, t.cfg, t.target);
+
+console.log('--- 2) extract current app.asar ---');
+rmrf(SRC);
+asar.extractAll(ASAR, SRC);
+
+console.log('--- 3) drop obfuscated files into asar tree ---');
+for (const t of TARGETS) {
+  const from = path.join(OUT, t.rel);
+  const to = path.join(SRC, t.rel);
+  fs.mkdirSync(path.dirname(to), { recursive: true });
+  fs.copyFileSync(from, to);
+}
+
+console.log('--- 4) repack app.asar ---');
+const newAsar = path.join(RES, 'app.asar.new');
+rmrf(newAsar);
+const packResult = asar.createPackageWithOptions(SRC, newAsar, { unpackDir: 'extension/**/*' });
+if (packResult && typeof packResult.then === 'function') await packResult;
+
+// 校验产出尺寸合理
+const size = fs.statSync(newAsar).size;
+if (size < 1000) throw new Error('repacked asar too small, abort');
+console.log(`repacked app.asar: ${size} bytes`);
+
+console.log('--- 5) swap in ---');
+const bak = path.join(RES, 'app.asar.bak');
+rmrf(bak);
+fs.renameSync(ASAR, bak);
+fs.renameSync(newAsar, ASAR);
+
+console.log('--- 6) syntax check obfuscated files ---');
+for (const t of TARGETS) {
+  const p = path.join(OUT, t.rel);
+  // ESM .mjs 用 --check；.js(activation) 也用 --check
+  require('child_process').execSync(`"${process.execPath}" --check "${p}"`, { stdio: 'inherit' });
+}
+
+console.log('--- 7) cleanup temp ---');
+rmrf(SRC);
+rmrf(bak);
+console.log('DONE. app.asar hardened.');

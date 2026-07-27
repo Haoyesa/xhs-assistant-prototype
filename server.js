@@ -9,8 +9,8 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { scrapeQianfanProducts } from './qianfan-scraper.js';
 import { CdpPublisher, ChallengeDetectedError, StepFailedError } from './cdp-publisher.js';
 import { downloadOne, downloadToLocal, primeImages } from './image-util.js';
-import { currentPlan } from './electron/license.mjs';
-import { FREQ_DELAY } from './electron/plans.mjs';
+// 门禁决策（autoSubmit / 频率）抽到 electron/gating.mjs，单独混淆以提升逆向门槛
+import { resolvedPlan, planIntervalSeconds, effectiveAutoSubmit } from './electron/gating.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PUBLIC = path.join(__dirname, 'public');
@@ -19,25 +19,6 @@ const DATA = process.env.XHS_DATA_DIR
   : path.join(__dirname, 'data');
 const UPLOADS = path.join(DATA, 'uploads');
 fs.mkdirSync(UPLOADS, { recursive: true });
-
-// ---- 套餐约束（订阅制）----
-// 未激活或免费版：autoSubmit 强制 false（人工复核）；专业版以上才允许按用户设置自动。
-// 频率档位映射到发布间隔（秒），供插件端 getIntervalMs 使用。
-function resolvedPlan() {
-  try {
-    return currentPlan(DATA);
-  } catch {
-    return { key: 'free', autoSubmit: false, freqTier: 'standard' };
-  }
-}
-function planIntervalSeconds() {
-  const tier = resolvedPlan().freqTier || 'standard';
-  const d = FREQ_DELAY[tier] || FREQ_DELAY.standard;
-  return {
-    publishIntervalSeconds: d.min,
-    publishIntervalRandomDelaySeconds: Math.max(0, d.max - d.min),
-  };
-}
 
 const PORT = process.env.PORT || 5199;
 
@@ -281,7 +262,7 @@ function chooseBetter(a, b) {
 async function runPump(settings) {
   if (pump.running) return;
   // 套餐约束：基础版(autoSubmit=false)强制人工复核；专业版以上才允许按用户设置自动
-  const effAuto = resolvedPlan().autoSubmit ? settings.autoSubmit : false;
+  const effAuto = effectiveAutoSubmit(settings, DATA);
   pump.running = true; pump.stop = false; pump.paused = false;
   try {
     const tasks = await readStore(stores.tasks, []);
@@ -478,8 +459,8 @@ const server = http.createServer(async (req, res) => {
     if (p === '/api/settings' && method === 'GET') {
       const s = await readStore(stores.settings, {});
       const merged = { ...DEFAULT_SETTINGS, ...s };
-      const iv = planIntervalSeconds();
-      const plan = resolvedPlan();
+      const iv = planIntervalSeconds(DATA);
+      const plan = resolvedPlan(DATA);
       return sendJSON(res, 200, {
         appVersion: APP_VERSION,
         ...merged,
@@ -847,8 +828,8 @@ const server = http.createServer(async (req, res) => {
       task.updatedAt = task.pickedAt;
       await writeStore(stores.tasks, mergeTask(tasks, task));
       const settings = { ...DEFAULT_SETTINGS, ...(await readStore(stores.settings, {})) };
-      const effAuto = resolvedPlan().autoSubmit ? settings.autoSubmit : false;
-      const iv = planIntervalSeconds();
+      const effAuto = effectiveAutoSubmit(settings, DATA);
+      const iv = planIntervalSeconds(DATA);
       return sendJSON(res, 200, {
         ok: true, task,
         serverUrl: `http://127.0.0.1:${PORT}`,
