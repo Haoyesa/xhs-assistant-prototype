@@ -1,6 +1,16 @@
 import http from 'node:http';
 import { signToken, verifyToken, issue, revoke, isRevoked, revokeToken, isTokenRevoked } from './lib.mjs';
 import { resolvePlan } from '../electron/plans.mjs';
+import {
+  PRICE_TABLE,
+  planPrice,
+  createOrder,
+  getOrder,
+  markPaid,
+  fulfillOrder,
+  manualIssue,
+  verifyProviderCallback,
+} from './payments.mjs';
 
 const PORT = Number(process.env.LICENSE_PORT || 8787);
 const ADMIN_KEY = process.env.LICENSE_ADMIN_KEY || 'changeme-admin-key';
@@ -102,6 +112,85 @@ const server = http.createServer((req, res) => {
       if (!json.machineCode) return r404res(res, 400, { error: 'missing-fields' });
       revoke(json.machineCode);
       return send(res, { ok: true });
+    }
+
+    // 价格表（公开，供收银台展示）
+    if (req.url === '/api/prices' && req.method === 'GET') {
+      return send(res, { ok: true, prices: PRICE_TABLE });
+    }
+
+    // 创建支付订单：客户端提交 plan/billing/machineCode/method
+    if (req.url === '/api/checkout' && req.method === 'POST') {
+      const { plan, billing, machineCode, method } = json;
+      if (!plan) return r404res(res, 400, { error: 'missing-plan' });
+      try {
+        const order = createOrder({ plan, billing, machineCode, method: method || 'manual' });
+        return send(res, {
+          ok: true,
+          outTradeNo: order.outTradeNo,
+          amount: order.amount,
+          currency: order.currency,
+          status: order.status,
+          method: order.method,
+          payUrl: null, // 真实渠道由 provider 返回；未配置时为 null
+          note:
+            order.method === 'manual'
+              ? '人工发卡模式：完成付款后联系客服并提供机器码，或由管理员在后台手动发卡。'
+              : '请在支付网关完成付款，成功后系统会自动回调发卡。',
+        });
+      } catch (e) {
+        return r404res(res, 400, { error: String(e && e.message || e) });
+      }
+    }
+
+    // 订单查询：fulfilled 时一并返回 token（客户端可自动激活）
+    if (req.url.startsWith('/api/order/') && req.method === 'GET' && !req.url.endsWith('/fulfill')) {
+      const id = req.url.slice('/api/order/'.length).split('?')[0];
+      const o = getOrder(id);
+      if (!o) return r404res(res, 404, { error: 'order-not-found' });
+      const token = o.status === 'fulfilled' ? o.token : null;
+      const { token: _t, ...rest } = o;
+      return send(res, { ok: true, order: { ...rest, token } });
+    }
+
+    // 补机器码完成发卡（paid -> fulfilled）
+    if (req.url.startsWith('/api/order/') && req.url.endsWith('/fulfill') && req.method === 'POST') {
+      const id = req.url.slice('/api/order/'.length).replace(/\/fulfill$/, '').split('?')[0];
+      try {
+        const o = fulfillOrder(id, json.machineCode);
+        if (!o) return r404res(res, 404, { error: 'order-not-found' });
+        return send(res, { ok: true, outTradeNo: o.outTradeNo, status: o.status, token: o.status === 'fulfilled' ? o.token : null });
+      } catch (e) {
+        return r404res(res, 400, { error: String(e && e.message || e) });
+      }
+    }
+
+    // 支付渠道回调（验签骨架，接入真实渠道时补全 secret 与算法）
+    if (req.url.startsWith('/api/webhook/') && req.method === 'POST') {
+      const provider = req.url.slice('/api/webhook/'.length).split('?')[0];
+      const secret = process.env['PAY_SECRET_' + provider.toUpperCase()] || process.env.PAY_SECRET;
+      const sig = req.headers['x-pay-signature'] || json.signature;
+      if (!verifyProviderCallback(provider, body, sig, secret)) {
+        return r404res(res, 400, { error: 'bad-signature' });
+      }
+      try {
+        const o = markPaid(json.outTradeNo, { transactionId: json.transactionId, machineCode: json.machineCode });
+        if (!o) return r404res(res, 404, { error: 'order-not-found' });
+        return send(res, { ok: true, outTradeNo: o.outTradeNo, status: o.status, token: o.status === 'fulfilled' ? o.token : null });
+      } catch (e) {
+        return r404res(res, 500, { error: String(e && e.message || e) });
+      }
+    }
+
+    // 管理端手动发卡（兜底）：需 adminKey
+    if (req.url === '/api/admin/issue' && req.method === 'POST') {
+      if (json.adminKey !== ADMIN_KEY) return r404res(res, 401, { error: 'unauthorized' });
+      try {
+        const token = manualIssue({ plan: json.plan, billing: json.billing, machineCode: json.machineCode, outTradeNo: json.outTradeNo });
+        return send(res, { ok: true, token });
+      } catch (e) {
+        return r404res(res, 400, { error: String(e && e.message || e) });
+      }
     }
 
     r404res(res, 404, { error: 'not-found' });
