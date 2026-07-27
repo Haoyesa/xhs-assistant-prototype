@@ -43,8 +43,10 @@ async function checkConn() {
   try {
     const r = await fetch('/api/settings');
     if (r.ok) setConn('ok', '后端已连接');
-    else setConn('bad', '后端异常');
-  } catch { setConn('bad', '后端未连接'); }
+    else setConn('bad', '后端异常（HTTP ' + r.status + '）');
+  } catch {
+    setConn('bad', '后端未连接 · 检查端口 5199 是否被占用');
+  }
 }
 async function loadStats() {
   try {
@@ -63,6 +65,8 @@ async function loadStats() {
 }
 // 每隔一段时间刷新连接与统计
 setInterval(() => { checkConn(); if ($('.tab.active')?.dataset.tab !== 'settings') loadStats(); }, 8000);
+// 打开即立即探一次连接，避免一直停在「连接中…」且能立刻暴露真实错误
+checkConn();
 
 // ---- Toast ----
 function toast(text, kind = '') {
