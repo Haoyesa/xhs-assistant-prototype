@@ -502,12 +502,14 @@ const server = http.createServer(async (req, res) => {
         const root = resolveImagesRoot(settings);
         if (!root) return sendJSON(res, 400, { ok: false, error: '图片根目录未配置' });
 
-        const { folderName: fnIn, index, total, id, mime, dataUrl } = body || {};
-        if (typeof index !== 'number' || typeof total !== 'number' || !id || !dataUrl) {
+        const { folderName: fnIn, fileName: fIn, index, total, mime, dataUrl } = body || {};
+        if (!fnIn || !fIn || !dataUrl) {
           return sendJSON(res, 400, { ok: false, error: '参数不完整' });
         }
 
-        const folder = fnIn && String(fnIn).trim() ? String(fnIn).trim() : `generator_${new Date().toISOString().slice(0, 19).replace(/[-T:]/g, '')}`;
+        // 文件夹名支持 <商品ID>_<序号> 格式（如 686673d41ea4cb001553c6da_1），文件名取前端传入
+        const folder = String(fnIn).trim().replace(/[\\/:*?"<>|]/g, '_');
+        const fileBase = String(fIn).trim().replace(/[\\/:*?"<>|]/g, '_');
         const dir = path.join(root, folder);
         fs.mkdirSync(dir, { recursive: true });
 
@@ -515,11 +517,12 @@ const server = http.createServer(async (req, res) => {
           'image/png': 'png', 'image/jpeg': 'jpg', 'image/jpg': 'jpg', 'image/webp': 'webp', 'image/gif': 'gif', 'image/avif': 'avif', 'image/bmp': 'bmp'
         };
         const ext = mimeMap[(mime || 'image/png').toLowerCase()] || 'png';
-        const file = path.join(dir, `${String(id).replace(/[\\/:*?"<>|]/g, '_')}.${ext}`);
+        const finalName = /\.[a-z0-9]+$/i.test(fileBase) ? fileBase : `${fileBase}.${ext}`;
+        const file = path.join(dir, finalName);
         const buf = Buffer.from(dataUrl, 'base64');
         await fsp.writeFile(file, buf);
 
-        return sendJSON(res, 200, { ok: true, folderName: folder, saved: index + 1, total });
+        return sendJSON(res, 200, { ok: true, folderName: folder, fileName: finalName, saved: typeof index === 'number' ? index + 1 : undefined, total });
       } catch (err) {
         console.error('[generator/import-chunk]', err);
         return sendJSON(res, 500, { ok: false, error: err.message || '保存失败' });

@@ -2387,7 +2387,6 @@ $('importBtn').addEventListener('click', async () => {
     if (item) allImages.push(item);
   }
 
-  let folderName = '';
   let saved = 0;
   const total = allImages.length;
   try {
@@ -2395,19 +2394,23 @@ $('importBtn').addEventListener('click', async () => {
       const item = allImages[i];
       const base64 = item.dataUrl.includes(',') ? item.dataUrl.split(',')[1] : item.dataUrl;
       const mime = item.dataUrl.match(/data:([^;]+);/)?.[1] || 'image/png';
-      const body = JSON.stringify({ folderName, index: i, total, id: item.id, mime, dataUrl: base64 });
+      const ext = (mime === 'image/jpeg') ? 'jpg' : 'png';
+      const safeId = String(item.id).replace(/[\\/:*?"<>|]/g, '_');
+      // 与批量下载 ZIP 解压结构一致：images/<商品ID>_<序号>/<商品ID>.<ext>
+      const folderName = `${safeId}_1`;
+      const fileName = `${safeId}.${ext}`;
+      const body = JSON.stringify({ folderName, fileName, index: i, total, id: item.id, mime, dataUrl: base64 });
       const res = await fetch('/api/generator/import-chunk', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body });
       const json = await res.json().catch(() => ({}));
       if (!res.ok || !json.ok) {
         throw new Error(json.error || `第 ${i + 1} 张保存失败`);
       }
-      folderName = json.folderName || folderName;
       saved = json.saved || i + 1;
       if ((i + 1) % 3 === 0 || i === total - 1) {
         showToast(`已入库 ${i + 1} / ${total} 张…`, 'info', 2000);
       }
     }
-    showToast(`图片入库完成：${saved}/${total} 张 → ${folderName}`, 'success', 5000);
+    showToast(`图片入库完成：${saved}/${total} 张`, 'success', 5000);
   } catch (err) {
     console.error('图片入库失败', err);
     showToast('图片入库失败：' + err.message, 'error', 5000);
