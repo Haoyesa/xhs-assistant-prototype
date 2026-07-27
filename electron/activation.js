@@ -163,6 +163,142 @@ $('activate').onclick = () => {
   doActivate(t);
 };
 
+// ===== 客户端收银台：下单 → 渲染二维码 → 轮询 → 自动激活 =====
+let pollTimer = null;
+let pollStart = 0;
+let pollCount = 0;
+
+$('buy').onclick = async () => {
+  if (!needApi()) return;
+  const mc = $('mc').textContent;
+  const plan = $('plan').value;
+  const billing = $('billing').value;
+  const method = $('method').value;
+  status('正在创建订单…');
+  $('buy').disabled = true;
+  try {
+    const url = (await window.api.getServerUrl()) + '/api/checkout';
+    const r = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ plan, billing, machineCode: mc, method, notifyUrl: null }),
+    });
+    const d = await r.json();
+    if (!d.ok) {
+      status('创建订单失败：' + JSON.stringify(d), 'err');
+      $('buy').disabled = false;
+      return;
+    }
+    showCheckout(d, method);
+  } catch (e) {
+    status('下单请求失败：' + e.message, 'err');
+    $('buy').disabled = false;
+  }
+};
+
+function showCheckout(d, method) {
+  $('form').style.display = 'none';
+  const co = $('checkout');
+  co.style.display = 'block';
+  const methodName = method === 'wechat' ? '微信支付' : (method === 'alipay' ? '支付宝' : method);
+  $('co-method').textContent = '请使用' + methodName + '扫码支付';
+  $('co-amount').textContent = (d.amount != null) ? '¥' + d.amount + ' ' + (d.currency || 'CNY') : '';
+  $('co-order').textContent = '订单号：' + d.outTradeNo;
+
+  if (d.payUrl) {
+    renderQR(d.payUrl);
+    $('co-payurl').innerHTML = '扫码内容（若扫码失败可复制下方链接手动打开）：<br><code>' + escapeHtml(d.payUrl) + '</code>';
+    $('co-refresh').style.display = 'none';
+    startPolling(d.outTradeNo);
+  } else {
+    $('qrcode').innerHTML = '';
+    $('co-payurl').innerHTML = '<div style="color:var(--err);font-size:13px;line-height:1.6;">' +
+      escapeHtml(d.note || '当前未接入自动支付渠道，已进入人工发卡流程。') + '</div>';
+    status('已进入人工发卡流程：完成付款后由管理员发卡，或点「刷新状态」查询是否已发卡。', 'err');
+    $('co-refresh').style.display = 'inline-block';
+  }
+}
+
+function renderQR(text) {
+  try {
+    const qr = qrcode(0, 'M');
+    qr.addData(text);
+    qr.make();
+    $('qrcode').innerHTML = qr.createSvgTag({ cellSize: 4, margin: 8, scalable: true });
+  } catch (e) {
+    $('qrcode').innerHTML = '<div style="color:var(--err);font-size:12px;">二维码生成失败，请复制下方链接手动支付。</div>';
+  }
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
+function startPolling(outTradeNo) {
+  stopPolling();
+  pollStart = Date.now();
+  pollCount = 0;
+  status('订单已创建，等待支付…（扫码完成付款后将自动激活）');
+  pollTimer = setInterval(async () => {
+    pollCount++;
+    const waited = Math.round((Date.now() - pollStart) / 1000);
+    try {
+      const base = await window.api.getServerUrl();
+      const r = await fetch(base + '/api/order/' + encodeURIComponent(outTradeNo));
+      const d = await r.json();
+      if (d.ok && d.order && d.order.status === 'fulfilled' && d.order.token) {
+        stopPolling();
+        doActivate(d.order.token);
+        return;
+      }
+      // 每 ~10s 主动查询渠道侧状态（webhook 不可达时的兜底）
+      if (pollCount % 4 === 0) {
+        try {
+          await fetch(base + '/api/order/' + encodeURIComponent(outTradeNo) + '/query', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}',
+          });
+        } catch { /* ignore */ }
+      }
+      status('等待支付…（已等待 ' + waited + ' 秒）');
+    } catch (e) {
+      status('查询订单状态失败：' + e.message, 'err');
+    }
+    // 10 分钟超时，停止自动轮询，提示手动刷新
+    if (Date.now() - pollStart > 10 * 60 * 1000) {
+      stopPolling();
+      status('支付等待超时，可重新打开本页或点「刷新状态」继续查询。', 'err');
+      $('co-refresh').style.display = 'inline-block';
+    }
+  }, 2500);
+}
+
+function stopPolling() {
+  if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+}
+
+$('co-refresh').onclick = async () => {
+  const outTradeNo = ($('co-order').textContent || '').replace('订单号：', '').trim();
+  if (!outTradeNo) return;
+  status('正在刷新订单状态…');
+  try {
+    const base = await window.api.getServerUrl();
+    try {
+      await fetch(base + '/api/order/' + encodeURIComponent(outTradeNo) + '/query', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}',
+      });
+    } catch { /* ignore */ }
+    const r = await fetch(base + '/api/order/' + encodeURIComponent(outTradeNo));
+    const d = await r.json();
+    if (d.ok && d.order && d.order.status === 'fulfilled' && d.order.token) {
+      doActivate(d.order.token);
+    } else {
+      status('订单尚未完成支付/发卡（状态：' + (d.order ? d.order.status : '未知') + '）。完成付款后请稍候或再次刷新。', 'err');
+    }
+  } catch (e) {
+    status('刷新失败：' + e.message, 'err');
+  }
+};
+
 async function doActivate(token) {
   status('正在校验激活码…');
   try {

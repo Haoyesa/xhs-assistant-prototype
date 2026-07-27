@@ -8,6 +8,8 @@ releases/
 # 旧构建/打包临时残留
 dist-bak-*/
 tmp_*/
+_harden_src/
+_harden_out/
 
 # asar 备份
 *.bak

@@ -15,7 +15,7 @@ const require = createRequire(import.meta.url);
 const OBF_PATH = 'C:/Users/25147/.workbuddy/binaries/node/workspace/node_modules/javascript-obfuscator';
 let obf;
 try {
-  obf = require('javascript-obfuscator');
+  obf = require('@javascript-obfuscator');
 } catch {
   obf = require(OBF_PATH);
 }
@@ -107,10 +107,13 @@ function syncFresh(srcDir, dstDir) {
     }
   }
 }
-for (const root of ['server.js', 'qianfan-scraper.js', 'cdp-publisher.js', 'image-util.js']) {
+for (const root of ['server.js', 'qianfan-scraper.js', 'cdp-publisher.js', 'image-util.js', 'electron/qrcode.js']) {
   const sp = path.join(ROOT, root);
   const dp = path.join(SRC, root);
-  if (fs.existsSync(sp) && fs.existsSync(dp)) fs.copyFileSync(sp, dp);
+  if (fs.existsSync(sp)) {
+    fs.mkdirSync(path.dirname(dp), { recursive: true });
+    fs.copyFileSync(sp, dp); // 显式复制（含新增文件），syncFresh 仅覆盖 asar 树中已存在的文件
+  }
 }
 syncFresh(path.join(ROOT, 'electron'), path.join(SRC, 'electron'));
 // 前端（桌面 GUI）也打包在 asar 内的 public/，需同步最新版本，否则 UI 改动不会进 EXE

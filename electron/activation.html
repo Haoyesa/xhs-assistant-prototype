@@ -71,6 +71,13 @@
       #status { margin-top: 12px; font-size: 13px; min-height: 18px; color: var(--muted); }
       #status.ok { color: var(--brand2); }
       #status.err { color: var(--err); }
+      .qrcode { display: inline-flex; padding: 12px; background: #fff; border-radius: 12px; margin: 6px auto 0; }
+      .qrcode svg { width: 200px; height: 200px; display: block; }
+      .co-amount { font-size: 22px; font-weight: 600; margin-top: 12px; }
+      .co-method { color: var(--muted); font-size: 13px; margin-top: 4px; }
+      .co-payurl { font-size: 11px; color: var(--muted); word-break: break-all; margin-top: 10px; line-height: 1.5; }
+      .co-payurl code { color: var(--text); }
+      .co-order { font-size: 12px; color: var(--muted); margin-top: 6px; word-break: break-all; }
     </style>
   </head>
   <body>
@@ -91,22 +98,46 @@
       <button id="unbind" style="display:none; width:100%; margin-bottom:14px; background:var(--err);">解绑此设备</button>
 
       <div id="form" style="display:none;">
-      <div class="section-title">在线获取激活码</div>
+      <div class="section-title">选择套餐</div>
       <div class="online">
         <select id="plan">
           <option value="basic">基础版 ¥9 / 月</option>
           <option value="pro" selected>专业版 ¥19 / 月</option>
+          <option value="flag">旗舰版 ¥49 / 月</option>
+          <option value="team">团队版 ¥99 / 月</option>
         </select>
         <select id="billing">
           <option value="monthly">月付</option>
           <option value="yearly">年付（送 2 个月）</option>
         </select>
-        <button id="online">获取并激活</button>
+      </div>
+
+      <div class="section-title" style="margin-top:16px;">① 购买并支付（推荐）</div>
+      <div class="online">
+        <select id="method">
+          <option value="wechat">微信支付</option>
+          <option value="alipay">支付宝</option>
+        </select>
+        <button id="buy">购买并激活</button>
+      </div>
+
+      <div id="checkout" style="display:none; text-align:center;">
+        <div class="co-method" id="co-method"></div>
+        <div class="co-amount" id="co-amount"></div>
+        <div class="qrcode" id="qrcode"></div>
+        <div class="co-payurl" id="co-payurl"></div>
+        <div class="co-order" id="co-order"></div>
+        <button class="ghost" id="co-refresh" style="display:none; margin-top:12px;">我已完成支付，刷新状态</button>
       </div>
 
       <hr />
 
-      <div class="section-title">或粘贴完整激活码</div>
+      <div class="section-title">② 开发测试：直接激活（免支付）</div>
+      <button id="online" style="width:100%; background:#3a4150;">直接激活（测试）</button>
+
+      <hr />
+
+      <div class="section-title">③ 或粘贴完整激活码</div>
       <textarea id="token" placeholder="在此粘贴激活码"></textarea>
       <div style="height: 8px"></div>
       <button id="activate" style="width: 100%">使用激活码激活</button>
@@ -114,6 +145,7 @@
 
       <div id="status"></div>
     </div>
+    <script src="qrcode.js"></script>
     <script src="activation.js"></script>
   </body>
 </html>
