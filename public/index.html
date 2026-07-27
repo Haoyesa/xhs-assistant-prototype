@@ -189,12 +189,24 @@
             <h3>发布设置（对齐原软件）</h3>
             <div class="settings-form">
               <label class="set-line"><input type="checkbox" id="setGenTitle" /> 生成标题（精简）</label>
+              <details class="set-prompt">
+                <summary>标题提示词</summary>
+                <textarea id="setTitlePrompt" rows="3"></textarea>
+              </details>
               <label class="set-line"><input type="checkbox" id="setGenContent" /> 生成正文（种草）</label>
+              <details class="set-prompt">
+                <summary>正文提示词（种草）</summary>
+                <textarea id="setContentPrompt" rows="6"></textarea>
+              </details>
               <div class="set-line">
                 <input type="checkbox" id="setGenTopics" />
                 <span class="set-label">生成话题</span>
                 <span class="topic-count">话题数量<input type="number" id="setTopicsCount" value="6" /></span>
               </div>
+              <details class="set-prompt">
+                <summary>话题提示词</summary>
+                <textarea id="setTopicsPrompt" rows="2"></textarea>
+              </details>
               <label class="set-line"><input type="checkbox" id="setAutoSubmit" /> 自动提交（否则填好待人工点）</label>
               <label class="set-line"><input type="checkbox" id="setHumanTyping" /> 模拟真人打字（逐字输入标题/正文/话题）</label>
               <div class="set-grid">
@@ -204,18 +216,6 @@
                 <div class="sf-field"><label for="setRepeat">单品重复上限</label><input type="number" id="setRepeat" value="0" /></div>
               </div>
             </div>
-            <details>
-              <summary>标题提示词</summary>
-              <textarea id="setTitlePrompt" rows="3"></textarea>
-            </details>
-            <details>
-              <summary>正文提示词（种草）</summary>
-              <textarea id="setContentPrompt" rows="6"></textarea>
-            </details>
-            <details>
-              <summary>话题提示词</summary>
-              <textarea id="setTopicsPrompt" rows="2"></textarea>
-            </details>
             <div class="row"><button id="saveSetBtn" class="primary">保存设置</button><span id="setMsg" class="msg"></span></div>
           </div>
 

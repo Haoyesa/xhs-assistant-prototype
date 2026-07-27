@@ -157,6 +157,7 @@ button.danger:hover { background: #d33a3f; }
 .next-countdown.active { color: #ffd166; border-color: rgba(255,209,102,.5);
   box-shadow: 0 0 0 1px rgba(255,209,102,.15), 0 4px 14px rgba(255,209,102,.08); }
 details { margin-top: 10px; }
+details.set-prompt { margin-top: 6px; margin-bottom: 4px; }
 summary { cursor: pointer; color: var(--accent2); font-size: 13px; user-select: none; }
 summary:hover { color: #7aa6ff; }
 .manual-add { border-top: 1px dashed var(--border); padding-top: 10px; }
@@ -220,6 +221,7 @@ summary:hover { color: #7aa6ff; }
   border-radius: 12px; font-size: 13px; line-height: 1.7;
 }
 .empty .em { font-size: 30px; display: block; margin-bottom: 8px; }
+.product-grid .empty { grid-column: 1 / -1; width: 100%; box-sizing: border-box; }
 
 /* ---------- Toast ---------- */
 .toast-wrap { position: fixed; right: 22px; bottom: 22px; display: flex; flex-direction: column; gap: 10px; z-index: 9999; }
