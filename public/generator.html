@@ -95,11 +95,13 @@ body {
   margin: 0 auto;
   align-items: stretch;
   min-width: 760px;
-  max-height: calc(100vh - 72px);
+  height: calc(100vh - 60px);
+  box-sizing: border-box;
 }
 .center-panel,
 .right-panel {
-  max-height: calc(100vh - 72px);
+  height: 100%;
+  max-height: none;
   overflow-y: auto;
 }
 

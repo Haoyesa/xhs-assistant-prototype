@@ -100,8 +100,8 @@ body {
 .tab[data-tab="generator"] .gen-card { padding: 14px; }
 .gen-frame {
   width: 100%;
-  height: calc(100vh - 220px);
-  min-height: 520px;
+  height: calc(100vh - 132px);
+  min-height: 560px;
   border: none;
   border-radius: 10px;
   background: #f5f5f5;
