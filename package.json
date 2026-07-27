@@ -27,7 +27,8 @@
       "electron/**/*"
     ],
     "asarUnpack": [
-      "extension/**/*"
+      "extension/**/*",
+      "electron/**/*"
     ],
     "directories": {
       "output": "dist"

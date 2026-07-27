@@ -6,7 +6,18 @@ const status = (msg, kind) => {
   s.className = kind || '';
 };
 
+// preload 未注入（如打包后 asar 内 ESM preload 未能加载）时，给出明确提示而非未捕获异常
+const needApi = () => {
+  if (window.api) return true;
+  status('授权模块未加载：扩展桥(preload)未注入。请重新构建安装包（npm run dist），或先用开发模式 npm run electron 测试。', 'err');
+  return false;
+};
+
 async function init() {
+  if (!needApi()) {
+    $('mc').textContent = '未就绪';
+    return;
+  }
   try {
     const mc = await window.api.getMachineCode();
     $('mc').textContent = mc;
@@ -27,6 +38,7 @@ $('copy').onclick = async () => {
 };
 
 $('online').onclick = async () => {
+  if (!needApi()) return;
   const mc = $('mc').textContent;
   const plan = $('plan').value;
   const billing = $('billing').value;
@@ -51,6 +63,7 @@ $('online').onclick = async () => {
 };
 
 $('activate').onclick = () => {
+  if (!needApi()) return;
   const t = $('token').value.trim();
   if (!t) {
     status('请先粘贴激活码，或点「获取并激活」', 'err');
