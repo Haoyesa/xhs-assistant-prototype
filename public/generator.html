@@ -102,13 +102,14 @@ body {
   flex: 1 1 auto;
   min-width: 360px;
   padding: 14px;
-  overflow-y: hidden;
+  overflow-y: auto;
 }
 .right-panel {
   flex: 0 0 260px;
   padding: 14px;
   overflow-y: auto;
 }
+#centerPanel { overflow-y: auto; }
 #rightPanel { overflow-y: auto; }
 
 /* ===== 通用面板样式 ===== */
@@ -830,7 +831,7 @@ input[type="range"]::-webkit-slider-thumb {
 <div class="main">
 
   <!-- 中间：Canvas 预览 -->
-  <section class="panel center-panel">
+  <section class="panel center-panel" id="centerPanel">
     <div class="preview-header">
       <button class="nav-btn" id="undoBtn" disabled title="撤销 (Ctrl+Z)">↶</button>
       <button class="nav-btn" id="prevBtn" disabled>上一页</button>
