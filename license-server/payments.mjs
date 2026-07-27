@@ -12,6 +12,9 @@ import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { issue } from './lib.mjs';
 import { resolvePlan } from '../electron/plans.mjs';
+import { isWechatConfigured, isAlipayConfigured, notifyUrlFor } from './pay-config.mjs';
+import { createNativeOrder, queryOrder as wxQuery } from './payments-wechat.mjs';
+import { createPrecreate, queryOrder as aliQuery } from './payments-alipay.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ORDERS_FILE = path.join(__dirname, 'orders.json');
@@ -72,6 +75,16 @@ export function createOrder({ plan, billing = 'monthly', machineCode = null, met
 
 export function getOrder(outTradeNo) {
   return loadOrders().find((o) => o.outTradeNo === outTradeNo) || null;
+}
+
+function updateOrder(order) {
+  const all = loadOrders();
+  const i = all.findIndex((o) => o.outTradeNo === order.outTradeNo);
+  if (i >= 0) {
+    all[i] = order;
+    saveOrders(all);
+  }
+  return order;
 }
 
 // 内部：对订单签发令牌并标记 fulfilled。
@@ -154,4 +167,56 @@ export function verifyProviderCallback(provider, rawBody, signature, secret) {
   } catch {
     return false;
   }
+}
+
+// 创建订单并尝试向真实支付渠道下单，拿到支付二维码内容（payUrl）。
+// 未配置对应渠道 / 下单失败 → 回落为 manual（人工发卡），并在 meta 记录原因。
+export async function prepareCheckout({ plan, billing = 'monthly', machineCode = null, method = 'manual', notifyUrl = null }) {
+  const order = createOrder({ plan, billing, machineCode, method });
+  if (method !== 'wechat' && method !== 'alipay') return order; // manual / 聚合未实现 → 直接走人工
+
+  const notify = notifyUrlFor(method, notifyUrl);
+  const desc = `黑猫智记AI-${plan}-${billing}`;
+
+  if (method === 'wechat' && isWechatConfigured()) {
+    try {
+      const { payUrl, raw } = await createNativeOrder({ outTradeNo: order.outTradeNo, description: desc, amount: order.amount, notifyUrl: notify });
+      order.payUrl = payUrl;
+      order.meta.providerResp = raw;
+    } catch (e) {
+      order.meta.providerError = String((e && e.message) || e);
+    }
+  } else if (method === 'alipay' && isAlipayConfigured()) {
+    try {
+      const { payUrl, raw } = await createPrecreate({ outTradeNo: order.outTradeNo, totalAmount: order.amount, subject: desc, notifyUrl: notify });
+      order.payUrl = payUrl;
+      order.meta.providerResp = raw;
+    } catch (e) {
+      order.meta.providerError = String((e && e.message) || e);
+    }
+  } else {
+    order.meta.note = `渠道(${method})未配置真实凭证，已回落人工发卡模式`;
+  }
+  updateOrder(order);
+  return order;
+}
+
+// 主动查询渠道侧订单状态（webhook 不可达时兜底）。已支付则标记 paid/发卡。
+export async function queryProviderStatus(outTradeNo) {
+  const o = getOrder(outTradeNo);
+  if (!o) return null;
+  if (o.status === 'fulfilled') return o;
+  try {
+    if (o.method === 'wechat' && isWechatConfigured()) {
+      const r = await wxQuery(outTradeNo);
+      if (r.tradeState === 'SUCCESS') return markPaid(outTradeNo, { transactionId: r.transactionId });
+    } else if (o.method === 'alipay' && isAlipayConfigured()) {
+      const r = await aliQuery(outTradeNo);
+      if (r.tradeState === 'TRADE_SUCCESS') return markPaid(outTradeNo, { transactionId: r.transactionId });
+    }
+  } catch (e) {
+    o.meta.lastQueryError = String((e && e.message) || e);
+    updateOrder(o);
+  }
+  return o;
 }

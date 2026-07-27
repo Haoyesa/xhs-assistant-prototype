@@ -30,6 +30,7 @@ license-server/revoked.json
 license-server/revoked-tokens.json
 license-server/orders.json
 license-server/teams.json
+license-server/pay-config.json
 
 # 沙箱专用测试脚本（含本机绝对 node 路径，不入库）
 _test_*.mjs

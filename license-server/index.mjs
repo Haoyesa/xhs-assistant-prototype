@@ -10,7 +10,12 @@ import {
   fulfillOrder,
   manualIssue,
   verifyProviderCallback,
+  prepareCheckout,
+  queryProviderStatus,
 } from './payments.mjs';
+import { verifyWechatWebhook, decryptWechatResource } from './payments-wechat.mjs';
+import { verifyAlipay } from './payments-alipay.mjs';
+import { wechatConfig, alipayConfig } from './pay-config.mjs';
 import { createTeam, teamInfo, activateSeat, revokeSeat } from './teams.mjs';
 
 const PORT = Number(process.env.LICENSE_PORT || 8787);
@@ -32,14 +37,18 @@ const server = http.createServer((req, res) => {
 
   let body = '';
   req.on('data', (c) => (body += c));
-  req.on('end', () => {
+  req.on('end', async () => {
     let json = {};
-    try {
-      json = body ? JSON.parse(body) : {};
-    } catch {
-      res.statusCode = 400;
-      return res.end(JSON.stringify({ error: 'bad-json' }));
+    const ct = (req.headers['content-type'] || '').toLowerCase();
+    if (ct.includes('application/json')) {
+      try {
+        json = body ? JSON.parse(body) : {};
+      } catch {
+        res.statusCode = 400;
+        return res.end(JSON.stringify({ error: 'bad-json' }));
+      }
     }
+    // 非 JSON（如支付宝 webhook 的 form-urlencoded）保留原始 body，由各路由自行解析
 
     // 在线激活：客户端提交机器码 + 套餐 + 计费周期 → 服务器签发凭证
     if (req.url === '/api/activate' && req.method === 'POST') {
@@ -121,11 +130,14 @@ const server = http.createServer((req, res) => {
     }
 
     // 创建支付订单：客户端提交 plan/billing/machineCode/method
+    // method=wechat|alipay 且已配置真实凭证 → 向渠道下单并返回 payUrl(扫码内容)；
+    // 未配置/失败 → 回落 manual（人工发卡），payUrl=null。
     if (req.url === '/api/checkout' && req.method === 'POST') {
-      const { plan, billing, machineCode, method } = json;
+      const { plan, billing, machineCode, method, notifyUrl } = json;
       if (!plan) return r404res(res, 400, { error: 'missing-plan' });
       try {
-        const order = createOrder({ plan, billing, machineCode, method: method || 'manual' });
+        const order = await prepareCheckout({ plan, billing, machineCode, method: method || 'manual', notifyUrl });
+        const viaProvider = !!(order.payUrl && (order.method === 'wechat' || order.method === 'alipay'));
         return send(res, {
           ok: true,
           outTradeNo: order.outTradeNo,
@@ -133,11 +145,11 @@ const server = http.createServer((req, res) => {
           currency: order.currency,
           status: order.status,
           method: order.method,
-          payUrl: null, // 真实渠道由 provider 返回；未配置时为 null
-          note:
-            order.method === 'manual'
-              ? '人工发卡模式：完成付款后联系客服并提供机器码，或由管理员在后台手动发卡。'
-              : '请在支付网关完成付款，成功后系统会自动回调发卡。',
+          payUrl: order.payUrl || null,
+          note: viaProvider
+            ? '请使用微信/支付宝扫码完成付款，成功后系统会自动发卡（也可在客户端刷新订单状态）。'
+            : '人工发卡模式：完成付款后联系客服并提供机器码，或由管理员在后台手动发卡。',
+          providerError: order.meta && order.meta.providerError ? order.meta.providerError : undefined,
         });
       } catch (e) {
         return r404res(res, 400, { error: String(e && e.message || e) });
@@ -166,9 +178,44 @@ const server = http.createServer((req, res) => {
       }
     }
 
-    // 支付渠道回调（验签骨架，接入真实渠道时补全 secret 与算法）
+    // 支付渠道回调：微信 / 支付宝 真实验签 + 解密 + 发卡；未知 provider 走 HMAC 骨架兜底
     if (req.url.startsWith('/api/webhook/') && req.method === 'POST') {
       const provider = req.url.slice('/api/webhook/'.length).split('?')[0];
+
+      // ---- 微信支付 v3 ----
+      if (provider === 'wechat') {
+        const cfg = wechatConfig();
+        const ts = req.headers['wechatpay-timestamp'];
+        const nonce = req.headers['wechatpay-nonce'];
+        const sig = req.headers['wechatpay-signature'];
+        if (!verifyWechatWebhook({ timestamp: ts, nonce, body, signature: sig }, cfg)) {
+          return r404res(res, 400, { error: 'bad-signature' });
+        }
+        let evt;
+        try {
+          evt = JSON.parse(body);
+          const dec = decryptWechatResource(evt.resource, cfg.apiV3Key);
+          if (dec.trade_state !== 'SUCCESS') return send(res, { ok: true, ignored: true });
+          const o = markPaid(dec.out_trade_no, { transactionId: dec.transaction_id });
+          if (!o) return r404res(res, 404, { error: 'order-not-found' });
+          return send(res, { ok: true, outTradeNo: o.outTradeNo, status: o.status, token: o.status === 'fulfilled' ? o.token : null });
+        } catch (e) {
+          return r404res(res, 400, { error: 'bad-payload', detail: String((e && e.message) || e) });
+        }
+      }
+
+      // ---- 支付宝异步通知（form-urlencoded）----
+      if (provider === 'alipay') {
+        const params = Object.fromEntries(new URLSearchParams(body));
+        const cfg = alipayConfig();
+        if (!verifyAlipay(params, cfg)) return r404res(res, 400, { error: 'bad-signature' });
+        if (params.trade_status !== 'TRADE_SUCCESS') return send(res, { ok: true, ignored: true });
+        const o = markPaid(params.out_trade_no, { transactionId: params.trade_no });
+        if (!o) return r404res(res, 404, { error: 'order-not-found' });
+        return send(res, { ok: true, outTradeNo: o.outTradeNo, status: o.status, token: o.status === 'fulfilled' ? o.token : null });
+      }
+
+      // ---- 未知 provider：HMAC 骨架兜底 ----
       const secret = process.env['PAY_SECRET_' + provider.toUpperCase()] || process.env.PAY_SECRET;
       const sig = req.headers['x-pay-signature'] || json.signature;
       if (!verifyProviderCallback(provider, body, sig, secret)) {
@@ -178,6 +225,20 @@ const server = http.createServer((req, res) => {
         const o = markPaid(json.outTradeNo, { transactionId: json.transactionId, machineCode: json.machineCode });
         if (!o) return r404res(res, 404, { error: 'order-not-found' });
         return send(res, { ok: true, outTradeNo: o.outTradeNo, status: o.status, token: o.status === 'fulfilled' ? o.token : null });
+      } catch (e) {
+        return r404res(res, 500, { error: String(e && e.message || e) });
+      }
+    }
+
+    // 主动查询渠道侧订单状态（webhook 不可达 / 调试时兜底）
+    if (req.url.startsWith('/api/order/') && req.url.endsWith('/query') && req.method === 'POST') {
+      const id = req.url.slice('/api/order/'.length).replace(/\/query$/, '').split('?')[0];
+      try {
+        const o = await queryProviderStatus(id);
+        if (!o) return r404res(res, 404, { error: 'order-not-found' });
+        const token = o.status === 'fulfilled' ? o.token : null;
+        const { token: _t, ...rest } = o;
+        return send(res, { ok: true, order: { ...rest, token } });
       } catch (e) {
         return r404res(res, 500, { error: String(e && e.message || e) });
       }
