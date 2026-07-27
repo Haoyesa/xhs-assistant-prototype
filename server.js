@@ -9,8 +9,8 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { scrapeQianfanProducts } from './qianfan-scraper.js';
 import { CdpPublisher, ChallengeDetectedError, StepFailedError } from './cdp-publisher.js';
 import { downloadOne, downloadToLocal, primeImages } from './image-util.js';
-// 门禁决策（autoSubmit / 频率）抽到 electron/gating.mjs，单独混淆以提升逆向门槛
-import { resolvedPlan, planIntervalSeconds, effectiveAutoSubmit } from './electron/gating.mjs';
+// 门禁决策（autoSubmit / 频率 / 账号配额）抽到 electron/gating.mjs，单独混淆以提升逆向门槛
+import { resolvedPlan, planIntervalSeconds, effectiveAutoSubmit, maxAccounts } from './electron/gating.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PUBLIC = path.join(__dirname, 'public');
@@ -466,6 +466,7 @@ const server = http.createServer(async (req, res) => {
         ...merged,
         ...iv, // 频率档位覆盖用户自定义间隔：套餐决定两篇之间的延时
         plan: { key: plan.key, label: plan.label, autoSubmit: plan.autoSubmit, freqTier: plan.freqTier },
+        maxAccounts: maxAccounts(DATA),
       });
     }
     if (p === '/api/settings' && method === 'POST') {
@@ -473,6 +474,44 @@ const server = http.createServer(async (req, res) => {
       const cur = await readStore(stores.settings, {});
       await writeStore(stores.settings, { ...DEFAULT_SETTINGS, ...cur, ...body });
       return sendJSON(res, 200, { ok: true });
+    }
+
+    // 账号注册表（套餐配额门禁）：绑定/解绑小红书账号，受 plan.accounts 限制
+    if (p === '/api/accounts' && method === 'GET') {
+      const reg = await readStore(stores.account, { accounts: [] });
+      const list = Array.isArray(reg.accounts) ? reg.accounts : [];
+      return sendJSON(res, 200, { ok: true, accounts: list, max: maxAccounts(DATA) });
+    }
+    if (p === '/api/accounts' && method === 'POST') {
+      const body = await readBody(req).catch(() => ({}));
+      const reg = await readStore(stores.account, { accounts: [] });
+      const list = Array.isArray(reg.accounts) ? reg.accounts : [];
+      const max = maxAccounts(DATA);
+      if (max !== Infinity && list.length >= max) {
+        return sendJSON(res, 403, {
+          ok: false,
+          error: 'account-limit',
+          max,
+          count: list.length,
+          message: `当前套餐最多绑定 ${max} 个账号，已达上限。请升级套餐或解绑多余账号后再添加。`,
+        });
+      }
+      const acct = {
+        id: uid('acc'),
+        name: (body && body.name) || `账号${list.length + 1}`,
+        createdAt: Date.now(),
+      };
+      list.push(acct);
+      await writeStore(stores.account, { accounts: list });
+      return sendJSON(res, 200, { ok: true, account: acct, accounts: list, max });
+    }
+    if (p.startsWith('/api/accounts/') && p.endsWith('/delete') && method === 'POST') {
+      const id = p.split('/')[3];
+      const reg = await readStore(stores.account, { accounts: [] });
+      const list = Array.isArray(reg.accounts) ? reg.accounts : [];
+      const next = list.filter((x) => x.id !== id);
+      await writeStore(stores.account, { accounts: next });
+      return sendJSON(res, 200, { ok: true, accounts: next, max: maxAccounts(DATA) });
     }
 
     // 清除发布数据（保留设置与账号）

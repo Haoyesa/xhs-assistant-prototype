@@ -91,6 +91,29 @@ console.log('--- 2) extract current app.asar ---');
 rmrf(SRC);
 asar.extractAll(ASAR, SRC);
 
+console.log('--- 2.5) overlay fresh source from ROOT (server.js + electron/*) ---');
+// 把最新源码覆盖进 asar 树，确保 server.js / electron 非混淆文件的改动生效。
+// 只刷新「已存在于 asar 树」的文件，避免把开发期临时文件打进包里。
+function syncFresh(srcDir, dstDir) {
+  if (!fs.existsSync(srcDir)) return;
+  for (const f of fs.readdirSync(srcDir, { withFileTypes: true })) {
+    const sp = path.join(srcDir, f.name);
+    const dp = path.join(dstDir, f.name);
+    if (f.isDirectory()) {
+      fs.mkdirSync(dp, { recursive: true });
+      syncFresh(sp, dp);
+    } else if (fs.existsSync(dp)) {
+      fs.copyFileSync(sp, dp); // 仅覆盖 asar 树里已有的文件
+    }
+  }
+}
+for (const root of ['server.js', 'qianfan-scraper.js', 'cdp-publisher.js', 'image-util.js']) {
+  const sp = path.join(ROOT, root);
+  const dp = path.join(SRC, root);
+  if (fs.existsSync(sp) && fs.existsSync(dp)) fs.copyFileSync(sp, dp);
+}
+syncFresh(path.join(ROOT, 'electron'), path.join(SRC, 'electron'));
+
 console.log('--- 3) drop obfuscated files into asar tree ---');
 for (const t of TARGETS) {
   const from = path.join(OUT, t.rel);
