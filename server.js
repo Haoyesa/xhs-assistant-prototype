@@ -140,6 +140,7 @@ const DEFAULT_SETTINGS = {
   publishIntervalRandomDelaySeconds: 200,
   singleProductRepeatLimit: 0,
   imagesRoot: '',
+  csvExportDir: '', // 商品 CSV 导出目录；空则默认 Desktop/小红书开店/csv
 };
 
 let lastNextPublishAt = 0; // 插件上报的「下一篇最早发布时刻(ms)」，供桌面批量发布页做倒计时展示
@@ -435,6 +436,37 @@ function sendFile(res, file) {
     });
     fs.createReadStream(file).pipe(res);
   });
+}
+
+// ---- 商品 CSV 导出（供浏览器插件「导出CSV」按钮调用，后端落盘）----
+function csvCell(v) {
+  const s = String(v == null ? '' : v);
+  if (/[",\n\r]/.test(s)) return '"' + s.replace(/"/g, '""') + '"';
+  return s;
+}
+// 与用户现有「大舟舟第1页.csv」模板对齐：宝贝id,标题,内容,话题,发布日期,发布时间
+function buildProductsCsv(rows) {
+  const header = ['宝贝id', '标题', '内容', '话题', '发布日期', '发布时间'];
+  const lines = [header.map(csvCell).join(',')];
+  for (const r of (rows || [])) {
+    const id = (r && r.id != null) ? r.id : '';
+    const title = (r && r.title != null) ? r.title : '';
+    lines.push([id, title, '', '', '', ''].map(csvCell).join(','));
+  }
+  return '﻿' + lines.join('\r\n'); // UTF-8 BOM 让 Excel 正确识别中文
+}
+function sanitizeFileName(name) {
+  const s = String(name || '').replace(/[\\/:*?"<>|\x00-\x1f]/g, '').replace(/\.+$/, '').trim().slice(0, 80);
+  return s || '商品导出';
+}
+function resolveCsvExportDir(settings) {
+  let dir = String((settings && settings.csvExportDir) || '').trim();
+  if (!dir) {
+    const home = process.env.USERPROFILE || process.env.HOME || '.';
+    dir = path.join(home, 'Desktop', '小红书开店', 'csv');
+  }
+  try { fs.mkdirSync(dir, { recursive: true }); } catch (e) { /* ignore */ }
+  return dir;
 }
 
 const server = http.createServer(async (req, res) => {
@@ -827,6 +859,27 @@ const server = http.createServer(async (req, res) => {
       // 后台预热图片缓存，供后续代理/CDP 快速命中（不阻塞响应）
       primeImages(added.flatMap((p) => (p.images && p.images.length ? p.images : (p.image ? [p.image] : []))), UPLOADS);
       return sendJSON(res, 200, { ok: true, added: added.length, updated, products: added });
+    }
+    // 导出当页商品 id+标题 为本地 CSV（落盘到 csvExportDir，默认 Desktop/小红书开店/csv）
+    if (p === '/api/ext/export-csv' && method === 'POST') {
+      const body = await readBody(req);
+      const rows = Array.isArray(body.rows) ? body.rows.slice(0, 20000) : [];
+      if (!rows.length) return sendJSON(res, 400, { ok: false, msg: '没有可导出的商品' });
+      const settings = { ...DEFAULT_SETTINGS, ...(await readStore(stores.settings, {})) };
+      const dir = resolveCsvExportDir(settings);
+      let base = sanitizeFileName(body.name);
+      let file = path.join(dir, base + '.csv');
+      if (fs.existsSync(file)) {
+        let i = 2;
+        while (fs.existsSync(path.join(dir, `${base}_${i}.csv`))) i++;
+        file = path.join(dir, `${base}_${i}.csv`);
+      }
+      try {
+        await fsp.writeFile(file, buildProductsCsv(rows), 'utf-8');
+      } catch (e) {
+        return sendJSON(res, 500, { ok: false, msg: '写入文件失败：' + e.message });
+      }
+      return sendJSON(res, 200, { ok: true, path: file, count: rows.length });
     }
     // 拉待发笔记：扩展在创作者页取一条去填充（标记 picked 防重复）
     if (p === '/api/ext/next' && method === 'GET') {

@@ -45,6 +45,13 @@
 .xh-btn:hover { filter: brightness(1.08) !important; }
 .xh-btn.sm { background: #2a2f37 !important; color: #e6e8eb !important; font-weight: 500 !important; }
 
+/* 导出CSV：与「采集选中」并排的按钮行 + 文件名输入框 */
+.xh-btnrow { display: flex !important; gap: 8px !important; }
+.xh-btn.xh-export { background: #2a6cff !important; }
+.xh-btn.xh-export:hover { filter: brightness(1.08) !important; }
+.xh-expname { width: 100% !important; margin-bottom: 8px !important; padding: 7px 9px !important; border-radius: 8px !important; border: 1px solid #2a2f37 !important; background: #171a21 !important; color: #e6e8eb !important; font-size: 12px !important; font-family: inherit !important; box-sizing: border-box !important; }
+.xh-expname::placeholder { color: #6b7280 !important; }
+
 .xh-sec { border: 1px solid #2a2f37 !important; border-radius: 10px !important; padding: 8px !important; }
 .xh-sechead { display: flex !important; align-items: center !important; justify-content: space-between !important; font-size: 12px !important; color: #9aa3b2 !important; margin-bottom: 6px !important; }
 .xh-sechead b { color: #e6e8eb !important; }

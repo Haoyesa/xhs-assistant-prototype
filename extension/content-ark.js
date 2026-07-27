@@ -279,7 +279,11 @@ function buildPanel() {
         </div>
         <a id="xhClearIgnored" class="xh-clear" style="display:none">清除忽略</a>
         <div class="xh-list" id="xhList"></div>
-        <button class="xh-btn" id="xhCollect">采集选中</button>
+        <input class="xh-expname" id="xhExpName" placeholder="导出文件名（可空，自动命名）"/>
+        <div class="xh-btnrow">
+          <button class="xh-btn" id="xhCollect">采集选中</button>
+          <button class="xh-btn xh-export" id="xhExport">导出CSV</button>
+        </div>
       </div>
       <details class="xh-manual">
         <summary>手动添加 / 批量粘贴</summary>
@@ -454,6 +458,38 @@ function buildPanel() {
     } catch (e) {
       dot('bad'); status('推送失败：' + e.message);
       toast('采集失败：' + e.message, 'err');
+    }
+  });
+
+  // 导出CSV：把当页商品 id+标题 写成本地 CSV（后端落盘到 csvExportDir，默认 Desktop/小红书开店/csv）
+  $('xhExport').addEventListener('click', async () => {
+    const items = window.__xhItems || [];
+    const rows = items
+      .filter((p) => p.itemId || p.productName)
+      .map((p) => ({ id: (p.itemId || '').toString(), title: (p.productName || '').toString() }));
+    if (!rows.length) { status('没有可导出的商品，请先识别本页商品。'); return; }
+    // 文件名：输入框优先；空则按页面标题 + 时间戳自动命名
+    const ts = new Date();
+    const pad = (n) => String(n).padStart(2, '0');
+    const stamp = `${ts.getFullYear()}${pad(ts.getMonth() + 1)}${pad(ts.getDate())}_${pad(ts.getHours())}${pad(ts.getMinutes())}${pad(ts.getSeconds())}`;
+    let name = ($('xhExpName').value || '').trim();
+    if (!name) {
+      const t = (document.title || '').replace(/[\\/:*?"<>|]/g, '').trim().slice(0, 30);
+      name = (t || '商品导出') + '_' + stamp;
+    }
+    dot('wait'); status('导出 CSV 中… ' + rows.length + ' 条');
+    try {
+      const r = await window.XhsCommon.xhsFetch('/api/ext/export-csv', { method: 'POST', body: { rows, name } });
+      if (r.ok && r.data && r.data.ok) {
+        dot('ok');
+        status(`已导出 ${r.data.count} 条 → ${r.data.path || ''}`);
+        toast(`已导出 CSV：${r.data.path || ''}`, 'ok');
+      } else {
+        throw new Error((r.data && (r.data.msg || r.data.error)) || ('HTTP ' + r.status));
+      }
+    } catch (e) {
+      dot('bad'); status('导出失败：' + e.message);
+      toast('导出失败：' + e.message, 'err');
     }
   });
 
