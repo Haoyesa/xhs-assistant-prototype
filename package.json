@@ -9,6 +9,7 @@
   "scripts": {
     "start": "node server.js",
     "electron": "electron .",
+    "dev:license": "node dev-license.mjs",
     "dist": "electron-builder"
   },
   "build": {
