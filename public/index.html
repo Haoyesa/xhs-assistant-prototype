@@ -19,6 +19,7 @@
         <button class="tab-btn active" data-tab="products"><span class="ni">📦</span>采集商品</button>
         <button class="tab-btn" data-tab="batch"><span class="ni">🚀</span>批量发布</button>
         <button class="tab-btn" data-tab="history"><span class="ni">🕘</span>历史</button>
+        <button class="tab-btn" data-tab="accounts"><span class="ni">👤</span>账号</button>
         <button class="tab-btn" data-tab="settings"><span class="ni">⚙️</span>设置</button>
       </nav>
       <div class="side-foot">
@@ -120,6 +121,23 @@
         <!-- 历史 -->
         <section class="tab" data-tab="history">
           <div id="historyList" class="card"></div>
+        </section>
+
+        <!-- 账号管理 -->
+        <section class="tab" data-tab="accounts">
+          <div class="card">
+            <div class="card-h">
+              <h3>账号管理</h3>
+              <span class="hint" id="accountQuota">加载中…</span>
+            </div>
+            <p class="hint">绑定你用于发布的小红书账号。可绑定的账号数量由当前订阅套餐决定（<b>免费版 1 个 / 基础版 1 个 / 专业版 3 个 / 旗舰版 10 个 / 团队版不限</b>）；达到上限后需解绑旧账号或升级套餐才能继续添加。</p>
+            <div class="row">
+              <input id="accountName" placeholder="账号备注名（如 主号 / 小号A）" style="flex:1" />
+              <button id="addAccountBtn" class="primary">➕ 添加账号</button>
+              <span id="accountMsg" class="msg"></span>
+            </div>
+            <div id="accountList" class="account-list"></div>
+          </div>
         </section>
 
         <!-- 设置 -->

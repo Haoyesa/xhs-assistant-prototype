@@ -207,6 +207,13 @@ summary:hover { color: #7aa6ff; }
 .badge.waiting_submit { color: var(--warn); border-color: var(--warn); }
 .badge.manual_hold, .badge.failed, .badge.skipped { color: var(--bad); border-color: var(--bad); }
 
+/* ---------- 账号管理 ---------- */
+.account-list { margin: 14px 0 4px; display: flex; flex-direction: column; gap: 10px; }
+.acc { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 14px; border: 1px solid var(--border); border-radius: 11px; background: var(--panel); }
+.acc-info { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.acc-name { font-weight: 700; font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.acc-meta { color: var(--faint); font-size: 12px; }
+
 /* ---------- 空状态 ---------- */
 .empty {
   text-align: center; color: var(--faint); padding: 38px 16px; border: 1px dashed var(--border);

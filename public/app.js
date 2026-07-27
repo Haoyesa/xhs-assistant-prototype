@@ -21,7 +21,7 @@ let nextPublishAtAt = 0; // 插件上报的「下一篇最早发布时刻(ms)」
 let queueHasPending = false; // 队列是否还有 queued/picked 待发任务（用于决定是否显示倒计时）
 
 // ---- 标签页 ----
-const PAGE_TITLES = { products: '采集商品', batch: '批量发布', history: '历史', settings: '设置' };
+const PAGE_TITLES = { products: '采集商品', batch: '批量发布', history: '历史', accounts: '账号管理', settings: '设置' };
 $$('.tab-btn').forEach((b) => b.addEventListener('click', () => {
   $$('.tab-btn').forEach((x) => x.classList.remove('active'));
   $$('.tab').forEach((x) => x.classList.remove('active'));
@@ -31,6 +31,7 @@ $$('.tab-btn').forEach((b) => b.addEventListener('click', () => {
   if (b.dataset.tab === 'batch') { startPoll(); } else { stopPoll(); }
   if (b.dataset.tab === 'history') loadHistory();
   if (b.dataset.tab === 'products') loadImageFolders();
+  if (b.dataset.tab === 'accounts') loadAccounts();
   loadStats();
 }));
 
@@ -270,6 +271,55 @@ async function loadHistory() {
       <span class="qstep">${esc(r.at || '')}</span>
     </div>`).join('') : '<div class="empty"><span class="em">🕘</span>暂无发布历史。</div>';
 }
+
+// ---- 账号管理（套餐配额门禁）----
+async function loadAccounts() {
+  const box = $('#accountList'); if (!box) return;
+  let data, st;
+  try { data = await callApi('GET', '/api/accounts'); } catch { box.innerHTML = '<div class="empty"><span class="em">⚠️</span>账号列表加载失败，请检查后端连接。</div>'; return; }
+  try { st = await callApi('GET', '/api/settings'); } catch { st = {}; }
+  const max = (st && st.maxAccounts != null) ? st.maxAccounts : data.max;
+  const planLabel = (st && st.plan && st.plan.label) || '免费版';
+  const used = (data.accounts || []).length;
+  const quota = (max === Infinity || max == null) ? '不限' : `${used}/${max}`;
+  const q = $('#accountQuota');
+  if (q) q.textContent = `当前套餐：${planLabel} ｜ 已绑定 ${quota} 个账号`;
+  if (!used) {
+    box.innerHTML = '<div class="empty"><span class="em">👤</span>还没有绑定账号。<br/>添加你用于发布的小红书账号（数量受套餐配额限制）。</div>';
+    return;
+  }
+  box.innerHTML = (data.accounts || []).map((a) => `
+    <div class="acc" data-id="${esc(a.id)}">
+      <div class="acc-info">
+        <div class="acc-name">${esc(a.name)}</div>
+        <div class="acc-meta">绑定于 ${a.createdAt ? new Date(a.createdAt).toLocaleString('zh-CN') : '—'}</div>
+      </div>
+      <button class="mini danger del-acc" data-id="${esc(a.id)}">解绑</button>
+    </div>`).join('');
+  $$('#accountList .del-acc').forEach((b) => b.addEventListener('click', async () => {
+    if (!confirm('确定解绑该账号吗？\n（仅解除本地绑定记录，不影响该小红书账号本身）')) return;
+    const r = await callApi('POST', `/api/accounts/${b.dataset.id}/delete`);
+    if (r.ok) { toast('已解绑账号', 'ok'); loadAccounts(); } else toast('解绑失败', 'err');
+  }));
+}
+$('#addAccountBtn').addEventListener('click', async () => {
+  const name = $('#accountName').value.trim();
+  $('#accountMsg').textContent = '添加中…';
+  const r = await callApi('POST', '/api/accounts', { name });
+  if (r.ok) {
+    $('#accountName').value = '';
+    $('#accountMsg').textContent = '✅ 已添加';
+    toast('已添加账号', 'ok');
+    loadAccounts();
+  } else if (r.error === 'account-limit') {
+    $('#accountMsg').textContent = '❌ ' + (r.message || '已达套餐账号上限');
+    toast('已达套餐账号上限，需解绑或升级', 'err');
+  } else {
+    $('#accountMsg').textContent = '❌ 添加失败';
+    toast('添加失败', 'err');
+  }
+  setTimeout(() => { const m = $('#accountMsg'); if (m) m.textContent = ''; }, 4000);
+});
 
 // ---- 设置 ----
 async function loadSettings() {

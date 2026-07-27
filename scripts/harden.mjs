@@ -113,6 +113,8 @@ for (const root of ['server.js', 'qianfan-scraper.js', 'cdp-publisher.js', 'imag
   if (fs.existsSync(sp) && fs.existsSync(dp)) fs.copyFileSync(sp, dp);
 }
 syncFresh(path.join(ROOT, 'electron'), path.join(SRC, 'electron'));
+// 前端（桌面 GUI）也打包在 asar 内的 public/，需同步最新版本，否则 UI 改动不会进 EXE
+syncFresh(path.join(ROOT, 'public'), path.join(SRC, 'public'));
 
 console.log('--- 3) drop obfuscated files into asar tree ---');
 for (const t of TARGETS) {
