@@ -16,8 +16,8 @@ const DEFAULTS = {
   autoConnect: true,
 };
 
-// 创作者图文发布页（每篇都开这个新标签）
-const CREATOR_URL = 'https://creator.xiaohongshu.com/publish/publish?source=&published=true&from=tab_switch&target=image';
+// 创作者图文发布页（每篇都开一个全新的标签页，地址固定为此）
+const CREATOR_URL = 'https://creator.xiaohongshu.com/publish/publish?source=&published=true&from=tab_switch';
 
 function storageGet() {
   return new Promise((resolve) => {
@@ -317,16 +317,37 @@ async function schedulerStep() {
 chrome.alarms.create('pump', { periodInMinutes: 1 });
 chrome.alarms.onAlarm.addListener((a) => { if (a.name === 'pump') schedulerStep(); });
 
-// 创作者页加载完成：若是本调度器刚开的新标签 → 填充；否则若调度器在跑且无进行中任务 → 接管该页
+// 创作者页加载完成：仅填充「本调度器刚开的新标签页」（awaitingTabId 路径）。
+// 不再「接管」任意已打开的创作者页：发布成功后 XHS 会让同一标签页跳转到结果页
+// （如 ?published=true&from=tab_switch），onUpdated 会再次触发；若还走接管分支，就会把已发布的
+// 结果页当成空白表单重复拉取任务并填充，随后该标签页被关闭导致 busy/current 悬空、调度器永久卡死。
+// 现在每篇笔记都只由 openNextTab 显式打开的全新标签页承载，彻底杜绝复用/重复填充。
 chrome.tabs.onUpdated.addListener((tabId, info, tab) => {
   if (info.status !== 'complete') return;
   if (!/^https:\/\/creator\.xiaohongshu\.com\//.test(tab.url || '')) return;
   if (awaitingTabId === tabId) {
     awaitingTabId = null;
     fillTab(tabId);
-  } else if (schedulerActive && !busy && !paused && !current && !awaitingTabId) {
-    // 用户手动打开了创作者页，或复用已有页 → 接管填充
-    fillTab(tabId);
+  }
+});
+
+// 标签页被关闭（发布后 XHS 可能自动关闭结果页 / 用户手关）：清理引用并兜底释放锁，
+// 避免 current/busy 悬空导致调度器卡死、下一篇永远不开。
+chrome.tabs.onRemoved.addListener((tabId) => {
+  if (awaitingTabId === tabId) awaitingTabId = null;
+  if (lastPublishedTabId === tabId) lastPublishedTabId = null;
+  if (current && current.tabId === tabId) {
+    if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+    if (!current.resolved) {
+      // 进行中的标签被关：释放锁，让调度器开新标签续发下一篇
+      // （当前 picked 任务留在服务端，不重复本篇，避免重复发布同一笔记）
+      current = null;
+      busy = false;
+      broadcast({ kind: 'warn', msg: '发布标签页被关闭，已释放并准备续发下一篇' });
+      if (schedulerActive && !paused) scheduleNext();
+    } else {
+      current = null;
+    }
   }
 });
 
