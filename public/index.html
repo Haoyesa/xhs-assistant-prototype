@@ -21,6 +21,7 @@
         <button class="tab-btn" data-tab="batch"><span class="ni">🚀</span>发布</button>
         <button class="tab-btn" data-tab="history"><span class="ni">🕘</span>历史</button>
         <button class="tab-btn" data-tab="accounts"><span class="ni">👤</span>账号</button>
+        <button class="tab-btn" data-tab="sensitive"><span class="ni">🛡️</span>敏感词</button>
         <button class="tab-btn" data-tab="settings"><span class="ni">⚙️</span>设置</button>
       </nav>
       <div class="side-foot">
@@ -149,6 +150,28 @@
               <span id="accountMsg" class="msg"></span>
             </div>
             <div id="accountList" class="account-list"></div>
+          </div>
+        </section>
+
+        <!-- 敏感词 / 合规自检 -->
+        <section class="tab" data-tab="sensitive">
+          <div class="card">
+            <div class="card-h">
+              <h3>敏感词 / 合规自检</h3>
+              <span class="hint" id="sensitiveCover">加载中…</span>
+            </div>
+            <p class="hint">在发布或导出前，把你的标题 / 正文 / 话题粘贴进来，本地词库会标出高风险表述（广告法极限词、虚假功效、违法违规、跨平台诱导引流等）。命中仅作提示、不自动拦截、不上传，最终由你判断。</p>
+            <textarea id="sensitiveInput" placeholder="粘贴要检测的内容…" rows="10" style="width:100%;box-sizing:border-box"></textarea>
+            <div class="row">
+              <button id="sensitiveCheckBtn" class="primary">🔍 检测</button>
+              <button id="sensitiveMaskBtn" class="ghost">🫥 一键打码</button>
+              <span id="sensitiveMsg" class="msg"></span>
+            </div>
+            <div id="sensitiveResult"></div>
+            <details style="margin-top:12px">
+              <summary class="hint">查看打码后的文本</summary>
+              <textarea id="sensitiveCleaned" readonly placeholder="点击「一键打码」后在此显示替换后的文本" rows="6" style="width:100%;box-sizing:border-box;margin-top:8px"></textarea>
+            </details>
           </div>
         </section>
 

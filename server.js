@@ -11,6 +11,7 @@ import { CdpPublisher, ChallengeDetectedError, StepFailedError } from './cdp-pub
 import { downloadOne, downloadToLocal, primeImages } from './image-util.js';
 // 门禁决策（autoSubmit / 频率 / 账号配额）抽到 electron/gating.mjs，单独混淆以提升逆向门槛
 import { resolvedPlan, planIntervalSeconds, effectiveAutoSubmit, maxAccounts } from './electron/gating.mjs';
+import { SENSITIVE_CATEGORIES } from './sensitive-words.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PUBLIC = path.join(__dirname, 'public');
@@ -43,6 +44,40 @@ async function readStore(file, fallback) {
 }
 async function writeStore(file, data) {
   await fsp.writeFile(file, JSON.stringify(data, null, 2), 'utf-8');
+}
+
+// ---- 本地敏感词 / 合规自检（词库见 sensitive-words.mjs，纯本地、不依赖平台接口）----
+// 扁平化并按词长降序，优先匹配长词；命中仅提示不拦截。
+const SENSITIVE_WORDS = [];
+for (const c of SENSITIVE_CATEGORIES) {
+  for (const w of c.words) {
+    if (w) SENSITIVE_WORDS.push({ word: w, category: c.name, severity: c.severity });
+  }
+}
+SENSITIVE_WORDS.sort((a, b) => b.word.length - a.word.length);
+
+function checkSensitive(text) {
+  const empty = { clean: true, total: 0, bySeverity: { high: 0, medium: 0, low: 0 }, matches: [] };
+  if (!text || typeof text !== 'string') return empty;
+  const covered = [];
+  const matches = [];
+  for (const { word, category, severity } of SENSITIVE_WORDS) {
+    let idx = text.indexOf(word);
+    while (idx !== -1) {
+      const end = idx + word.length;
+      const overlap = covered.some(([s, e]) => idx < e && end > s);
+      if (overlap) { idx = text.indexOf(word, end); continue; }
+      if (!overlap) {
+        matches.push({ word, category, severity, index: idx });
+        covered.push([idx, end]);
+      }
+      idx = text.indexOf(word, end);
+    }
+  }
+  matches.sort((a, b) => a.index - b.index);
+  const bySeverity = { high: 0, medium: 0, low: 0 };
+  for (const m of matches) bySeverity[m.severity] = (bySeverity[m.severity] || 0) + 1;
+  return { clean: matches.length === 0, total: matches.length, bySeverity, matches };
 }
 
 // ---- 原软件同款提示词（默认发布设置）----
@@ -586,6 +621,24 @@ const server = http.createServer(async (req, res) => {
       const next = list.filter((x) => x.id !== id);
       await writeStore(stores.account, { accounts: next });
       return sendJSON(res, 200, { ok: true, accounts: next, max: maxAccounts(DATA) });
+    }
+
+    // 敏感词 / 合规自检：本地词库，不依赖平台接口
+    if (p === '/api/sensitive/categories' && method === 'GET') {
+      const categories = SENSITIVE_CATEGORIES.map((c) => ({ name: c.name, severity: c.severity, count: c.words.length }));
+      const totalWords = SENSITIVE_WORDS.length;
+      return sendJSON(res, 200, { ok: true, categories, totalWords });
+    }
+    if (p === '/api/sensitive/check' && method === 'POST') {
+      try {
+        const body = await readBody(req).catch(() => ({}));
+        const text = (body && typeof body.text === 'string') ? body.text : '';
+        const result = checkSensitive(text);
+        return sendJSON(res, 200, { ok: true, ...result });
+      } catch (err) {
+        console.error('[sensitive/check]', err);
+        return sendJSON(res, 500, { ok: false, error: err.message || '检测失败' });
+      }
     }
 
     // 清除发布数据（保留设置与账号）

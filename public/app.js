@@ -21,7 +21,7 @@ let nextPublishAtAt = 0; // 插件上报的「下一篇最早发布时刻(ms)」
 let queueHasPending = false; // 队列是否还有 queued/picked 待发任务（用于决定是否显示倒计时）
 
 // ---- 标签页 ----
-const PAGE_TITLES = { products: '素材库', generator: '批量作图', batch: '批量发布', history: '历史', accounts: '账号管理', settings: '设置' };
+const PAGE_TITLES = { products: '素材库', generator: '批量作图', batch: '批量发布', history: '历史', accounts: '账号管理', sensitive: '敏感词检测', settings: '设置' };
 $$('.tab-btn').forEach((b) => b.addEventListener('click', () => {
   $$('.tab-btn').forEach((x) => x.classList.remove('active'));
   $$('.tab').forEach((x) => x.classList.remove('active'));
@@ -32,6 +32,7 @@ $$('.tab-btn').forEach((b) => b.addEventListener('click', () => {
   if (b.dataset.tab === 'history') loadHistory();
   if (b.dataset.tab === 'products') loadImageFolders();
   if (b.dataset.tab === 'accounts') loadAccounts();
+  if (b.dataset.tab === 'sensitive') loadSensitiveMeta();
   loadStats();
 }));
 
@@ -409,6 +410,70 @@ function switchTab(name) {
   $$('.tab-btn').forEach((x) => x.classList.toggle('active', x.dataset.tab === name));
   $$('.tab').forEach((x) => x.classList.toggle('active', x.dataset.tab === name));
 }
+
+// ---- 敏感词 / 合规自检 ----
+async function loadSensitiveMeta() {
+  const el = $('#sensitiveCover'); if (!el) return;
+  try {
+    const r = await callApi('GET', '/api/sensitive/categories');
+    if (r && r.ok) el.textContent = `词库覆盖 ${r.categories.length} 类 · ${r.totalWords} 词（本地）`;
+    else el.textContent = '词库加载失败';
+  } catch { el.textContent = '词库加载失败（请检查后端）'; }
+}
+
+function severityBadge(sev) {
+  const map = { high: ['bad', '高危'], medium: ['warn', '中危'], low: ['muted', '低危'] };
+  const [cls, label] = map[sev] || ['muted', sev || '未知'];
+  return `<span class="badge ${cls}">${label}</span>`;
+}
+
+function renderSensitive(r, text) {
+  const box = $('#sensitiveResult'); if (!box) return;
+  if (!r || r.clean) {
+    box.innerHTML = '<div class="empty"><span class="em">✅</span>未检出敏感词 / 高风险表述。</div>';
+    return;
+  }
+  const stat = `检出 <b>${r.total}</b> 处风险：高危 ${r.bySeverity.high || 0} ／ 中危 ${r.bySeverity.medium || 0} ／ 低危 ${r.bySeverity.low || 0}`;
+  const items = (r.matches || []).map((m) => {
+    const start = Math.max(0, m.index - 12);
+    const end = Math.min(text.length, m.index + m.word.length + 12);
+    const snippet = (start > 0 ? '…' : '') + text.slice(start, end) + (end < text.length ? '…' : '');
+    return `<div class="sens-item">
+      ${severityBadge(m.severity)}
+      <span class="sens-cat">${esc(m.category)}</span>
+      <span class="sens-word">${esc(m.word)}</span>
+      <span class="sens-ctx">${esc(snippet)}</span>
+    </div>`;
+  }).join('');
+  box.innerHTML = `<div class="sens-stat">${stat}</div>${items}`;
+}
+
+$('#sensitiveCheckBtn').addEventListener('click', async () => {
+  const text = $('#sensitiveInput').value;
+  $('#sensitiveMsg').textContent = '检测中…';
+  try {
+    const r = await callApi('POST', '/api/sensitive/check', { text });
+    if (!r || !r.ok) { $('#sensitiveMsg').textContent = '检测失败'; return; }
+    renderSensitive(r, text);
+    $('#sensitiveMsg').textContent = r.clean ? '✅ 未发现风险' : `检出 ${r.total} 处`;
+  } catch { $('#sensitiveMsg').textContent = '检测失败（请检查后端）'; }
+});
+
+$('#sensitiveMaskBtn').addEventListener('click', async () => {
+  const text = $('#sensitiveInput').value;
+  if (!text) { $('#sensitiveMsg').textContent = '请先输入内容'; return; }
+  $('#sensitiveMsg').textContent = '检测中…';
+  try {
+    const r = await callApi('POST', '/api/sensitive/check', { text });
+    if (!r || !r.ok) { $('#sensitiveMsg').textContent = '检测失败'; return; }
+    const sorted = [...(r.matches || [])].sort((a, b) => b.index - a.index);
+    let out = text;
+    for (const m of sorted) out = out.slice(0, m.index) + '*'.repeat(m.word.length) + out.slice(m.index + m.word.length);
+    $('#sensitiveCleaned').value = out;
+    renderSensitive(r, text);
+    $('#sensitiveMsg').textContent = sorted.length ? `已打码 ${sorted.length} 处` : '未发现需打码的词';
+  } catch { $('#sensitiveMsg').textContent = '检测失败（请检查后端）'; }
+});
 
 // 初始化
 loadProducts();

@@ -254,3 +254,19 @@ summary:hover { color: #7aa6ff; }
   background: var(--panel); border: 1px solid var(--border); padding: 1px 7px;
   border-radius: 6px; color: var(--text); font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12px;
 }
+
+/* ---------- 敏感词 / 合规自检 ---------- */
+button.ghost {
+  background: transparent; color: var(--text); border: 1px solid var(--border);
+  padding: 9px 14px; border-radius: 10px; cursor: pointer; font-size: 13px;
+}
+button.ghost:hover { background: var(--panel2); }
+.sens-stat { margin: 12px 0 8px; font-size: 14px; color: var(--text); }
+.sens-stat b { color: var(--warn); }
+.sens-item {
+  display: flex; align-items: center; gap: 10px; padding: 9px 12px; margin: 7px 0;
+  border: 1px solid var(--border); border-radius: 10px; background: var(--panel);
+}
+.sens-cat { color: var(--muted); font-size: 12px; white-space: nowrap; }
+.sens-word { font-weight: 700; color: var(--bad); white-space: nowrap; }
+.sens-ctx { color: var(--faint); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; min-width: 0; }
