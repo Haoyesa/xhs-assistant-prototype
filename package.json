@@ -10,6 +10,8 @@
     "start": "node server.js",
     "electron": "electron .",
     "dev:license": "node dev-license.mjs",
+    "reset:activation": "node scripts/reset-activation.mjs",
+    "reset:activation:server": "node scripts/reset-activation.mjs --with-server",
     "dist": "electron-builder"
   },
   "build": {
