@@ -366,15 +366,19 @@ async function runPump(settings) {
 
       // 节奏控制（CDP 模式用配置间隔；dry-run 用短间隔便于演示）
       if (mode === 'cdp') {
-        const base = (settings.publishIntervalSeconds || 500) * 1000;
-        const extra = (settings.publishIntervalRandomDelaySeconds || 200) * 1000 * Math.random();
-        await sleepInterruptible(base + extra);
+        const base = (settings.publishIntervalSeconds ?? 500) * 1000;
+        const extra = (settings.publishIntervalRandomDelaySeconds ?? 200) * 1000 * Math.random();
+        lastNextPublishAt = Date.now() + base + extra;
+        const { interrupted } = await sleepInterruptible(base + extra);
+        // 被 stop/pause 中断或队列已结束时，清除倒计时（避免前端一直读一个不会到来的时刻）
+        if (interrupted || pump.stop || pump.paused) lastNextPublishAt = 0;
       } else {
         await sleepInterruptible(1500 + Math.random() * 1500);
       }
     }
   } finally {
     pump.running = false;
+    lastNextPublishAt = 0; // 批量发布结束，清除倒计时
   }
 }
 
@@ -387,7 +391,10 @@ function sleepInterruptible(ms) {
   return new Promise((resolve) => {
     const start = Date.now();
     const tick = () => {
-      if (pump.stop || Date.now() - start >= ms) return resolve();
+      if (pump.stop || Date.now() - start >= ms) {
+        // 返回是否被中断：stop 为 true 表示提前结束
+        return resolve({ interrupted: !!pump.stop });
+      }
       setTimeout(tick, Math.min(500, ms - (Date.now() - start)));
     };
     tick(); // 立即检查，不等待
