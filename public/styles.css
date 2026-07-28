@@ -91,7 +91,7 @@ body {
 .stat-num.bad { color: var(--bad); }
 .stat-label { font-size: 11px; color: var(--muted); margin-top: 4px; }
 
-.content { padding: 22px 26px 40px; max-width: 1180px; width: 100%; }
+.content { padding: 22px 26px 40px; width: 100%; }
 .tab { display: none; }
 .tab.active { display: block; animation: fade .25s ease; }
 @keyframes fade { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
