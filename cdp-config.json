@@ -15,7 +15,7 @@
     "note": "仅抹掉 navigator.webdriver 标志，不做指纹伪造/验证码破解。"
   },
   "qianfan": {
-    "note": "千帆商品页选品抓取。请在浏览器登录千帆并打开商品列表页后使用『从千帆抓取』。选择器随官网改版变动，如抓取为空请按实际 DOM 调整下面字段。",
+    "note": "商品页选品抓取。请在浏览器登录商家后台并打开商品列表页后使用『从商品页抓取』。选择器随官网改版变动，如抓取为空请按实际 DOM 调整下面字段。",
     "productPageUrl": "https://channel.xiaohongshu.com/ark/product/list",
     "hostContains": "xiaohongshu.com",
     "cardSelector": ".product-item, .goods-card, [class*='ProductItem'], [class*='goodsCard']",

@@ -21,7 +21,7 @@ let nextPublishAtAt = 0; // 插件上报的「下一篇最早发布时刻(ms)」
 let queueHasPending = false; // 队列是否还有 queued/picked 待发任务（用于决定是否显示倒计时）
 
 // ---- 标签页 ----
-const PAGE_TITLES = { products: '采集商品', generator: '批量作图', batch: '批量发布', history: '历史', accounts: '账号管理', settings: '设置' };
+const PAGE_TITLES = { products: '素材库', generator: '批量作图', batch: '批量发布', history: '历史', accounts: '账号管理', settings: '设置' };
 $$('.tab-btn').forEach((b) => b.addEventListener('click', () => {
   $$('.tab-btn').forEach((x) => x.classList.remove('active'));
   $$('.tab').forEach((x) => x.classList.remove('active'));
@@ -89,12 +89,12 @@ function toast(text, kind = '') {
 }
 
 // ---- 选品 ----
-const SRC_LABEL = { extension: '插件', qianfan: '千帆', manual: '手动', import: '导入' };
+const SRC_LABEL = { extension: '插件', qianfan: '选品', manual: '手动', import: '导入' };
 async function loadProducts() {
   const list = await callApi('GET', '/api/products');
   $('#prodCount').textContent = list.length;
   if (!list.length) {
-    $('#productList').innerHTML = '<div class="empty"><span class="em">📦</span>商品库还是空的。<br/>在千帆页用插件「采集本页商品」，或上方手动/导入添加。</div>';
+    $('#productList').innerHTML = '<div class="empty"><span class="em">📦</span>商品库还是空的。<br/>在商品页用插件「采集本页商品」，或上方手动/导入添加。</div>';
     loadStats();
     return;
   }
@@ -118,7 +118,7 @@ $('#fetchQianfanBtn').addEventListener('click', async () => {
   const r = await callApi('POST', '/api/qianfan/fetch', {});
   $('#fetchMsg').textContent = r.ok ? `✅ 抓到 ${r.count} 个商品` : '❌ ' + (r.detail || '失败');
   if (r.ok) { loadProducts(); toast(`已抓取 ${r.count} 个商品`, 'ok'); }
-  else toast('千帆抓取失败：' + (r.detail || ''), 'err');
+  else toast('商品页抓取失败：' + (r.detail || ''), 'err');
 });
 
 $('#addProductBtn').addEventListener('click', async () => {
@@ -170,8 +170,8 @@ async function loadImageFolders() {
       <div class="pname">${esc(f.name)}</div>
       <div class="pmeta">${f.imageCount} 张图 · 将生成标题：<strong>${esc(f.previewTitle)}</strong></div>
       ${f.matchedProduct
-        ? `<div class="pmeta imported">🔗 已匹配千帆商品（按${esc(f.matchedProduct.matchBy)}）</div>${f.nameWarning ? `<div class="pmeta warn">⚠ 商品名疑似就是文件夹名，请到「采集商品」页把该商品名改成真实标题</div>` : ''}`
-        : `<div class="pmeta warn">⚠ 未匹配到千帆商品 → 标题将是文件夹名。可在文件夹内放 title.txt 指定真实标题，或到「采集商品」页添加 itemId=${esc(f.productId)} 的商品</div>`}
+        ? `<div class="pmeta imported">🔗 已匹配商品（按${esc(f.matchedProduct.matchBy)}）</div>${f.nameWarning ? `<div class="pmeta warn">⚠ 商品名疑似就是文件夹名，请到「素材库」页把该商品名改成真实标题</div>` : ''}`
+        : `<div class="pmeta warn">⚠ 未匹配到商品 → 标题将是文件夹名。可在文件夹内放 title.txt 指定真实标题，或到「素材库」页添加 itemId=${esc(f.productId)} 的商品</div>`}
       ${f.imported ? '<div class="pmeta imported">✓ 已导入</div>' : ''}
     </div>`).join('');
 }
@@ -204,7 +204,7 @@ async function loadQueue() {
       <span class="qstep">${esc(t.step || '')}</span>
       <span class="qdetail">${esc(t.statusDetail || '')}</span>
       ${t.status === 'queued' ? `<button class="mini cancel" data-id="${t.id}">取消</button>` : ''}
-    </div>`).join('') : '<div class="empty"><span class="em">🚀</span>队列为空。<br/>去「采集商品」页的本地图片文件夹扫描并导入生成笔记。</div>';
+    </div>`).join('') : '<div class="empty"><span class="em">🚀</span>队列为空。<br/>去「素材库」页的本地图片文件夹扫描并导入生成笔记。</div>';
   $$('#queueList .cancel').forEach((b) => b.addEventListener('click', async () => {
     await callApi('POST', `/api/batch/${b.dataset.id}/cancel`); loadQueue();
   }));
@@ -285,7 +285,7 @@ async function loadAccounts() {
   const q = $('#accountQuota');
   if (q) q.textContent = `当前套餐：${planLabel} ｜ 已绑定 ${quota} 个账号`;
   if (!used) {
-    box.innerHTML = '<div class="empty"><span class="em">👤</span>还没有绑定账号。<br/>添加你用于发布的小红书账号（数量受套餐配额限制）。</div>';
+    box.innerHTML = '<div class="empty"><span class="em">👤</span>还没有绑定账号。<br/>添加你的账号（数量受套餐配额限制）。</div>';
     return;
   }
   box.innerHTML = (data.accounts || []).map((a) => `
@@ -297,7 +297,7 @@ async function loadAccounts() {
       <button class="mini danger del-acc" data-id="${esc(a.id)}">解绑</button>
     </div>`).join('');
   $$('#accountList .del-acc').forEach((b) => b.addEventListener('click', async () => {
-    if (!confirm('确定解绑该账号吗？\n（仅解除本地绑定记录，不影响该小红书账号本身）')) return;
+    if (!confirm('确定解绑该账号吗？\n（仅解除本地绑定记录，不影响该账号本身）')) return;
     const r = await callApi('POST', `/api/accounts/${b.dataset.id}/delete`);
     if (r.ok) { toast('已解绑账号', 'ok'); loadAccounts(); } else toast('解绑失败', 'err');
   }));
@@ -374,7 +374,7 @@ $('#saveSetBtn').addEventListener('click', async () => {
 });
 
 $('#clearDataBtn').addEventListener('click', async () => {
-  if (!confirm('确定清除全部发布数据吗？\n将删除：采集商品、发布任务、发布历史、已上传图片。\n（AI 配置与账号设置保留）')) return;
+  if (!confirm('确定清除全部发布数据吗？\n将删除：素材库、发布任务、发布历史、已上传图片。\n（AI 配置与账号设置保留）')) return;
   $('#clearMsg').textContent = '清除中…';
   try {
     const r = await callApi('POST', '/api/data/clear', { targets: ['tasks', 'products', 'history', 'uploads'] });

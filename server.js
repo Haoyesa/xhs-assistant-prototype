@@ -375,7 +375,7 @@ function resolveImagesRoot(settings) {
 const IMG_EXT = /\.(jpe?g|png|webp|gif|bmp|avif)$/i;
 const SEED_FILES = ['name.txt', 'caption.txt', 'title.txt'];
 // 扫描图片根目录：每个直接子目录 = 一篇笔记，目录名即 id；目录内图片按文件名排序
-// 文件夹名格式支持 "<productId>_<suffix>"（如 686673d41ea4cb001553c6da_1），productId 用于匹配千帆商品库
+// 文件夹名格式支持 "<productId>_<suffix>"（如 686673d41ea4cb001553c6da_1），productId 用于匹配选品商品库
 function scanImageFolders(root) {
   if (!root) return [];
   if (!fs.existsSync(root)) { try { fs.mkdirSync(root, { recursive: true }); } catch {} return []; }
@@ -550,7 +550,7 @@ const server = http.createServer(async (req, res) => {
       return sendJSON(res, 200, { ok: true });
     }
 
-    // 账号注册表（套餐配额门禁）：绑定/解绑小红书账号，受 plan.accounts 限制
+    // 账号注册表（套餐配额门禁）：绑定/解绑发布平台账号，受 plan.accounts 限制
     if (p === '/api/accounts' && method === 'GET') {
       const reg = await readStore(stores.account, { accounts: [] });
       const list = Array.isArray(reg.accounts) ? reg.accounts : [];
@@ -665,7 +665,7 @@ const server = http.createServer(async (req, res) => {
       return sendJSON(res, 200, { ok: true });
     }
 
-    // 从千帆抓取
+    // 从选品抓取
     if (p === '/api/qianfan/fetch' && method === 'POST') {
       const body = await readBody(req);
       const settings = { ...DEFAULT_SETTINGS, ...(await readStore(stores.settings, {})), ...body };
@@ -855,7 +855,7 @@ const server = http.createServer(async (req, res) => {
       } catch (e) {
         return sendJSON(res, 200, { ok: false, detail: '启动浏览器失败：' + e.message });
       }
-      return sendJSON(res, 200, { ok: true, detail: '已启动 ' + path.basename(exe) + '（调试端口 9222）。首次请在弹出的浏览器里登录小红书，之后会保持登录。' });
+      return sendJSON(res, 200, { ok: true, detail: '已启动 ' + path.basename(exe) + '（调试端口 9222）。首次请在弹出的浏览器里登录发布平台，之后会保持登录。' });
     }
 
     // 历史
@@ -864,7 +864,7 @@ const server = http.createServer(async (req, res) => {
     }
 
     // ===== 浏览器插件接口（扩展作为「浏览器内自动化层」配对本后端）=====
-    // 推商品：扩展在千帆页采集后写入商品库
+    // 推商品：扩展在选品页采集后写入商品库
     if (p === '/api/ext/products' && method === 'POST') {
       const body = await readBody(req);
       const list = Array.isArray(body.products) ? body.products : (body.itemId ? [body] : []);
@@ -1007,7 +1007,7 @@ const server = http.createServer(async (req, res) => {
       return sendJSON(res, 200, { ok: true });
     }
 
-    // 图片代理：把远程商品图下载到本地并返回（带 CORS），供浏览器插件在小红书页面注入图片时绕过防盗链
+    // 图片代理：把远程商品图下载到本地并返回（带 CORS），供浏览器插件在发布平台页面注入图片时绕过防盗链
     if (p === '/api/image' && method === 'GET') {
       const target = url.searchParams.get('url');
       if (!target || !/^https?:\/\//i.test(target)) return sendJSON(res, 400, { ok: false, detail: 'invalid url' });
@@ -1033,7 +1033,7 @@ const server = http.createServer(async (req, res) => {
       const imported = await readStore(stores.importedFolders, []);
       const products = await readStore(stores.products, []);
       // 同时按 itemId / id / productName 建索引，兼容用户文件夹里的 productId 各种可能写法；
-      // 相同 itemId 出现多条（如「千帆采集的真实商品」与「导入时自动建的垃圾商品」）时，优先保留真实标题那条
+      // 相同 itemId 出现多条（如「选品采集的真实商品」与「导入时自动建的垃圾商品」）时，优先保留真实标题那条
       const prodByItemId = new Map();
       for (const p of products) { const k = normalizeId(p.itemId); if (k) prodByItemId.set(k, chooseBetter(prodByItemId.get(k), p)); }
       const prodById = new Map(products.map((p) => [normalizeId(p.id), p]));
@@ -1045,7 +1045,7 @@ const server = http.createServer(async (req, res) => {
         const matchBy = prod
           ? (prodByItemId.has(key) ? 'itemId' : prodById.has(key) ? 'id' : 'productName')
           : null;
-        // 如果千帆商品库匹配到了，用商品名替换文案种子
+        // 如果选品商品库匹配到了，用商品名替换文案种子
         const seed = prod?.productName || f.seed;
         // 诊断：匹配到了商品，但商品名疑似没填真实标题（等于文件夹名或 productId）
         const nameWarning = prod
@@ -1064,7 +1064,7 @@ const server = http.createServer(async (req, res) => {
       return sendJSON(res, 200, { ok: true, root, exists: fs.existsSync(root), folders });
     }
     // 导入选中的图片文件夹为「商品 + 待发布笔记」：图片以本地文件服务 URL 进入 task.images，
-    // 标题/正文/话题由 AI 按商品名（千帆商品库匹配 productId）生成；已导入的 id 自动跳过避免重复。
+    // 标题/正文/话题由 AI 按商品名（选品商品库匹配 productId）生成；已导入的 id 自动跳过避免重复。
     if (p === '/api/images-folders/import' && method === 'POST') {
       const body = await readBody(req);
       const settings = { ...DEFAULT_SETTINGS, ...(await readStore(stores.settings, {})) };
@@ -1088,7 +1088,7 @@ const server = http.createServer(async (req, res) => {
         if (ids && !ids.includes(f.id)) continue;
         if (imported.has(f.id)) continue;
         const images = f.images.map((rel) => `${serverUrl}/api/file?rel=${encodeURIComponent(rel)}`);
-        // 用文件夹名解析出的 productId 去千帆商品库匹配（兼容大小写/空格）
+        // 用文件夹名解析出的 productId 去选品商品库匹配（兼容大小写/空格）
         const itemId = f.productId;
         const key = normalizeId(itemId);
         const matchedProd = prodByItemId.get(key) || prodById.get(key) || prodByName.get(key);
@@ -1103,7 +1103,7 @@ const server = http.createServer(async (req, res) => {
           : false;
         // 匹配到则用商品名作为文案种子，否则回退到文件夹名/name.txt
         const productName = matchedProd?.productName || f.seed;
-        // 如果千帆商品库已有此商品，复用；否则创建一条最小记录
+        // 如果选品商品库已有此商品，复用；否则创建一条最小记录
         const prod = matchedProd || {
           id: uid('p'), itemId, productName, price: '', image: images[0] || '',
           description: '', images, source: 'images-folder', createdAt: nowISO(),
@@ -1126,8 +1126,8 @@ const server = http.createServer(async (req, res) => {
           product: { itemId, productName, price: matchedProd?.price || '' },
           matchedProduct: matchedProd ? { itemId: matchedProd.itemId, productName: matchedProd.productName, matchBy } : null,
           status: 'queued', step: 'created', statusDetail: matchedProd
-            ? (nameWarning ? '已匹配千帆商品，但商品名疑似未填真实标题（请到选品页修改该商品名）' : '已匹配千帆商品并生成笔记')
-            : '已导入本地图片文件夹并生成笔记（未匹配到千帆商品，标题按文件夹名/name.txt 生成）', createdAt: nowISO(), updatedAt: nowISO(),
+            ? (nameWarning ? '已匹配选品商品，但商品名疑似未填真实标题（请到选品页修改该商品名）' : '已匹配选品商品并生成笔记')
+            : '已导入本地图片文件夹并生成笔记（未匹配到选品商品，标题按文件夹名/name.txt 生成）', createdAt: nowISO(), updatedAt: nowISO(),
         };
         tasks.push(task);
         created.push(task);

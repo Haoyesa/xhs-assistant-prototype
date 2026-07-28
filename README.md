@@ -30,8 +30,8 @@ xhs-assistant-prototype/
 ├── extension/                # 浏览器插件（MV3）：background / content-* / popup / panel.css
 ├── electron/
 │   └── main.mjs              # Electron 主进程入口
-├── cdp-publisher.js          # 发布逻辑（过渡期，将下线）
-├── qianfan-scraper.js       # 商品抓取（过渡期，将下线）
+├── cdp-publisher.js          # 发布逻辑
+├── qianfan-scraper.js       # 商品抓取
 ├── image-util.js             # 图片工具
 ├── cdp-config.json           # 选择器 / CDP 配置
 ├── gen_releases.js           # 生成 releases 发布归档页

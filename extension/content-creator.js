@@ -1,12 +1,12 @@
 // content-creator.js — 在创作者发布台(creator.xiaohongshu.com)注入「发布助手」侧栏
 // 收到后端任务后：填标题/正文/话题、注入配图、关联商品，交人工点发布。
 // 合规：检测到验证挑战即停下并通知；绝不自动破解、不伪造。
-console.log('[XHS] content-creator.js 已注入', new Date().toISOString());
+console.log('[黑猫] content-creator.js 已注入', new Date().toISOString());
 // 保活 service worker（防止长耗时填表/回报期间 SW 被回收导致 Extension context invalidated）
 try { window.XhsCommon && window.XhsCommon.xhsKeepAlive(); } catch (e) {}
 
-// ---- 顶部居中悬浮 Toast：捕获 [XHS] 日志 + 实时状态 ----
-// 安装 console.log 包装，把 [XHS] 日志写入环形缓冲，供右上/顶部 Toast 渲染。
+// ---- 顶部居中悬浮 Toast：捕获 [黑猫] 日志 + 实时状态 ----
+// 安装 console.log 包装，把 [黑猫] 日志写入环形缓冲，供右上/顶部 Toast 渲染。
 window.__xhsToastLog = window.__xhsToastLog || [];
 (function installXhsLogCapture() {
   const _log = console.log.bind(console);
@@ -255,7 +255,7 @@ async function typeText(el, text, opts = {}) {
     if (text.includes('\n') && actual < expected) {
       // 回炉：用 insertHTML 把整段正文重排为多个 <p>。ProseMirror 通过 mutation observer 把插入的
       // HTML 解析成真实段落，比合成 Enter 键事件可靠得多（合成 Enter 在本环境常常不生效）。
-      console.log('[XHS] 正文段落不足(', actual, '/', expected, ')，触发回炉：用 insertHTML 重排为真实 <p> 段落');
+      console.log('[黑猫] 正文段落不足(', actual, '/', expected, ')，触发回炉：用 insertHTML 重排为真实 <p> 段落');
       try {
         el.focus();
         document.execCommand('selectAll', false, null);
@@ -268,12 +268,12 @@ async function typeText(el, text, opts = {}) {
         const okIns = document.execCommand('insertHTML', false, html);
         el.dispatchEvent(new Event('input', { bubbles: true }));
         await sleep(350);
-        console.log('[XHS] 正文回炉(insertHTML) 结果=', okIns, '段落数=', blockCount(el));
+        console.log('[黑猫] 正文回炉(insertHTML) 结果=', okIns, '段落数=', blockCount(el));
       } catch (e) {
-        console.log('[XHS] 正文回炉失败:', e.message);
+        console.log('[黑猫] 正文回炉失败:', e.message);
       }
     } else if (!text.includes('\n')) {
-      console.log('[XHS] 正文无 \\n 分段符，按原文填入（如需分段，正文需含换行符）');
+      console.log('[黑猫] 正文无 \\n 分段符，按原文填入（如需分段，正文需含换行符）');
     }
   }
 }
@@ -307,27 +307,27 @@ function findFileInput() {
 }
 async function injectImages(urls, serverUrl, fileInput) {
   if (!urls || !urls.length) {
-    console.log('[XHS] injectImages: 任务无图片（images 为空）。小红书图文笔记须至少 1 张图，上传区不渲染则标题/正文框不会出现');
+    console.log('[黑猫] injectImages: 任务无图片（images 为空）。图文笔记须至少 1 张图，上传区不渲染则标题/正文框不会出现');
     return { ok: true, skipped: true, noImages: true };
   }
   // 同一任务图片已注入过则跳过（防止重复下发 / 重复执行导致同一张图被加两次）
   const taskId = window.__xhsCurrentTaskId;
   if (taskId && window.__xhsInjected && window.__xhsInjected.has(taskId)) {
-    console.log('[XHS] injectImages: 本任务图片已注入，跳过重复注入');
+    console.log('[黑猫] injectImages: 本任务图片已注入，跳过重复注入');
     return { ok: true, skipped: true, detail: '本任务图片已注入，跳过重复注入' };
   }
   let input = fileInput || findFileInput();
-  console.log('[XHS] injectImages: 初始 fileInput=', input ? (input.tagName + (input.multiple ? '[multiple]' : '') + ' .' + (input.getAttribute('class') || '').slice(0, 30)) : 'null', 'accept=', input ? (input.getAttribute('accept') || '') : '-');
+  console.log('[黑猫] injectImages: 初始 fileInput=', input ? (input.tagName + (input.multiple ? '[multiple]' : '') + ' .' + (input.getAttribute('class') || '').slice(0, 30)) : 'null', 'accept=', input ? (input.getAttribute('accept') || '') : '-');
   // 上传区可能尚未渲染：轮询等待 file input 出现（最多 10s）
   if (!input) {
     const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
     for (let i = 0; i < 20; i++) { await sleep(500); input = findFileInput(); if (input) break; }
   }
   if (!input) {
-    console.log('[XHS] injectImages: 未找到图片上传控件（请确认已处在「图文」上传模式，URL 需带 target=image）');
+    console.log('[黑猫] injectImages: 未找到图片上传控件（请确认已处在「图文」上传模式，URL 需带 target=image）');
     return { ok: false, detail: '未找到图片上传控件（请确认已处在「图文」上传模式）' };
   }
-  console.log('[XHS] injectImages: 选用上传框=', input.tagName, 'multiple=', input.multiple, 'accept=', input.getAttribute('accept') || '', 'class=', (input.getAttribute('class') || '').slice(0, 40), 'serverUrl=', serverUrl || '-', 'urls=', urls.length);
+  console.log('[黑猫] injectImages: 选用上传框=', input.tagName, 'multiple=', input.multiple, 'accept=', input.getAttribute('accept') || '', 'class=', (input.getAttribute('class') || '').slice(0, 40), 'serverUrl=', serverUrl || '-', 'urls=', urls.length);
   const base = (serverUrl || '').replace(/\/+$/, '');
   const files = [];
   const fetchWithTimeout = (u, opts, ms) => {
@@ -340,17 +340,17 @@ async function injectImages(urls, serverUrl, fileInput) {
     const proxied = isLocalServed ? u : (base ? `${base}/api/image?url=${encodeURIComponent(u)}` : u);
     try {
       const r = await fetchWithTimeout(proxied, { mode: 'cors' }, 8000);
-      if (!r.ok) { console.log('[XHS] injectImages: 拉取失败', r.status, String(u).slice(0, 60)); continue; }
+      if (!r.ok) { console.log('[黑猫] injectImages: 拉取失败', r.status, String(u).slice(0, 60)); continue; }
       const blob = await r.blob();
       const rawName = fileNameOf(u);
       const ext = (rawName.includes('.') ? rawName.split('.').pop() : 'jpg').slice(0, 8).toLowerCase();
       const name = ((rawName.replace(/\.[^.]+$/, '') || 'img').slice(0, 40)) + '.' + ext;
       files.push(new File([blob], name, { type: blob.type || 'image/jpeg' }));
-      console.log('[XHS] injectImages: 已拉取', files.length, name, blob.size, 'bytes');
-    } catch (e) { console.log('[XHS] injectImages: 拉取异常', String(u).slice(0, 60), e.message); /* 跳过单张失败/超时 */ }
+      console.log('[黑猫] injectImages: 已拉取', files.length, name, blob.size, 'bytes');
+    } catch (e) { console.log('[黑猫] injectImages: 拉取异常', String(u).slice(0, 60), e.message); /* 跳过单张失败/超时 */ }
   }
   if (!files.length) {
-    console.log('[XHS] injectImages: 没有任何图片拉取成功（代理/网络/防盗链问题），请手动添加');
+    console.log('[黑猫] injectImages: 没有任何图片拉取成功（代理/网络/防盗链问题），请手动添加');
     return { ok: false, detail: '图片经代理仍拉取失败，请手动添加' };
   }
   const dt = new DataTransfer();
@@ -363,20 +363,20 @@ async function injectImages(urls, serverUrl, fileInput) {
       desc.set.call(input, dt.files);
     }
     input.dispatchEvent(new Event('change', { bubbles: true }));
-    console.log('[XHS] injectImages: 已注入', files.length, '张并触发 change 事件');
+    console.log('[黑猫] injectImages: 已注入', files.length, '张并触发 change 事件');
     if (taskId) { (window.__xhsInjected = window.__xhsInjected || new Set()).add(taskId); }
     // 注入后验证：轮询等待标题/正文表单出现（XHS 上传成功后才渲染）。最多 20s。
     const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
     let appeared = false;
     for (let i = 0; i < 40; i++) {
       const f = allFields();
-      if (f.length) { appeared = true; console.log('[XHS] injectImages: 注入后表单已渲染，可见字段', f.length, '个'); break; }
+      if (f.length) { appeared = true; console.log('[黑猫] injectImages: 注入后表单已渲染，可见字段', f.length, '个'); break; }
       await sleep(500);
     }
-    if (!appeared) console.log('[XHS] injectImages: 注入后 20s 表单仍未渲染（上传可能未生效，标题/正文将无法定位）');
+    if (!appeared) console.log('[黑猫] injectImages: 注入后 20s 表单仍未渲染（上传可能未生效，标题/正文将无法定位）');
     return { ok: true, count: files.length, formAppeared: appeared };
   } catch (e) {
-    console.log('[XHS] injectImages: 注入异常', e.message);
+    console.log('[黑猫] injectImages: 注入异常', e.message);
     return { ok: false, detail: '注入失败：' + e.message };
   }
 }
@@ -426,7 +426,7 @@ function findGoodsPickerRoot() {
     const rank = (c) => Number(c.hasSearch) * 4 + Number(c.hasCard) * 2 + Number(c.isModalLike) * 2 + Number(c.coversMost) * 1;
     cand.sort((a, b) => (rank(b) - rank(a)) || (a.area - b.area));
     const root = cand[0].el;
-    console.log('[XHS] 商品面板容器:', root.tagName, '.', (root.className || '').slice(0, 24), 'coversMost=', cand[0].coversMost, 'area=', Math.round(cand[0].area), 'modalLike=', cand[0].isModalLike, 'hasSearch=', cand[0].hasSearch);
+    console.log('[黑猫] 商品面板容器:', root.tagName, '.', (root.className || '').slice(0, 24), 'coversMost=', cand[0].coversMost, 'area=', Math.round(cand[0].area), 'modalLike=', cand[0].isModalLike, 'hasSearch=', cand[0].hasSearch);
     return root;
   }
   // 兜底：含商品搜索框的最小容器（即便无 marker 文案，只要里面是商品搜索框就一定是弹窗）
@@ -434,7 +434,7 @@ function findGoodsPickerRoot() {
     const r = e.getBoundingClientRect();
     return r.width * r.height > 8000 && e.querySelector('input[placeholder*="商品"], input[placeholder*="搜索"], input[placeholder*="ID"]');
   }).sort((a, b) => a.getBoundingClientRect().width * a.getBoundingClientRect().height - b.getBoundingClientRect().width * b.getBoundingClientRect().height);
-  if (bySearch[0]) { console.log('[XHS] 商品面板容器(搜索框兜底):', bySearch[0].tagName, '.', (bySearch[0].className || '').slice(0, 24)); return bySearch[0]; }
+  if (bySearch[0]) { console.log('[黑猫] 商品面板容器(搜索框兜底):', bySearch[0].tagName, '.', (bySearch[0].className || '').slice(0, 24)); return bySearch[0]; }
   return null;
 }
 // 全文档查找「商品搜索框」：placeholder / aria-label 命中商品搜索特征。即使面板定位不准，也能以此锚定真正的弹窗。
@@ -555,8 +555,8 @@ async function closeGoodsPicker(status) {
     }
     await sleep(200);
   }
-  if (isOpen()) console.log('[XHS] 商品面板仍未关闭（请手动关闭或把面板按钮文字发我）');
-  else console.log('[XHS] 商品面板已关闭');
+  if (isOpen()) console.log('[黑猫] 商品面板仍未关闭（请手动关闭或把面板按钮文字发我）');
+  else console.log('[黑猫] 商品面板已关闭');
   status && status('已关闭商品选择面板，继续发布');
 }
 
@@ -601,7 +601,7 @@ async function associateGoods(product) {
     for (let attempt = 0; attempt < 3; attempt++) {
       try { trigger.scrollIntoView({ block: 'center' }); } catch (e) {}
       await sleep(300);
-      console.log('[XHS] 点击关联商品入口:', (trigger.textContent || '').trim().slice(0, 12), '(尝试', attempt + 1, ')');
+      console.log('[黑猫] 点击关联商品入口:', (trigger.textContent || '').trim().slice(0, 12), '(尝试', attempt + 1, ')');
       try { trigger.click(); } catch (e) {}
       // 补一次真实鼠标事件，确保 React 合成事件稳定触发
       try {
@@ -613,9 +613,9 @@ async function associateGoods(product) {
       if (findGoodsSearchInput()) break;   // 弹窗已开（搜索框出现）即停
       trigger = findTrigger();             // 否则重新定位（DOM 可能重渲染）
     }
-    if (!findGoodsSearchInput()) console.log('[XHS] 已点击添加商品，但弹窗未出现（搜索框未定位）');
+    if (!findGoodsSearchInput()) console.log('[黑猫] 已点击添加商品，但弹窗未出现（搜索框未定位）');
   } else {
-    console.log('[XHS] 未找到「关联商品」入口按钮');
+    console.log('[黑猫] 未找到「关联商品」入口按钮');
   }
   // 2) 找商品选择面板，并在面板内定位搜索框
   let picker = findGoodsPickerRoot();
@@ -646,7 +646,7 @@ async function associateGoods(product) {
     if (sIn) {
       input = sIn;
       picker = closestModal(sIn);
-      console.log('[XHS] 命中商品搜索框(全文档):', input.tagName, 'ph=', (input.placeholder || input.getAttribute('aria-label') || '').slice(0, 16), '｜目标 itemId=', itemId.slice(0, 12));
+      console.log('[黑猫] 命中商品搜索框(全文档):', input.tagName, 'ph=', (input.placeholder || input.getAttribute('aria-label') || '').slice(0, 16), '｜目标 itemId=', itemId.slice(0, 12));
       break;
     }
     // 2) 用面板根定位（已排除整页表单、优先 modal-like 最小容器）
@@ -656,7 +656,7 @@ async function associateGoods(product) {
       const inPicker = allInPicker.filter(isRealTextInput);
       if (i === 0) {
         const cbCount = allInPicker.filter((e) => e.tagName === 'INPUT' && (e.type || '').toLowerCase() === 'checkbox').length;
-        console.log('[XHS] 面板内输入框总数=', allInPicker.length, '其中checkbox=', cbCount, '文本类=', inPicker.length,
+        console.log('[黑猫] 面板内输入框总数=', allInPicker.length, '其中checkbox=', cbCount, '文本类=', inPicker.length,
           JSON.stringify(inPicker.map((e) => `${e.tagName}.${(e.className || '').slice(0, 14)}|type=${(e.type || '').slice(0, 8)}|ph=${(e.placeholder || '').slice(0, 14)}`)));
       }
       input = inPicker.find(isGoodsSearchInput)
@@ -673,7 +673,7 @@ async function associateGoods(product) {
     // 3) 仍无输入框且面板也未定位到：重试点击「添加商品」入口（弹窗可能需重复触发）
     if (!input && !picker && (i === 5 || i === 12) && trigger) {
       try { trigger.click(); } catch (e) {}
-      console.log('[XHS] 重试点击关联商品入口:', (trigger.textContent || '').trim().slice(0, 12));
+      console.log('[黑猫] 重试点击关联商品入口:', (trigger.textContent || '').trim().slice(0, 12));
       await sleep(900);
     }
     if (input) break;
@@ -688,11 +688,11 @@ async function associateGoods(product) {
   }
   if (!input) {
     const visInputs = realTextInputs(document).map((e) => `${e.tagName}.${(e.className || '').slice(0, 16)}|type=${(e.type || '').slice(0, 8)}|ph=${(e.placeholder || e.getAttribute('aria-label') || '').slice(0, 12)}`);
-    console.log('[XHS] 关联商品：未找到搜索框；文本类输入框=', JSON.stringify(visInputs));
+    console.log('[黑猫] 关联商品：未找到搜索框；文本类输入框=', JSON.stringify(visInputs));
     await closeGoodsPicker(status);
     return { ok: false, detail: '未找到关联商品搜索框' };
   }
-  console.log('[XHS] 关联商品搜索框:', input.tagName, 'ph=', (input.placeholder || input.getAttribute('aria-label') || '').slice(0, 16), '｜目标 itemId=', itemId.slice(0, 12));
+  console.log('[黑猫] 关联商品搜索框:', input.tagName, 'ph=', (input.placeholder || input.getAttribute('aria-label') || '').slice(0, 16), '｜目标 itemId=', itemId.slice(0, 12));
 // ---- 检索策略（截图实锤：搜索框 placeholder「搜索商品ID 或 商品名称」+ 商品卡显示「商品ID: xxx」）----
   const cjkSeg = (name || '').replace(/[^\u4e00-\u9fa5]/g, '');
   const nameHint = cjkSeg.length >= 4 ? cjkSeg.slice(0, Math.min(8, cjkSeg.length)) : (name || '').slice(0, 8);
@@ -753,7 +753,7 @@ async function associateGoods(product) {
         await sleep(12);
       }
     }
-    console.log('[XHS] 关联商品检索框已写入:', (el.value !== undefined ? el.value : (el.textContent || '')).slice(0, 24), '（目标=', String(value).slice(0, 16), '）');
+    console.log('[黑猫] 关联商品检索框已写入:', (el.value !== undefined ? el.value : (el.textContent || '')).slice(0, 24), '（目标=', String(value).slice(0, 16), '）');
     return true;
   };
   // 在 picker 面板内收集「真实商品卡」：带图或含价格/销量，排除标签/页头/导航与列表容器本身
@@ -788,7 +788,7 @@ async function associateGoods(product) {
   // —— 探测真正的商品搜索框：把面板内每个文本输入框都试一遍，写入 itemId 看候选是否随写随变 ——
   if (input) {
     const probeCands = realTextInputs(picker).filter((e) => !knownPageInputs.has(e));
-    console.log('[XHS] 探测候选输入框数=', probeCands.length,
+    console.log('[黑猫] 探测候选输入框数=', probeCands.length,
       JSON.stringify(probeCands.map((e) => `${e.tagName}.${(e.className || '').slice(0, 16)}|type=${(e.type || '').slice(0, 8)}|ph=${(phOf(e) || '').slice(0, 12)}`)));
     const base = sigOf();
     let found = null;
@@ -799,16 +799,16 @@ async function associateGoods(product) {
       await typeIntoSearch(el, '');
       await sleep(300);
       const changed = sig !== base;
-      console.log('[XHS] 探测输入框', `${el.tagName}.${(el.className || '').slice(0, 14)}|ph=${(phOf(el) || '').slice(0, 12)}`, '候选变化=', changed);
-      if (changed) { found = el; console.log('[XHS] 命中搜索框(写入后候选变化):', `${el.tagName}.${(el.className || '').slice(0, 18)}|ph=${(phOf(el) || '').slice(0, 16)}`); break; }
+      console.log('[黑猫] 探测输入框', `${el.tagName}.${(el.className || '').slice(0, 14)}|ph=${(phOf(el) || '').slice(0, 12)}`, '候选变化=', changed);
+      if (changed) { found = el; console.log('[黑猫] 命中搜索框(写入后候选变化):', `${el.tagName}.${(el.className || '').slice(0, 18)}|ph=${(phOf(el) || '').slice(0, 16)}`); break; }
     }
     if (found) input = found;
-    else console.log('[XHS] 未探测到随写随变的搜索框，沿用首个输入框');
+    else console.log('[黑猫] 未探测到随写随变的搜索框，沿用首个输入框');
   }
 
   // 记录默认候选基线（面板刚打开时的店铺商品列表），用于判断搜索���否真的触发
   const baselineSig = sigOf();
-  console.log('[XHS] 默认候选基线样本=', JSON.stringify(collectProductCards().slice(0, 4).map((e) => (e.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 16) + (e.querySelector('img') ? '[图]' : ''))));
+  console.log('[黑猫] 默认候选基线样本=', JSON.stringify(collectProductCards().slice(0, 4).map((e) => (e.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 16) + (e.querySelector('img') ? '[图]' : ''))));
 
   for (const term of terms) {
     await typeIntoSearch(input, term);
@@ -834,24 +834,24 @@ async function associateGoods(product) {
       if (list.length) items = list;
     }
     if (triggered) searchTriggeredEver = true;
-    if (noResult) { console.log('[XHS] 关联商品检索词无结果，换下一词:', term.slice(0, 16)); continue; }
-    if (!items.length) { console.log('[XHS] 关联商品检索词:', term.slice(0, 16), '→ 面板内无商品卡（换下一检索词）'); continue; }
-    console.log('[XHS] 关联商品检索词:', term.slice(0, 16), '→ 候选数=', items.length,
+    if (noResult) { console.log('[黑猫] 关联商品检索词无结果，换下一词:', term.slice(0, 16)); continue; }
+    if (!items.length) { console.log('[黑猫] 关联商品检索词:', term.slice(0, 16), '→ 面板内无商品卡（换下一检索词）'); continue; }
+    console.log('[黑猫] 关联商品检索词:', term.slice(0, 16), '→ 候选数=', items.length,
       '样本=', JSON.stringify(items.slice(0, 6).map((e) => (e.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 24) + (e.querySelector('img') ? '[图]' : ''))));
     // 命中：卡片文本包含检索词或 itemId（卡上显示「商品ID: xxx」可强校验）
     const byMatch = items.find((e) => ((e.textContent || '').includes(term) || hitById(e)) && !TAB_RE.test(e.textContent || ''));
-    if (byMatch) { picked = byMatch; pickedTerm = term; pickWhy = hitById(byMatch) ? '命中商品ID' : '命中商品名'; console.log('[XHS] 关联商品命中:', (byMatch.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 24), '（方式=', pickWhy, '）'); break; }
-    console.log('[XHS] 关联商品检索词未命中正确商品，换下一词:', term.slice(0, 16));
+    if (byMatch) { picked = byMatch; pickedTerm = term; pickWhy = hitById(byMatch) ? '命中商品ID' : '命中商品名'; console.log('[黑猫] 关联商品命中:', (byMatch.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 24), '（方式=', pickWhy, '）'); break; }
+    console.log('[黑猫] 关联商品检索词未命中正确商品，换下一词:', term.slice(0, 16));
   }
   // 兜底：若任一检索词触发了搜索但都没匹配到，再在「触发后的结果」里按名称/itemId 强匹配；仍无则不强选默认项
   if (!picked && searchTriggeredEver) {
     const shop = collectProductCards();
     const byName = shop.slice().sort((a, b) => scoreItem(b) - scoreItem(a))
       .find((e) => scoreItem(e) > 0 && !TAB_RE.test(e.textContent || '') && ((e.textContent || '').includes(nameHint) || hitById(e)));
-    if (byName) { picked = byName; pickedTerm = '(搜索结果名/ID匹配)'; pickWhy = hitById(byName) ? '搜索结果命中商品ID' : '搜索结果名匹配'; console.log('[XHS] 在搜索结果中命中:', (byName.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 24), '（方式=', pickWhy, '）'); }
-    else console.log('[XHS] 兜底：搜索已触发但无与「' + nameHint + '」/itemId 匹配者，不强选默认项');
+    if (byName) { picked = byName; pickedTerm = '(搜索结果名/ID匹配)'; pickWhy = hitById(byName) ? '搜索结果命中商品ID' : '搜索结果名匹配'; console.log('[黑猫] 在搜索结果中命中:', (byName.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 24), '（方式=', pickWhy, '）'); }
+    else console.log('[黑猫] 兜底：搜索已触发但无与「' + nameHint + '」/itemId 匹配者，不强选默认项');
   } else if (!picked) {
-    console.log('[XHS] 关联商品：搜索似乎未触发（输入框可能不对），不强选默认项');
+    console.log('[黑猫] 关联商品：搜索似乎未触发（输入框可能不对），不强选默认项');
   }
   if (picked) {
     const card = picked;
@@ -868,9 +868,9 @@ async function associateGoods(product) {
       checkbox.dispatchEvent(new Event('change', { bubbles: true }));
       checkbox.dispatchEvent(new Event('input', { bubbles: true }));
       try { checkbox.click(); } catch (e) {}
-      console.log('[XHS] 勾选商品checkbox');
+      console.log('[黑猫] 勾选商品checkbox');
     } else {
-      console.log('[XHS] 未找到商品checkbox，改为点卡片本体');
+      console.log('[黑猫] 未找到商品checkbox，改为点卡片本体');
       try { card.click(); } catch (e) {}
     }
     // 兜底再点一下整行（部分面板是点行选中）
@@ -884,27 +884,27 @@ async function associateGoods(product) {
         || /disabled|is-disabled/.test((okBtn.getAttribute('class') || '') + ' ' + (okBtn.getAttribute('disabled') || ''));
       if (isDisabled && checkbox) { try { checkbox.click(); } catch (e) {} await sleep(500); }
       try { okBtn.click(); } catch (e) {}
-      console.log('[XHS] 点击关联商品确认按钮:', (okBtn.textContent || '').trim().slice(0, 8), isDisabled ? '（disabled，已重勾后点击）' : '');
+      console.log('[黑猫] 点击关联商品确认按钮:', (okBtn.textContent || '').trim().slice(0, 8), isDisabled ? '（disabled，已重勾后点击）' : '');
       await sleep(700);
       // 校验面板是否关闭（保存后应自动关闭）；未关则再勾一次 + 再点一次保存
       if (findGoodsSearchInput()) {
-        console.log('[XHS] 保存后面板仍在，重试勾选+点击确认');
+        console.log('[黑猫] 保存后面板仍在，重试勾选+点击确认');
         if (checkbox) { try { checkbox.click(); } catch (e) {} await sleep(300); }
         try { okBtn.click(); } catch (e) {}
         await sleep(600);
       }
     } else {
-      console.log('[XHS] 未找到关联商品确认按钮（依赖面板自动关闭）');
+      console.log('[黑猫] 未找到关联商品确认按钮（依赖面板自动关闭）');
     }
     const cardTxt = (card.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 24);
     const cardItemId = (card.textContent || '').match(/商品ID[:：\s]*([0-9a-f]{20,})/i)?.[1] || '';
-    console.log('[XHS] 已选择关联商品:', cardTxt, '商品ID=', cardItemId || '(未解析)', '（方式=', pickWhy || '', '）');
+    console.log('[黑猫] 已选择关联商品:', cardTxt, '商品ID=', cardItemId || '(未解析)', '（方式=', pickWhy || '', '）');
     status('✓ 已关联商品：' + cardTxt.slice(0, 16));
     await closeGoodsPicker(status);
     return { ok: true };
   }
   status('⚠ 关联商品：未匹配到商品，已关闭面板继续发布');
-  console.log('[XHS] 关联商品：未匹配到商品（不强行选默认项），关闭面板');
+  console.log('[黑猫] 关联商品：未匹配到商品（不强行选默认项），关闭面板');
   await closeGoodsPicker(status);
   return { ok: false, detail: '未匹配到商品' };
 }
@@ -985,7 +985,7 @@ async function insertBlankParagraph(el) {
       try { document.execCommand('insertParagraph', false, null); } catch (e) {}
       await new Promise((r) => setTimeout(r, 180));
     }
-    console.log('[XHS] 正文块数(空行前后):', before, '→', blockCount(el), '（应在话题上方出现一个空段落）');
+    console.log('[黑猫] 正文块数(空行前后):', before, '→', blockCount(el), '（应在话题上方出现一个空段落）');
   } catch (e) {}
 }
 
@@ -1051,20 +1051,20 @@ async function injectTopics(task, humanTyping, status, bodyEl) {
     // 其余话题紧接其后，不再插空行（避免每个话题前后都留空行、显得很散）。
     if (isFirstTopic) {
       if (bodyEl) {
-        console.log('[XHS] 话题前插入空行：body=', bodyEl.tagName + '.' + (bodyEl.getAttribute('class') || '').slice(0, 24));
+        console.log('[黑猫] 话题前插入空行：body=', bodyEl.tagName + '.' + (bodyEl.getAttribute('class') || '').slice(0, 24));
         caretToEnd(bodyEl); await sleep(150); await insertBlankParagraph(bodyEl); await sleep(220);
       }
       isFirstTopic = false;
     }
     const btn = findTopicButton();
-    console.log('[XHS] 话题按钮:', btn ? (btn.tagName + ' ' + (btn.textContent || '').trim().slice(0, 12)) : '未找到');
+    console.log('[黑猫] 话题按钮:', btn ? (btn.tagName + ' ' + (btn.textContent || '').trim().slice(0, 12)) : '未找到');
     if (btn) { try { btn.click(); } catch (e) {} await sleep(500); }
     else if (bodyEl && (bodyEl.isContentEditable || bodyEl.getAttribute('role') === 'textbox')) {
       // 兜底：往正文 insertText 一个 # 触发话题模式
       try { document.execCommand('insertText', false, '#'); } catch (e) {} await sleep(300);
     }
     const ti = findTopicInput();
-    console.log('[XHS] 话题输入框:', ti ? (ti.tagName + ' .' + (ti.getAttribute('class') || '').slice(0, 24)) : '未找到');
+    console.log('[黑猫] 话题输入框:', ti ? (ti.tagName + ' .' + (ti.getAttribute('class') || '').slice(0, 24)) : '未找到');
     if (!ti) { status('⚠ 未找到话题输入框/按钮，跳过后续话题'); break; }
     ti.focus(); try { ti.click(); } catch (e) {}
     // 逐字输入关键词（模拟真人），唤起下拉
@@ -1089,7 +1089,7 @@ async function injectTopics(task, humanTyping, status, bodyEl) {
     await sleep(600);
     // 等下拉并选第一个建议（变蓝 chip）
     const box = await waitSuggestion();
-    console.log('[XHS] 话题下拉:', box ? '出现' : '未出现');
+    console.log('[黑猫] 话题下拉:', box ? '出现' : '未出现');
     let picked = box ? clickFirstSuggestion(box) : false;
     if (!picked) {
       // 兜底：ArrowDown + Enter 选中首项
@@ -1316,7 +1316,7 @@ function findPublishControl() {
               || [...sr.querySelectorAll('button')].find((b) => /发布/.test(b.textContent) && !/暂存|草稿|离开|定时|预约/.test(b.textContent))
               || null;
       if (red) {
-        console.log('[XHS] 命中 Shadow 内发布按钮(直接): <' + red.tagName + ' class="' + (red.className || '').trim() + '"> "' + (red.textContent || '').trim() + '"');
+        console.log('[黑猫] 命中 Shadow 内发布按钮(直接): <' + red.tagName + ' class="' + (red.className || '').trim() + '"> "' + (red.textContent || '').trim() + '"');
         return red;
       }
     }
@@ -1325,7 +1325,7 @@ function findPublishControl() {
   if (hosts.length) {
     const host = hosts[0];
     const r = host.getBoundingClientRect();
-    console.log('[XHS] 发布控件= xhs-publish-btn host（closed shadow，改由 CDP 坐标点击）: hostRect(top=' + Math.round(r.top) + ',bottom=' + Math.round(r.bottom) + ',left=' + Math.round(r.left) + ',right=' + Math.round(r.right) + ') vh=' + vh + ' W=' + W);
+    console.log('[黑猫] 发布控件= xhs-publish-btn host（closed shadow，改由 CDP 坐标点击）: hostRect(top=' + Math.round(r.top) + ',bottom=' + Math.round(r.bottom) + ',left=' + Math.round(r.left) + ',right=' + Math.round(r.right) + ') vh=' + vh + ' W=' + W);
     return host;
   }
 
@@ -1343,7 +1343,7 @@ function findPublishControl() {
     cand.push({ el: innermostByText(el, t), red: isRedBg(anc), right: Math.round(rr.left + rr.width / 2), bottom: Math.round(rr.bottom) });
   }
   if (cand.length) {
-    console.log('[XHS] 发布候选(' + cand.length + '): ' + cand.map((c) =>
+    console.log('[黑猫] 发布候选(' + cand.length + '): ' + cand.map((c) =>
       (c.el.tagName + '.' + String(c.el.className || '').slice(0, 10) + ' "'
         + (c.el.textContent || '').trim().slice(0, 8) + '" bottom=' + c.bottom + ' right=' + c.right + ' red=' + c.red)).join(' | '));
   }
@@ -1370,10 +1370,10 @@ async function cdpClickPublish(x, y) {
   return new Promise((resolve) => {
     try {
       chrome.runtime.sendMessage({ type: 'xhs-real-click', x, y }, (resp) => {
-        if (chrome.runtime.lastError) { console.log('[XHS] CDP点击失败: ' + chrome.runtime.lastError.message); resolve(false); }
-        else { console.log('[XHS] CDP真实点击发布按钮 → ' + JSON.stringify(resp)); resolve(!!(resp && resp.ok)); }
+        if (chrome.runtime.lastError) { console.log('[黑猫] CDP点击失败: ' + chrome.runtime.lastError.message); resolve(false); }
+        else { console.log('[黑猫] CDP真实点击发布按钮 → ' + JSON.stringify(resp)); resolve(!!(resp && resp.ok)); }
       });
-    } catch (e) { console.log('[XHS] CDP点击异常: ' + e.message); resolve(false); }
+    } catch (e) { console.log('[黑猫] CDP点击异常: ' + e.message); resolve(false); }
   });
 }
 
@@ -1398,7 +1398,7 @@ async function clickPublishControl(ctrl) {
       }
     } catch (e) {}
     const pt = publishButtonPoint(ctrl);
-    console.log('[XHS] 计算发布按钮坐标: x=' + Math.round(pt.x) + ' y=' + Math.round(pt.y));
+    console.log('[黑猫] 计算发布按钮坐标: x=' + Math.round(pt.x) + ' y=' + Math.round(pt.y));
     const ok = await cdpClickPublish(pt.x, pt.y);
     if (!ok) { realClickDeep(ctrl); return false; }
     return true;
@@ -1433,16 +1433,16 @@ async function autoPublish(status, summary, task) {
     try {
       const btns = [...document.querySelectorAll('button, a, [role="button"]')].filter(isVisibleEl);
       const info = btns.slice(0, 30).map((b) => `${b.tagName}.${String(b.className || '').slice(0, 14)}|"${(b.textContent || '').trim().replace(/\s+/g, ' ').slice(0, 16)}"|dis=${isDisabledEl(b) ? 1 : 0}`);
-      console.log('[XHS] 可视点击元素(' + btns.length + '):', JSON.stringify(info));
+      console.log('[黑猫] 可视点击元素(' + btns.length + '):', JSON.stringify(info));
     } catch (e) {}
   };
   const isPublishHost = (el) => (el && (el.tagName || '').toLowerCase() === 'xhs-publish-btn');
   const ctrl = findPublishControl();
-  console.log('[XHS] 发布控件:', ctrl ? (ctrl.tagName + (isPublishHost(ctrl) ? '[xhs-publish-btn host]' : '.' + String(ctrl.className || '').slice(0, 18)) + ' "' + (ctrl.textContent || '').trim().slice(0, 12) + '" dis=' + (isDisabledEl(ctrl) ? 1 : 0)) : '未找到');
+  console.log('[黑猫] 发布控件:', ctrl ? (ctrl.tagName + (isPublishHost(ctrl) ? '[xhs-publish-btn host]' : '.' + String(ctrl.className || '').slice(0, 18)) + ' "' + (ctrl.textContent || '').trim().slice(0, 12) + '" dis=' + (isDisabledEl(ctrl) ? 1 : 0)) : '未找到');
   if (ctrl) {
     try {
       const rr = ctrl.getBoundingClientRect();
-      console.log('[XHS] 发布控件几何: bottom=' + Math.round(rr.bottom) + ' centerX=' + Math.round(rr.left + rr.width / 2) + ' red=' + isRedBg(ctrl) + ' vh=' + (window.innerHeight || 0));
+      console.log('[黑猫] 发布控件几何: bottom=' + Math.round(rr.bottom) + ' centerX=' + Math.round(rr.left + rr.width / 2) + ' red=' + isRedBg(ctrl) + ' vh=' + (window.innerHeight || 0));
     } catch (e) {}
   }
   if (!ctrl) { logCandidates(); status(summary + '｜未找到「发布」按钮，请手动点发布'); return { clicked: false }; }
@@ -1455,9 +1455,9 @@ async function autoPublish(status, summary, task) {
       await sleep(1500);
       const c2 = findPublishControl();
       const c2Disabled = c2 && (isDisabledEl(c2) || (isPublishHost(c2) && (c2.getAttribute('submit-disabled') === 'true' || c2.getAttribute('submit-loading') === 'true')));
-      if (c2 && !c2Disabled) { ctrl = c2; console.log('[XHS] 发布按钮已放开'); break; }
+      if (c2 && !c2Disabled) { ctrl = c2; console.log('[黑猫] 发布按钮已放开'); break; }
       const hint = (document.body.innerText.match(/图片上传中[^\n]*|审核中[^\n]*|上传失败[^\n]*|请先上传[^\n]*/) || [''])[0];
-      if (hint) console.log('[XHS] 上传提示:', hint.slice(0, 30));
+      if (hint) console.log('[黑猫] 上传提示:', hint.slice(0, 30));
     }
     if (ctrlDisabled()) { status(summary + '｜图片审核超时仍未放开，请手动点发布'); return { clicked: false }; }
   }
@@ -1469,7 +1469,7 @@ async function autoPublish(status, summary, task) {
   dismissModal(status); // 发布前再清一次纯提示弹窗（hasAction 守卫已确保不会误点取消）
   await waitForUploadDone(status); // 等图片上传完成，否则点击发布会被忽略
   await clickPublishControl(ctrl);
-  console.log('[XHS] 已点击发布控件（' + (isPublishHost(ctrl) ? 'CDP 坐标点击 xhs-publish-btn' : (ctrl.textContent || '').trim().slice(0, 16)) + '）');
+  console.log('[黑猫] 已点击发布控件（' + (isPublishHost(ctrl) ? 'CDP 坐标点击 xhs-publish-btn' : (ctrl.textContent || '').trim().slice(0, 16)) + '）');
   status(summary + '｜已点击「发布」，等待结果…');
   await sleep(600);
   logCandidates(); // 点发布后立即快照所有可视按钮，若出现「确认发布」等确认键便于诊断
@@ -1486,7 +1486,7 @@ async function autoPublish(status, summary, task) {
         const btns = [...d.querySelectorAll('button, [role="button"], a, div, span')]
           .filter((b) => isVisibleEl(b) && (b.textContent || '').trim().length > 0 && (b.textContent || '').trim().length < 24)
           .map((b) => (b.textContent || '').trim());
-        console.log('[XHS] 弹窗:', txt, '｜按钮:', JSON.stringify(btns.slice(0, 8)));
+        console.log('[黑猫] 弹窗:', txt, '｜按钮:', JSON.stringify(btns.slice(0, 8)));
       });
     } catch (e) {}
   };
@@ -1503,13 +1503,13 @@ async function autoPublish(status, summary, task) {
     const bodyText = document.body.innerText || '';
     // 信号①：成功文案（最直接）
     if (SUCCESS_RE.test(bodyText)) {
-      published = true; console.log('[XHS] 检测到发布成功文案'); status(summary + '｜✓ 已发布成功'); break;
+      published = true; console.log('[黑猫] 检测到发布成功文案'); status(summary + '｜✓ 已发布成功'); break;
     }
     // 信号②：页面已跳离发布页（URL 不再含 publish）→ 小红书发布成功后必跳转，这是最可靠的成功信号
     const navigated = !/publish/i.test(location.href);
     if (navigated) {
       published = true;
-      console.log('[XHS] 页面已跳离发布页，判定发布成功（url=' + location.href.slice(0, 64) + '）');
+      console.log('[黑猫] 页面已跳离发布页，判定发布成功（url=' + location.href.slice(0, 64) + '）');
       status(summary + '｜✓ 已发布成功（页面已跳转）'); break;
     }
     // 信号③：发布控件从 DOM 消失且已过点按钮后缓冲期（编辑器被卸载=成功态），排除「发布中」瞬时隐藏误判
@@ -1517,16 +1517,16 @@ async function autoPublish(status, summary, task) {
     const elapsed = Date.now() - clickTime;
     if (!ctrlNow && elapsed > 3000 && !DRAFT_RE.test(bodyText)) {
       published = true;
-      console.log('[XHS] 发布控件已从页面消失，判定发布成功（url=' + location.href.slice(0, 64) + '）');
+      console.log('[黑猫] 发布控件已从页面消失，判定发布成功（url=' + location.href.slice(0, 64) + '）');
       status(summary + '｜✓ 已发布成功'); break;
     }
-    if (DRAFT_RE.test(bodyText)) { console.log('[XHS] 检测到「存草稿」提示，尚未发布成功'); }
+    if (DRAFT_RE.test(bodyText)) { console.log('[黑猫] 检测到「存草稿」提示，尚未发布成功'); }
     // 信号④：二次确认弹窗（确认发布/确认并发布/立即发布）
     const c = findPrimaryConfirm(ctrl);
     if (c) {
       const ct = (c.textContent || '').trim();
       realClickDeep(c); // v0.2.53：确认键也是 React 组件，用深度点击更稳
-      console.log('[XHS] 点击确认按钮：', ct.slice(0, 16));
+      console.log('[黑猫] 点击确认按钮：', ct.slice(0, 16));
       status(summary + '｜已点击确认：' + ct + ' ✓');
       await sleep(2000);
       continue;
@@ -1539,22 +1539,22 @@ async function autoPublish(status, summary, task) {
       if (again && !isDisabledEl(again)) {
         await clickPublishControl(again);
         reclickedCount++;
-        console.log('[XHS] 补点发布控件（第 ' + reclickedCount + ' 次，目标=' + (again.tagName + '.' + String(again.className || '').slice(0, 12)) + '）');
+        console.log('[黑猫] 补点发布控件（第 ' + reclickedCount + ' 次，目标=' + (again.tagName + '.' + String(again.className || '').slice(0, 12)) + '）');
         if (reclickedCount === 1) logCandidates(); // 补点后再快照一次按钮，捕捉迟出现的确认弹窗
         await sleep(2000);
         const t2 = document.body.innerText || '';
-        if (DRAFT_RE.test(t2)) { console.log('[XHS] 补点后仍只是存草稿'); }
-        else if (SUCCESS_RE.test(t2) || !/publish/i.test(location.href) || !findPublishControl()) { published = true; console.log('[XHS] 补点后判定发布成功'); break; }
+        if (DRAFT_RE.test(t2)) { console.log('[黑猫] 补点后仍只是存草稿'); }
+        else if (SUCCESS_RE.test(t2) || !/publish/i.test(location.href) || !findPublishControl()) { published = true; console.log('[黑猫] 补点后判定发布成功'); break; }
       }
     }
   }
-  console.log('[XHS] 自动发布结束 published=', published, 'clicked=true ｜url=' + location.href.slice(0, 64) + ' ｜发布控件仍在=' + (!!findPublishControl()) + ' ｜含publish路径=' + (/publish/i.test(location.href)));
+  console.log('[黑猫] 自动发布结束 published=', published, 'clicked=true ｜url=' + location.href.slice(0, 64) + ' ｜发布控件仍在=' + (!!findPublishControl()) + ' ｜含publish路径=' + (/publish/i.test(location.href)));
   return { clicked: true, published };
 }
 
 async function fillTask(task, autoSubmit, serverUrl, humanTyping = true) {
   const status = (window.__xhsHelper?.status) || (() => {});
-  console.log('[XHS] fillTask 开始 task=', (task.title || '').slice(0, 24), 'bodyLen=', (task.body || '').length, 'autoSubmit=', autoSubmit, 'humanTyping=', humanTyping, 'images=', Array.isArray(task.images) ? task.images.length : 0, 'firstImg=', Array.isArray(task.images) && task.images[0] ? String(task.images[0]).slice(0, 80) : '-', 'serverUrl=', serverUrl || '-');
+  console.log('[黑猫] fillTask 开始 task=', (task.title || '').slice(0, 24), 'bodyLen=', (task.body || '').length, 'autoSubmit=', autoSubmit, 'humanTyping=', humanTyping, 'images=', Array.isArray(task.images) ? task.images.length : 0, 'firstImg=', Array.isArray(task.images) && task.images[0] ? String(task.images[0]).slice(0, 80) : '-', 'serverUrl=', serverUrl || '-');
   const FILL_TOTAL_MS = 150 * 1000;
   const withDeadline = (p, ms, label) => Promise.race([
     p,
@@ -1580,14 +1580,14 @@ async function fillTask(task, autoSubmit, serverUrl, humanTyping = true) {
       status('正在准备上传区并注入图片…');
       const uploadInput = await ensureUploadReady(status);
       const img = await injectImages(task.images, serverUrl, uploadInput);
-      if (img.noImages) status('⚠ 该笔记无图片：小红书图文必须至少 1 张图，请回到创建笔记处补充图片/封面图');
+      if (img.noImages) status('⚠ 该笔记无图片：图文必须至少 1 张图，请回到创建笔记处补充图片/封面图');
       else if (!img.ok && !img.skipped) status('⚠ ' + (img.detail || '图片注入失败'));
       else if (img.ok && img.count) status(`已注入 ${img.count} 张图片` + (img.formAppeared ? '，表单已渲染' : '（表单未渲染，可能上传未生效）'));
 
       // 传图后等待标题/正文表单出现，再填充
       status('正在查找标题输入框…');
       const t = await locateField('title', 25000);
-      console.log('[XHS] 标题元素:', t ? (t.tagName + ' .' + (t.getAttribute('class') || '').slice(0, 30)) : '未找到', 'ph=', t ? phOf(t) : '');
+      console.log('[黑猫] 标题元素:', t ? (t.tagName + ' .' + (t.getAttribute('class') || '').slice(0, 30)) : '未找到', 'ph=', t ? phOf(t) : '');
       if (t) {
         const title = fitTitle(task.title || '');
         status(`正在填标题（${title.length}字 / 上限约20中文字）…`);
@@ -1597,13 +1597,13 @@ async function fillTask(task, autoSubmit, serverUrl, humanTyping = true) {
         if (!written) throw new Error('标题输入框未写入内容');
         filled.push('标题');
       } else {
-        status('⚠ 未找到标题输入框（页面可能未加载完或小红书改版）');
-        console.log('[XHS] 可见编辑字段:', JSON.stringify(dumpFields()));
+        status('⚠ 未找到标题输入框（页面可能未加载完或发布平台改版）');
+        console.log('[黑猫] 可见编辑字段:', JSON.stringify(dumpFields()));
       }
 
       status('正在查找正文输入框…');
       const b = await locateField('body', 20000, t || undefined);
-      console.log('[XHS] 正文元素:', b ? (b.tagName + ' .' + (b.getAttribute('class') || '').slice(0, 30)) : '未找到', 'ph=', b ? phOf(b) : '');
+      console.log('[黑猫] 正文元素:', b ? (b.tagName + ' .' + (b.getAttribute('class') || '').slice(0, 30)) : '未找到', 'ph=', b ? phOf(b) : '');
       if (b) {
         status('正在填正文…');
         if (humanTyping) await withDeadline(typeText(b, task.body || '', { newlineIsParagraph: true }), 60000, '填正文');
@@ -1613,8 +1613,8 @@ async function fillTask(task, autoSubmit, serverUrl, humanTyping = true) {
         if (!written) throw new Error('正文编辑器未写入内容');
         filled.push('正文');
       } else {
-        status('⚠ 未找到正文输入框（页面可能未加载完或小红书改版）');
-        console.log('[XHS] 可见编辑字段:', JSON.stringify(dumpFields()));
+        status('⚠ 未找到正文输入框（页面可能未加载完或发布平台改版）');
+        console.log('[黑猫] 可见编辑字段:', JSON.stringify(dumpFields()));
       }
 
       // 话题（点击「话题」按钮 → 逐字输入关键词 → 下拉选第一个变蓝 chip；默认补齐到 6 个）
@@ -1624,7 +1624,7 @@ async function fillTask(task, autoSubmit, serverUrl, humanTyping = true) {
       else if (tpRes.detail) status('⚠ ' + tpRes.detail);
 
       status('正在关联商品…');
-      console.log('[XHS] 关联商品：product=', JSON.stringify(task.product ? { name: task.product.productName, itemId: task.product.itemId } : null));
+      console.log('[黑猫] 关联商品：product=', JSON.stringify(task.product ? { name: task.product.productName, itemId: task.product.itemId } : null));
       const goods = await associateGoods(task.product);
       const summary = '已填：' + (filled.length ? filled.join('、') : '（标题/正文未匹配到输入框，请检查页面）')
         + (img.ok ? `、图${img.count || 0}张` : (img.detail && !img.skipped ? `、${img.detail}` : ''))
@@ -1782,7 +1782,7 @@ async function reportSchedule(at) {
 const __fillLock = (window.__xhsFillLock = window.__xhsFillLock || new Set());
 async function runFill(task, autoSubmit, serverUrl, humanTyping) {
   const status = (window.__xhsHelper?.status) || (() => {});
-  console.log('[XHS] runFill', (task.title || '').slice(0, 24), 'autoSubmit=', autoSubmit, 'humanTyping=', humanTyping);
+  console.log('[黑猫] runFill', (task.title || '').slice(0, 24), 'autoSubmit=', autoSubmit, 'humanTyping=', humanTyping);
   // 取真实间隔并回报后台调度器（手动拉取路径没走 fillTab，不回报就会用默认 ~11.6 分钟）
   const __delayMs = await getIntervalMs();
   window.__xhsLastDelayMs = __delayMs;
@@ -1791,7 +1791,7 @@ async function runFill(task, autoSubmit, serverUrl, humanTyping) {
   // 否则提早开始下一篇会导致把新任务误报成上一条已发布。
   if (__manualWatch) { clearInterval(__manualWatch); __manualWatch = null; }
   if (__fillLock.has(task.id)) {
-    console.log('[XHS] 跳过重复 fillTask（同一任务进行中）', task.id);
+    console.log('[黑猫] 跳过重复 fillTask（同一任务进行中）', task.id);
     status('该任务正在填充中，跳过重复下发');
     return;
   }
@@ -1803,7 +1803,7 @@ async function runFill(task, autoSubmit, serverUrl, humanTyping) {
   __fillLock.add(task.id);
   try {
     const r = await fillTask(task, autoSubmit, serverUrl, humanTyping);
-    console.log('[XHS] fillTask 结果:', JSON.stringify(r));
+    console.log('[黑猫] fillTask 结果:', JSON.stringify(r));
     if (r.hold) {
       // 验证挑战：转人工（合规红线，绝不自动破解）。挂接监听，用户解决并手动发布后回报 published，恢复队列。
       await reportDone(task.id, 'manual_hold', r.detail || '验证挑战，转人工', __delayMs);
@@ -1856,7 +1856,7 @@ if (!window.__xhsBound) {
       // 立即同步回复，避免 Chrome MV3 消息通道在长时间异步操作中断开；
       // 填充结果通过 reportDone 主动回报（已改为直连后端，不受 service worker 回收影响）。
       sendResponse({ ok: true, detail: 'started' });
-      console.log('[XHS] 收到 fillTask，autoSubmit=', msg.autoSubmit, 'humanTyping=', msg.humanTyping, 'title=', (msg.task.title || '').slice(0, 24));
+      console.log('[黑猫] 收到 fillTask，autoSubmit=', msg.autoSubmit, 'humanTyping=', msg.humanTyping, 'title=', (msg.task.title || '').slice(0, 24));
       runFill(msg.task, msg.autoSubmit, msg.serverUrl, msg.humanTyping);
       return; // 已同步回复，不需要 return true
     }

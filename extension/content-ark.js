@@ -1,9 +1,9 @@
-// content-ark.js — 在千帆商家后台注入「千帆选品助手」面板
+// content-ark.js — 在商家后台注入「选品助手」面板
 // 职责：扫描本页商品 → 用户勾选 → 推送到本地后端商品库。
 // 设计：纯读取 + 人工触发，不注入反检测、不模拟点击、不破解。
 // 健壮性：自动识别失败时，提供「手动添加」兜底，保证一定能把商品推到后端。
 
-// ---- 可配置选择器（小红书改版时在此调校）----
+// ---- 可配置选择器（发布平台改版时在此调校）----
 const SEL = {
   title: ['h1', '.product-title', '.goods-title', '[class*="title"]', 'input[class*="title"]', 'textarea[class*="title"]', '[class*="Title"]'],
   price: ['[class*="price"]', '[class*="Price"]', '.price', 'span[class*="price"]', '[class*="amount"]', '[class*="Amount"]'],
@@ -48,7 +48,7 @@ function itemIdIn(root) {
     root.querySelectorAll('a[href]').forEach((a) => tryUrl(a.getAttribute('href')));
   } catch (e) {}
   if (urlIds.length) return urlIds[0];
-  // 2) data 属性（覆盖千帆各种命名：kebab / camel / 纯 id）
+  // 2) data 属性（覆盖选品各种命名：kebab / camel / 纯 id）
   const ATTRS = [
     'data-item-id', 'data-itemId', 'data-product-id', 'data-productId',
     'data-spu-id', 'data-spuId', 'data-goods-id', 'data-goodsId',
@@ -67,7 +67,7 @@ function itemIdIn(root) {
   const html = (root && root.outerHTML) || '';
   const kv = html.match(/(?:id|itemId|item_id|goodsId|goods_id|productId|product_id|spuId|spu_id|skuId|sku_id)["'=:\s]+["']?([0-9a-zA-Z_-]{10,40})/i);
   if (kv) return kv[1];
-  // 4) 兜底：24 位 hex（千帆商品 ObjectId 风格，如 686673d41ea4cb001553c6da），取首个
+  // 4) 兜底：24 位 hex（选品商品 ObjectId 风格，如 686673d41ea4cb001553c6da），取首个
   const hex = html.match(/\b[0-9a-fA-F]{24}\b/);
   if (hex) return hex[0];
   return '';
@@ -461,7 +461,7 @@ function buildPanel() {
     }
   });
 
-  // 导出CSV：把当页商品 id+标题 写成本地 CSV（后端落盘到 csvExportDir，默认 Desktop/小红书开店/csv）
+  // 导出CSV：把当页商品 id+标题 写成本地 CSV（后端落盘到 csvExportDir，默认 Desktop/开店商品/csv）
   $('xhExport').addEventListener('click', async () => {
     const items = window.__xhItems || [];
     const rows = items

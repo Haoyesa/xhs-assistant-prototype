@@ -40,7 +40,7 @@ async function api(path, opts = {}) {
   return { ok: r.ok, status: r.status, data: j };
 }
 
-// 推商品到后端（千帆 content script 采到后调用）
+// 推商品到后端（选品 content script 采到后调用）
 async function pushProducts(products) {
   const r = await api('/api/ext/products', { method: 'POST', body: { products } });
   return r.data;
@@ -65,7 +65,7 @@ function broadcast(state) {
 }
 
 // 用 chrome.debugger 在指定标签页的 (x,y) 处发「真实」鼠标点击。
-// 用途：小红书发布按钮在 <xhs-publish-btn> 的 closed shadow DOM 内，JS 的 elementFromPoint / querySelector
+// 用途：发布平台发布按钮在 <xhs-publish-btn> 的 closed shadow DOM 内，JS 的 elementFromPoint / querySelector
 // 都取不到内部按钮（elementFromPoint 对 closed shadow 仅返回 host）；但「真实输入事件」的命中测试会穿透
 // closed shadow，落到红「发布」按钮上。CDP Input.dispatchMouseEvent 即真实输入，故可点中。
 function sendDebug(tabId, method, params) {
@@ -478,7 +478,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 
 // 安装/更新时打开设置提示
 chrome.runtime.onInstalled.addListener(() => {
-  broadcast({ kind: 'info', msg: '已安装。请在 popup 中确认后端地址，并打开千帆商品页/创作者发布台使用。' });
+  broadcast({ kind: 'info', msg: '已安装。请在 popup 中确认后端地址，并打开商品页/创作者发布台使用。' });
 });
 
 // 保活心跳：内容脚本持常驻端口时，service worker 不会被回收

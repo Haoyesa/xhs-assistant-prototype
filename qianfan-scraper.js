@@ -1,5 +1,5 @@
 // qianfan-scraper.js
-// 通过 CDP 连接用户已登录的 Chrome，抓取千帆商品页的商品卡片。
+// 通过 CDP 连接用户已登录的 Chrome，抓取商品页的商品卡片。
 // 选择器全部来自 cdp-config.json 的 qianfan 段，随官网改版需自行调整。
 import fs from 'node:fs';
 import path from 'node:path';
@@ -20,7 +20,7 @@ async function getPuppeteer() {
   return mod.default;
 }
 
-// 找到已有的千帆标签页，没有就新开
+// 找到已有的商品页标签页，没有就新开
 async function getQianfanPage(browser, cfg) {
   const targets = await browser.targets();
   for (const t of targets) {
@@ -52,7 +52,7 @@ export async function scrapeQianfanProducts(settings = {}) {
     try {
       await page.waitForSelector(cardSelector, { timeout: 15000 });
     } catch {
-      throw new Error('在千帆页面未找到商品卡片，可能页面未加载或选择器不匹配，请在 cdp-config.json 调整 qianfan.cardSelector。');
+      throw new Error('在商品页面未找到商品卡片，可能页面未加载或选择器不匹配，请在 cdp-config.json 调整 qianfan.cardSelector。');
     }
     if (cfg.scrollToLoadMore) {
       // 尝试滚动加载更多

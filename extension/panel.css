@@ -1,4 +1,4 @@
-/* panel.css — 注入到千帆页面的悬浮选品面板 */
+/* panel.css — 注入到商品页面的悬浮选品面板 */
 [id^="xhs-"][data-xhs-helper] {
   position: fixed !important;
   right: 16px !important;
@@ -198,7 +198,7 @@
 }
 
 /* =========================================================
-   千帆选品浮窗（#xhs-ark-helper）拖动手柄
+   选品浮窗（#xhs-ark-helper）拖动手柄
    ========================================================= */
 #xhs-ark-helper .xh-head { cursor: grab !important; }
 #xhs-ark-helper .xh-head:active { cursor: grabbing !important; }

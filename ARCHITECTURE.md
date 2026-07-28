@@ -1,7 +1,7 @@
 # 黑猫智记AI · 架构说明
 
 > 本工具为**从零自研、本地运行**的内容创作辅助工具，仅服务于你自己的内容创作。
-> 当前处于向「通用内容创作辅助工具」重新定位的过渡期：核心能力为文案优化 / 排版设计 / 敏感词检测 / 封面素材参考，不接入任何平台接口。
+> 黑猫智记AI 是一款本地运行的内容创作与发布辅助工具：核心能力为文案优化 / 排版设计 / 敏感词检测 / 封面素材参考，并保留素材抓取与批量发布等自动化能力（仅在你自有账号下使用，遵守各平台运营规则）。
 
 ## 软件能力形态
 
@@ -10,15 +10,15 @@
 - 任务生命周期含明确步骤：`select_product`（选品）→ `upload_images` → `fill_title` / `fill_content` → `fill_topics` → `submit_publish` → `verify_result`（发布步骤将在重新定位后移除）。
 - 去重键为 `shopId:itemId:accountId`（店铺 × 商品 × 账号）。
 - 文案生成使用三套提示词：精简标题 / 正文 / 热门话题（见 `server.js` 的 `DEFAULT_*_PROMPT`）。
-- 批量节奏：`publishIntervalSeconds`（默认 500s）+ 随机延迟、`autoSubmit` 自动提交开关、`singleProductRepeatLimit` 防重复、失败转 `manual_hold` 人工处理（上述发布相关能力将随重新定位下线）。
+- 批量节奏：`publishIntervalSeconds`（默认 500s）+ 随机延迟、`autoSubmit` 自动提交开关、`singleProductRepeatLimit` 防重复、失败转 `manual_hold` 人工处理。
 
 ## 本原型结构
 
 ```
 xhs-assistant-prototype/
-├── server.js            # 本地服务内核：素材库 / 文案生成 / 批量队列 / 商品抓取（过渡期） / 发布编排（过渡期）
-├── qianfan-scraper.js   # 商品页抓取（过渡期，将下线）
-├── cdp-publisher.js     # 发布逻辑（过渡期，将下线）
+├── server.js            # 本地服务内核：素材库 / 文案生成 / 批量队列 / 商品抓取 / 发布编排
+├── qianfan-scraper.js   # 商品页抓取
+├── cdp-publisher.js     # 发布逻辑
 ├── cdp-config.json      # 所有选择器与节奏参数
 ├── public/              # 原生前端单页（素材库 / 文案优化 / 封面素材参考 / 历史 / 设置）
 ├── electron/main.mjs    # 桌面外壳（进程内启动服务 + 窗口）
@@ -50,5 +50,5 @@ xhs-assistant-prototype/
 ## 合规边界
 
 - 仅服务**你自己的内容创作**；不群控、不矩阵、不破解验证码、不做指纹伪造。
-- 自动化发布能力将在重新定位后下线；请遵守各平台运营规则，勿用于违规批量营销。
+- 自动化发布能力仅在你自有账号下使用；请遵守各平台运营规则，勿用于违规批量营销。
 - 选择器随目标页面改版变动，需在 `cdp-config.json` 自行校正。
