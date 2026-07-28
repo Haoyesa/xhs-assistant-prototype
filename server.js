@@ -178,7 +178,17 @@ const DEFAULT_SETTINGS = {
   csvExportDir: '', // 商品 CSV 导出目录；空则默认 数据目录/csv
 };
 
-let lastNextPublishAt = 0; // 插件上报的「下一篇最早发布时刻(ms)」，供桌面批量发布页做倒计时展示
+// 下一篇发布时间由两条独立pipeline分别维护，避免 CDP 模式与浏览器插件互相覆盖/清零
+let cdpNextPublishAt = 0;  // runPump (CDP 模式) 设置
+let extNextPublishAt = 0;  // 插件通过 /api/ext/schedule 上报
+function getNextPublishAt() {
+  const now = Date.now();
+  const cdp = cdpNextPublishAt > now ? cdpNextPublishAt : 0;
+  const ext = extNextPublishAt > now ? extNextPublishAt : 0;
+  // 两端都活跃时，显示最近（最小）的一次；只有一端活跃时显示那一端
+  if (cdp && ext) return Math.min(cdp, ext);
+  return cdp || ext || 0;
+}
 
 const PROVIDERS = {
   deepseek: { baseUrl: 'https://api.deepseek.com/v1', model: 'deepseek-chat' },
@@ -368,17 +378,24 @@ async function runPump(settings) {
       if (mode === 'cdp') {
         const base = (settings.publishIntervalSeconds ?? 500) * 1000;
         const extra = (settings.publishIntervalRandomDelaySeconds ?? 200) * 1000 * Math.random();
-        lastNextPublishAt = Date.now() + base + extra;
+        cdpNextPublishAt = Date.now() + base + extra;
+        console.log('[runPump] CDP countdown set at=' + cdpNextPublishAt + ' delta=' + (base + extra) + 'ms');
         const { interrupted } = await sleepInterruptible(base + extra);
-        // 被 stop/pause 中断或队列已结束时，清除倒计时（避免前端一直读一个不会到来的时刻）
-        if (interrupted || pump.stop || pump.paused) lastNextPublishAt = 0;
+        // 被 stop/pause 中断或队列已结束时，清除 CDP 倒计时（避免前端一直读一个不会到来的时刻）
+        if (interrupted || pump.stop || pump.paused) {
+          console.log('[runPump] CDP countdown cleared (interrupted=' + interrupted + ' stop=' + pump.stop + ' paused=' + pump.paused + ')');
+          cdpNextPublishAt = 0;
+        }
       } else {
         await sleepInterruptible(1500 + Math.random() * 1500);
       }
     }
   } finally {
     pump.running = false;
-    lastNextPublishAt = 0; // 批量发布结束，清除倒计时
+    if (cdpNextPublishAt) {
+      console.log('[runPump] CDP countdown cleared in finally (queue ended/stopped)');
+      cdpNextPublishAt = 0; // CDP 批量发布结束，清除本端倒计时
+    }
   }
 }
 
@@ -822,7 +839,8 @@ const server = http.createServer(async (req, res) => {
     // 队列 / 控制
     if (p === '/api/batch/queue' && method === 'GET') {
       const tasks = await readStore(stores.tasks, []);
-      return sendJSON(res, 200, { tasks, pump: { running: pump.running, paused: pump.paused, stop: pump.stop }, nextPublishAt: lastNextPublishAt });
+      const nextPublishAt = getNextPublishAt();
+      return sendJSON(res, 200, { tasks, pump: { running: pump.running, paused: pump.paused, stop: pump.stop }, nextPublishAt });
     }
     if (p === '/api/batch/pump' && method === 'POST') {
       const settings = { ...DEFAULT_SETTINGS, ...(await readStore(stores.settings, {})) };
@@ -1042,7 +1060,9 @@ const server = http.createServer(async (req, res) => {
     if (p === '/api/ext/schedule' && method === 'POST') {
       const body = await readBody(req);
       const at = Number(body && body.nextPublishAt) || 0;
-      lastNextPublishAt = at;
+      const old = extNextPublishAt;
+      extNextPublishAt = at;
+      console.log('[ext/schedule] nextPublishAt=' + at + ' delta=' + (at ? (at - Date.now()) + 'ms' : '0') + ' old=' + old);
       return sendJSON(res, 200, { ok: true, nextPublishAt: at });
     }
     // 按 id 查单条任务状态：插件调度器用它轮询「当前这篇是否已发布/失败/需人工」，作为开新标签的可靠信号
