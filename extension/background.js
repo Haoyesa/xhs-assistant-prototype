@@ -106,7 +106,6 @@ let lastPublishedTabId = null;   // 刚发布成功的标签页：先保留用�
 let nextAllowedAt = 0;           // 下一篇最早可开标签的时间戳（ms），用于保证「发布后延时」
 let lastDelayMs = 500 * 1000 + 200 * 1000; // 上一次取的间隔（默认 500s+200s），按服务端返回覆盖
 let pollTimer = null;
-let nextTimer = null;            // 「开下一篇」的一次性定时器（SW 回收后会失效，故每次唤醒都重新 arm）
 
 // ---- 调度状态持久化：MV3 的 Service Worker 会随时被回收，内存里的 schedulerActive / paused /
 // nextAllowedAt 都会重置，导致「发布完一篇后队列停住、不再自动发下一篇」。把这些状态落盘到
@@ -298,6 +297,7 @@ async function scheduleNext() {
 // 清除「下一篇倒计时」：重置内存态、清 storage、上报后端 0（两侧都不再显示读秒）
 function clearSchedule() {
   nextAllowedAt = 0;
+  chrome.alarms.clear('nextPublish').catch(() => {}); // 撤销待发的「开下一篇」闹钟
   chrome.storage.local.set({ nextPublishAt: 0 }).catch(() => {});
   notifyServerSchedule(0);
 }
@@ -310,15 +310,13 @@ async function notifyServerSchedule(at) {
     console.error('[黑猫][BG] notifyServerSchedule failed', e);
   }
 }
-// 重新挂「开下一篇」的定时器（始终走异步 setTimeout，不递归）：
-//   - 已到时间 → 1s 后 tryAdvance；未到 → 按剩余时间。
-//   - 关键：每次 SW 唤醒（pump 闹钟 / 页面事件 / 启动时恢复）都调用本函数，保证回收后仍能按时推进。
+// 重新挂「开下一篇」的定时器：改用 chrome.alarms 一次性闹钟（可靠跨 SW 回收）。
+// MV3 的 Service Worker 空闲约 30s 会被系统回收，setTimeout 长延时必然丢失；
+// 而 chrome.alarms 由浏览器持久维护，即使 SW 被回收也能在到点时唤醒 SW 触发 tryAdvance。
 function armNextTimer() {
-  if (nextTimer) return; // 已有定时器在跑，避免重复堆叠
   if (!schedulerActive || paused) return;
-  const remain = nextAllowedAt - Date.now();
-  const delay = remain <= 0 ? 1000 : Math.min(remain, 60 * 60 * 1000);
-  nextTimer = setTimeout(() => { nextTimer = null; tryAdvance(); }, delay);
+  const when = Math.max(Date.now() + 1500, nextAllowedAt);
+  chrome.alarms.create('nextPublish', { when });
 }
 // 推进到下一篇：满足所有安全条件才真正 openNextTab（倒计时到点后由 pump/定时器调用）
 function tryAdvance() {
@@ -339,8 +337,9 @@ async function schedulerStep() {
   const s = await storageGet();
   if (!s.autoConnect) return;
   if (!schedulerActive || paused) return;
-  // 每次唤醒都重新计算：到点则开下一篇，否则挂剩余时间的定时器（抗 SW 回收）
-  armNextTimer();
+  // 到点则直接开下一篇（pump 闹钟可靠，抗 SW 回收）；未到点则挂一次性闹钟兜底。
+  if (Date.now() >= nextAllowedAt) tryAdvance();
+  else armNextTimer();
 }
 
 // 周期 pump：每分钟尝试推进队列（同时兜底 SW 回收后丢失的延时定时器）
@@ -349,6 +348,8 @@ chrome.alarms.onAlarm.addListener((a) => {
   if (a.name === 'pump') schedulerStep();
   // 队列已空后的兜底清理：间隔走完再清除倒计时（仅当没重新开始新批次时）
   else if (a.name === 'clearSchedule') { if (!schedulerActive) clearSchedule(); }
+  // 到点开下一篇：由可靠闹钟唤醒（抗 SW 回收）。临近即触发，真正校验在 tryAdvance 内做。
+  else if (a.name === 'nextPublish') { if (Date.now() >= nextAllowedAt - 3000) tryAdvance(); else armNextTimer(); }
 });
 
 // 创作者页加载完成：仅填充「本调度器刚开的新标签页」（awaitingTabId 路径）。
@@ -447,6 +448,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         // 开启队列自动发布：始终直接打开图文上传页（CREATOR_URL）再填充，不依赖/不接管当前已打开的（可能非上传页的）创作者页
         schedulerActive = true; paused = false;
         chrome.alarms.clear('clearSchedule').catch(() => {}); // 撤销上次批次遗留的兜底清理，避免误清新批次倒计时
+        chrome.alarms.clear('nextPublish').catch(() => {});  // 撤销上一批次遗留的「开下一篇」闹钟
         persistSched();
         openNextTab();
         sendResponse({ ok: true, ...schedulerState(), msg: '已开启批量发布' });
@@ -459,12 +461,14 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         // 继续（从「暂停」恢复；若因验证挑战暂停，需先在标签页解决验证并发布）：同样直接打开图文上传页
         schedulerActive = true; paused = false;
         chrome.alarms.clear('clearSchedule').catch(() => {}); // 撤销上次批次遗留的兜底清理，避免误清新批次倒计时
+        chrome.alarms.clear('nextPublish').catch(() => {});  // 撤销上一批次遗留的「开下一篇」闹钟
         persistSched();
         openNextTab();
         sendResponse({ ok: true, ...schedulerState(), msg: '已继续批量发布' });
       } else if (msg.type === 'stopNow') {
         // 立即停止并清理当前（用于紧急停止）
         schedulerActive = false; paused = false; nextAllowedAt = 0;
+        chrome.alarms.clear('nextPublish').catch(() => {}); // 立即停止待发的「开下一篇」闹钟
         persistSched();
         if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
         if (current && current.tabId != null) chrome.tabs.remove(current.tabId).catch(() => {});
