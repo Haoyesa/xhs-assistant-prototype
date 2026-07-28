@@ -20,6 +20,7 @@
     "icon": "assets/icon.ico",
     "files": [
       "server.js",
+      "sensitive-words.mjs",
       "qianfan-scraper.js",
       "cdp-publisher.js",
       "image-util.js",
