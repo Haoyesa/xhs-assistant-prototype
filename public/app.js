@@ -222,20 +222,22 @@ function fmtCountdown(ms) {
 function renderCountdown() {
   const el = document.getElementById('nextCountdown');
   if (!el) return;
-  // 队列已空（无待发任务）：不再显示倒计时
-  if (!queueHasPending) {
-    el.style.display = 'none';
-    el.textContent = '';
-    el.classList.remove('active');
-    return;
-  }
-  el.style.display = '';
-  if (!nextPublishAtAt || nextPublishAtAt <= Date.now()) {
+  if (nextPublishAtAt && nextPublishAtAt > Date.now()) {
+    // 插件/调度器已上报「下一篇最早发布时刻」：正常读秒。
+    // 不再以 queueHasPending 为门槛 —— 否则插件上报后调度器一旦判队列空会把倒计时瞬间清掉，两侧都看不到。
+    el.style.display = '';
+    el.textContent = '⏳ 距下一篇发布：' + fmtCountdown(nextPublishAtAt);
+    el.classList.add('active');
+  } else if (queueHasPending) {
+    // 队列在跑但还没拿到下一篇的具体时刻：显示「到点即发布」
+    el.style.display = '';
     el.textContent = '⏳ 距下一篇发布：—（到点即发布）';
     el.classList.remove('active');
   } else {
-    el.textContent = '⏳ 距下一篇发布：' + fmtCountdown(nextPublishAtAt);
-    el.classList.add('active');
+    // 完全空闲：隐藏
+    el.style.display = 'none';
+    el.textContent = '';
+    el.classList.remove('active');
   }
 }
 setInterval(renderCountdown, 1000); // 每秒走字，loadQueue 每 2s 刷新数据源

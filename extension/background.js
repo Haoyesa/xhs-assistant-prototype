@@ -268,24 +268,30 @@ function resolveCurrent(kind, detail, reportTabId, delayMs) {
 // 等配置延时后开下一篇（用 nextAllowedAt 保证延时，并每次 SW 唤醒都重新 arm 定时器，抗 SW 回收）
 async function scheduleNext() {
   if (!schedulerActive || paused) return;
-  // 先确认还有待发任务，避免「最后一篇已发完」却写出一条虚假的「下一篇」倒计时（两侧误读秒）
-  let hasPending = true;
-  try {
-    const q = await api('/api/batch/queue', { method: 'GET' });
-    hasPending = !!(q && q.tasks && q.tasks.some((t) => t.status === 'queued' || t.status === 'picked'));
-  } catch (e) { hasPending = true; } // 查不到时保守继续，最终由 fillTab 空路径兜底清除
-  if (!hasPending) {
-    schedulerActive = false;
-    clearSchedule();
-    broadcast({ kind: 'idle', msg: '队列已空，没有待发任务了 ✓' });
-    return;
-  }
+  // 先写好「下一篇最早发布时刻」：即便本批已空也先写，保证「最后一篇」的倒计时能完整走完，
+  // 避免 content script 的 reportSchedule 刚把倒计时打出来几秒、这里又立刻 clearSchedule 把它清掉（两侧误以为没生效）。
   nextAllowedAt = Date.now() + lastDelayMs;
   // 写入 storage，供创作者页 Toast 显示「下一篇倒计时」（同时持久化调度状态，抗 SW 回收）
   chrome.storage.local.set({ nextPublishAt: nextAllowedAt }).catch(() => {});
   persistSched();
   // 上报给后端，供桌面「批量发布」页同步显示倒计时
   notifyServerSchedule(nextAllowedAt);
+  // 确认是否还有待发任务
+  let hasPending = true;
+  try {
+    const q = await api('/api/batch/queue', { method: 'GET' });
+    hasPending = !!(q && q.tasks && q.tasks.some((t) => t.status === 'queued' || t.status === 'picked'));
+  } catch (e) { hasPending = true; } // 查不到时保守继续，最终由 fillTab 空路径兜底清除
+  if (!hasPending) {
+    // 队列已空：停止自动链（不再开新标签），但「下一篇倒计时」保留到当前间隔走完再清除，
+    // 用一次性闹钟兜底（SW 回收也能可靠触发），避免倒计时刚出现就被清掉。
+    schedulerActive = false;
+    persistSched();
+    broadcast({ kind: 'idle', msg: '队列已空，没有待发任务了 ✓' });
+    const remain = Math.max(1000, nextAllowedAt - Date.now());
+    chrome.alarms.create('clearSchedule', { when: Date.now() + remain + 1500 });
+    return;
+  }
   // 真正挂定时器（每次都会重新计算剩余时间，SW 回收后由 pump/schedulerStep 重新 arm）
   armNextTimer();
 }
@@ -339,7 +345,11 @@ async function schedulerStep() {
 
 // 周期 pump：每分钟尝试推进队列（同时兜底 SW 回收后丢失的延时定时器）
 chrome.alarms.create('pump', { periodInMinutes: 1 });
-chrome.alarms.onAlarm.addListener((a) => { if (a.name === 'pump') schedulerStep(); });
+chrome.alarms.onAlarm.addListener((a) => {
+  if (a.name === 'pump') schedulerStep();
+  // 队列已空后的兜底清理：间隔走完再清除倒计时（仅当没重新开始新批次时）
+  else if (a.name === 'clearSchedule') { if (!schedulerActive) clearSchedule(); }
+});
 
 // 创作者页加载完成：仅填充「本调度器刚开的新标签页」（awaitingTabId 路径）。
 // 不再「接管」任意已打开的创作者页：发布成功后 XHS 会让同一标签页跳转到结果页
@@ -436,6 +446,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       } else if (msg.type === 'startPublish') {
         // 开启队列自动发布：始终直接打开图文上传页（CREATOR_URL）再填充，不依赖/不接管当前已打开的（可能非上传页的）创作者页
         schedulerActive = true; paused = false;
+        chrome.alarms.clear('clearSchedule').catch(() => {}); // 撤销上次批次遗留的兜底清理，避免误清新批次倒计时
         persistSched();
         openNextTab();
         sendResponse({ ok: true, ...schedulerState(), msg: '已开启批量发布' });
@@ -447,6 +458,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       } else if (msg.type === 'resumePublish') {
         // 继续（从「暂停」恢复；若因验证挑战暂停，需先在标签页解决验证并发布）：同样直接打开图文上传页
         schedulerActive = true; paused = false;
+        chrome.alarms.clear('clearSchedule').catch(() => {}); // 撤销上次批次遗留的兜底清理，避免误清新批次倒计时
         persistSched();
         openNextTab();
         sendResponse({ ok: true, ...schedulerState(), msg: '已继续批量发布' });
