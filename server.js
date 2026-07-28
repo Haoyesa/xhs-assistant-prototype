@@ -402,7 +402,7 @@ function resolveImagesRoot(settings) {
   // 绿色免安装版：exe 同级目录下的 images/（即 win-unpacked/images）；node 直接跑时回退到 DATA/images
   if (process.versions && process.versions.electron) {
     const root = path.join(path.dirname(process.execPath), 'images');
-    console.log('[XHS] 图片根目录(默认):', root);
+    console.log('[黑猫] 图片根目录(默认):', root);
     return root;
   }
   return path.join(DATA, 'images');
@@ -500,7 +500,7 @@ function resolveCsvExportDir(settings) {
   // 与图片根目录同规则：绿色免安装版用 exe 同级目录下的 csv/，node 直接跑时回退到 DATA/csv
   if (process.versions && process.versions.electron) {
     const root = path.join(path.dirname(process.execPath), 'csv');
-    console.log('[XHS] CSV 导出目录(默认):', root);
+    console.log('[黑猫] CSV 导出目录(默认):', root);
     return root;
   }
   return path.join(DATA, 'csv');
