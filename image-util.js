@@ -1,7 +1,7 @@
 // image-util.js — 图片下载与本地缓存工具（服务端使用）
 // 解决两个真实问题：
 // 1) CDP 发布需要「本地文件路径」上传图片，但商品只有远程图片 URL；
-// 2) 浏览器插件在小红书页面 fetch 远程图常被防盗链/CORS 拦截。
+// 2) 浏览器插件在商品页面 fetch 远程图常被防盗链/CORS 拦截。
 // 这里统一把远程图下载到 uploads/ 目录并缓存（按 URL 哈希），供 CDP 上传或经 /api/image 代理返回。
 import fs from 'node:fs';
 import path from 'node:path';

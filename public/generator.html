@@ -899,9 +899,9 @@ input[type="range"]::-webkit-slider-thumb {
       <div class="form-row">
         <label>预设</label>
         <select id="sizePreset">
-          <option value="1080x1920">小红书竖版 9:16</option>
-          <option value="1080x1440">小红书 3:4</option>
-          <option value="1080x1350">小红书 4:5</option>
+          <option value="1080x1920">竖版 9:16</option>
+          <option value="1080x1440">3:4</option>
+          <option value="1080x1350">4:5</option>
           <option value="1080x1080">正方形 1:1</option>
           <option value="custom">自定义</option>
         </select>
@@ -1846,7 +1846,7 @@ const presetTemplates = [
   { id: 'p_blush',     name: '腮红',    type: 'solid',    color: '#FFF0F2' },
   { id: 'p_warm',      name: '暖杏',    type: 'solid',    color: '#FFF1E6' },
   { id: 'p_sunset',    name: '日落渐变', type: 'gradient', colors: ['#FF6B35', '#F7931E', '#FFD700'] },
-  { id: 'p_xhs',       name: '小红书',   type: 'gradient', colors: ['#FF2442', '#FF6B81'] },
+  { id: 'p_xhs',       name: '经典红',   type: 'gradient', colors: ['#FF2442', '#FF6B81'] },
   { id: 'p_rose',      name: '玫瑰渐变', type: 'gradient', colors: ['#ee9ca7', '#ffdde1'] },
   { id: 'p_peach',     name: '蜜桃渐变', type: 'gradient', colors: ['#FFDDE1', '#EE9CA7'] },
   { id: 'p_late',      name: '暮色渐变', type: 'gradient', colors: ['#2c3e50', '#fd746c'] },
@@ -2364,7 +2364,7 @@ $('downloadBtn').addEventListener('click', async () => {
   const zip = createZipFromImages(allImages);
   const a = document.createElement('a');
   a.href = URL.createObjectURL(zip);
-  a.download = '爆款素材_' + new Date().getTime() + '.zip';
+  a.download = '素材_' + new Date().getTime() + '.zip';
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
@@ -2424,9 +2424,9 @@ $('sampleBtn').addEventListener('click', () => {
   csvData = [
     { id: '68678db0ae962f00150d0a9e', title: '超市运营管理\n资料模板', subtitle: '全套模板直接用' },
     { id: '69c3f45d20b4e20001e44dc4', title: '抖音短视频运营\n完整SOP流程', subtitle: '从0到1保姆级教程' },
-    { id: '69c3fd92a20c2100014261b3', title: '小红书起号攻略\n7天涨粉1000+', subtitle: '新手必看' },
+    { id: '69c3fd92a20c2100014261b3', title: '账号运营攻略\n7天涨粉1000+', subtitle: '新手必看' },
     { id: '69c3fdded6abc6000133beef', title: '私域流量运营\n微信社群玩法', subtitle: '高转化秘籍' },
-    { id: '69c3fe29ff00dc0001534127', title: '电商选品指南\n爆款打造方法', subtitle: '月销10W+打法' },
+    { id: '69c3fe29ff00dc0001534127', title: '电商选品指南\n打造方法', subtitle: '月销10W+打法' },
   ];
   $('csvStatus').textContent = '已加载 5 条示例数据（点击"生成全部图片"开始预览）';
   $('csvStatus').classList.add('show');
@@ -2695,7 +2695,7 @@ function makeZipEntry(nameStr, fileData, localOffset) {
   return { local, cd };
 }
 
-// 主函数：生成合法 ZIP Blob，目录结构匹配爆款素材格式
+// 主函数：生成合法 ZIP Blob，目录结构匹配封面素材格式
 // 结构：{id}_1/{id}.png 或 {id}_1/{id}.jpg（根据导出格式）
 function createZipFromImages(images) {
   const exportFormat = $('exportFormat').value;
@@ -3021,7 +3021,7 @@ document.addEventListener('keydown', (e) => {
 });
 
 // ===================== localStorage 持久化 =====================
-const SETTINGS_KEY = 'xhs-generator-settings';
+const SETTINGS_KEY = 'generator-settings';
 
 // 需要持久化的控件 ID 列表
 const persistIds = [
@@ -3514,7 +3514,7 @@ function hitTestDecoration(mx, my) {
 }
 
 // ===================== 装饰元素：localStorage 持久化 =====================
-const DECO_KEY = 'xhs-generator-decorations';
+const DECO_KEY = 'generator-decorations';
 
 function saveDecorations() {
   try {
@@ -3571,7 +3571,7 @@ async function loadDecorations() {
 loadDecorations();
 
 // ===================== 初始化 =====================
-console.log('批量制作原创爆款素材 - 已加载');
+console.log('批量制作原创素材 - 已加载');
 </script>
 </body>
 </html>

@@ -16,9 +16,9 @@
         <span class="logo-txt">黑猫智记AI</span>
       </div>
       <nav class="nav">
-        <button class="tab-btn active" data-tab="products"><span class="ni">📦</span>采集商品</button>
+        <button class="tab-btn active" data-tab="products"><span class="ni">📦</span>素材库</button>
         <button class="tab-btn" data-tab="generator"><span class="ni">🎨</span>批量作图</button>
-        <button class="tab-btn" data-tab="batch"><span class="ni">🚀</span>批量发布</button>
+        <button class="tab-btn" data-tab="batch"><span class="ni">🚀</span>发布</button>
         <button class="tab-btn" data-tab="history"><span class="ni">🕘</span>历史</button>
         <button class="tab-btn" data-tab="accounts"><span class="ni">👤</span>账号</button>
         <button class="tab-btn" data-tab="settings"><span class="ni">⚙️</span>设置</button>
@@ -28,7 +28,7 @@
           <span class="conn-dot" id="connDot"></span>
           <span id="connText">连接中…</span>
         </div>
-        <div class="side-hint">仅自有账号 · 人工复核</div>
+        <div class="side-hint">本地创作 · 内容辅助</div>
       </div>
     </aside>
 
@@ -37,13 +37,13 @@
       <header class="topbar">
         <div class="top-head">
         <div class="crumb">黑猫智记AI</div>
-        <h1 id="pageTitle">采集商品</h1>
+        <h1 id="pageTitle">素材库</h1>
         </div>
         <div class="overview">
-          <div class="stat"><div class="stat-num" id="statProducts">0</div><div class="stat-label">商品库</div></div>
-          <div class="stat"><div class="stat-num" id="statQueued">0</div><div class="stat-label">待发布</div></div>
-          <div class="stat"><div class="stat-num ok" id="statPublished">0</div><div class="stat-label">已发布</div></div>
-          <div class="stat"><div class="stat-num bad" id="statFailed">0</div><div class="stat-label">失败/跳过</div></div>
+          <div class="stat"><div class="stat-num" id="statProducts">0</div><div class="stat-label">素材库</div></div>
+          <div class="stat"><div class="stat-num" id="statQueued">0</div><div class="stat-label">待处理</div></div>
+          <div class="stat"><div class="stat-num ok" id="statPublished">0</div><div class="stat-label">已生成</div></div>
+          <div class="stat"><div class="stat-num bad" id="statFailed">0</div><div class="stat-label">失败</div></div>
         </div>
       </header>
 
@@ -52,11 +52,11 @@
         <section class="tab active" data-tab="products">
           <div class="card">
             <div class="card-h">
-              <h3>采集商品</h3>
-              <span class="hint">插件在千帆页「采集本页商品」→ 进入这里；也可手动/导入。</span>
+              <h3>素材库</h3>
+              <span class="hint">可手动添加，或从本地图片文件夹批量导入。</span>
             </div>
             <div class="row">
-              <button id="fetchQianfanBtn" class="primary">🔄 从千帆抓取商品</button>
+              <button id="fetchQianfanBtn" class="primary">🔄 从商品页抓取</button>
               <span id="fetchMsg" class="msg"></span>
             </div>
             <div class="cols">
@@ -80,11 +80,11 @@
           </div>
           <div class="card">
             <div class="card-h">
-              <h3>📁 本地图片文件夹（按 images/&lt;id&gt; 发布）</h3>
-              <span class="hint">把每组笔记的图片放进 <code>images/&lt;id&gt;/</code> 文件夹。文件夹名支持 <code>&lt;商品ID&gt;_&lt;序号&gt;</code> 格式（如 <code>686673d41ea4cb001553c6da_1</code>），软件会自动匹配千帆商品库的商品名作为笔记标题。未匹配到则用文件夹名（或文件夹内可选 name.txt）作为 AI 生成文案的种子。图片根目录默认在软件数据目录的 images/，可在「设置 → 发布方式」修改。</span>
+              <h3>📁 本地图片文件夹（按 images/&lt;id&gt;）</h3>
+              <span class="hint">把每组内容的图片放进 <code>images/&lt;id&gt;/</code> 文件夹。文件夹名支持 <code>&lt;商品ID&gt;_&lt;序号&gt;</code> 格式（如 <code>686673d41ea4cb001553c6da_1</code>），软件会自动匹配素材库的商品名作为笔记标题。未匹配到则用文件夹名（或文件夹内可选 name.txt）作为 AI 生成文案的种子。图片根目录默认在软件数据目录的 images/，可在「设置 → 生成方式」修改。</span>
             </div>
             <div class="row">
-              <button id="scanAndImportBtn" class="primary">🔍 扫描图片文件夹并导入生成笔记</button>
+              <button id="scanAndImportBtn" class="primary">🔍 扫描图片文件夹并导入生成内容</button>
               <span id="imgFolderMsg" class="msg"></span>
             </div>
             <div class="hint">图片根目录：<code id="imagesRootPreview">—</code></div>
@@ -93,7 +93,7 @@
 
           <div class="card">
             <div class="row between">
-              <strong>商品库（<span id="prodCount">0</span>）</strong>
+              <strong>素材库（<span id="prodCount">0</span>）</strong>
               <span class="row" style="gap:8px">
                 <button id="refreshProdBtn" class="mini">🔄 刷新</button>
               </span>
@@ -107,7 +107,7 @@
           <div class="card gen-card">
             <div class="card-h">
               <h3>批量作图</h3>
-              <span class="hint">小红书爆款素材生成器：批量导入商品，自动生成封面与文案素材。</span>
+              <span class="hint">通用封面素材生成器：批量导入商品，自动生成封面与文案素材。</span>
             </div>
             <iframe src="/generator" class="gen-frame" title="批量作图" loading="lazy"></iframe>
           </div>
@@ -117,14 +117,14 @@
         <section class="tab" data-tab="batch">
           <div class="card">
             <div class="row">
-              <button id="pumpBtn" class="primary">▶ 开始批量发布</button>
+              <button id="pumpBtn" class="primary">▶ 开始生成</button>
               <button id="pauseBtn">⏸ 暂停</button>
               <button id="resumeBtn">⏵ 继续</button>
               <button id="stopBtn">⏹ 停止</button>
               <button id="retryBtn">🔁 重试失败</button>
               <span id="pumpMsg" class="msg"></span>
             </div>
-            <div class="hint">dry-run 为模拟发布；切到 CDP 真实发布需在设置填浏览器地址并登录千帆/创作者后台。插件方案下请在创作者页用浏览器插件「开始批量发布」一键自动填充并发布（默认开启自动提交）。</div>
+            <div class="hint">本页用于批量生成内容；可在「设置」配置本地生成参数。需要发布到各平台时，请在对应平台后台手动操作，本工具不代为发布。</div>
             <div id="nextCountdown" class="next-countdown">⏳ 距下一篇发布：—</div>
           </div>
           <div id="queueList" class="card"></div>
@@ -142,7 +142,7 @@
               <h3>账号管理</h3>
               <span class="hint" id="accountQuota">加载中…</span>
             </div>
-            <p class="hint">绑定你用于发布的小红书账号。可绑定的账号数量由当前订阅套餐决定（<b>免费版 1 个 / 基础版 1 个 / 专业版 3 个 / 旗舰版 10 个 / 团队版不限</b>）；达到上限后需解绑旧账号或升级套餐才能继续添加。</p>
+            <p class="hint">绑定你的账号。可绑定的账号数量由当前订阅套餐决定（<b>免费版 1 个 / 基础版 1 个 / 专业版 3 个 / 旗舰版 10 个 / 团队版不限</b>）；达到上限后需解绑旧账号或升级套餐才能继续添加。</p>
             <div class="row">
               <input id="accountName" placeholder="账号备注名（如 主号 / 小号A）" style="flex:1" />
               <button id="addAccountBtn" class="primary">➕ 添加账号</button>
@@ -174,7 +174,7 @@
           </div>
 
           <div class="card">
-            <h3>发布方式 / 千帆</h3>
+            <h3>发布方式</h3>
             <div class="grid2">
               <label>发布方式
                 <select id="setPublish">
@@ -184,7 +184,7 @@
                 </select>
               </label>
               <div class="hint" id="publishModeHint" style="grid-column:1/-1"></div>
-              <label>千帆商品页 URL<input id="setQianfanUrl" placeholder="https://channel.xiaohongshu.com/..." /></label>
+              <label>商品页 URL<input id="setQianfanUrl" placeholder="https://..." /></label>
               <label>CDP 浏览器地址<input id="setBrowserUrl" placeholder="http://127.0.0.1:9222" /></label>
               <label>Chrome 路径(可选)<input id="setChromePath" placeholder="C:\...\chrome.exe" /></label>
               <label>图片根目录(本地图库,可选)<input id="setImagesRoot" placeholder="留空=数据目录/images" /></label>
@@ -198,16 +198,16 @@
           </div>
 
           <div class="card">
-            <h3>发布设置（对齐原软件）</h3>
+            <h3>生成设置</h3>
             <div class="settings-form">
               <label class="set-line"><input type="checkbox" id="setGenTitle" /> 生成标题（精简）</label>
               <details class="set-prompt">
                 <summary>标题提示词</summary>
                 <textarea id="setTitlePrompt" rows="3"></textarea>
               </details>
-              <label class="set-line"><input type="checkbox" id="setGenContent" /> 生成正文（种草）</label>
+              <label class="set-line"><input type="checkbox" id="setGenContent" /> 生成正文</label>
               <details class="set-prompt">
-                <summary>正文提示词（种草）</summary>
+                <summary>正文提示词</summary>
                 <textarea id="setContentPrompt" rows="6"></textarea>
               </details>
               <div class="set-line">

@@ -4,7 +4,7 @@
   "private": true,
   "author": "heimao-ai",
   "type": "module",
-  "description": "黑猫智记AI（AI 文案 + 素材库 + 排序 + 历史 + CDP 真实发布 + Electron 桌面外壳），仅用于自有商家账号的批量发布自动化。",
+  "description": "黑猫智记AI（通用内容创作辅助工具：文案优化、排版设计、敏感词检测、封面素材参考。本地运行，不接入任何平台接口、不自动发布、不批量管账号）。",
   "main": "electron/main.mjs",
   "scripts": {
     "start": "node server.js",
@@ -15,7 +15,7 @@
     "dist": "electron-builder"
   },
   "build": {
-    "appId": "com.example.xhsassistant",
+    "appId": "com.heimao.aicontent",
     "productName": "黑猫智记AI",
     "icon": "assets/icon.ico",
     "files": [
