@@ -1774,7 +1774,12 @@ function sendDelay(delayMs) {
 }
 // 把「下一篇最早发布时刻」上报给后端，供桌面批量发布页同步显示倒计时
 async function reportSchedule(at) {
-  try { await window.XhsCommon.xhsFetch('/api/ext/schedule', { method: 'POST', body: { nextPublishAt: at } }); } catch (e) {}
+  try {
+    const r = await window.XhsCommon.xhsFetch('/api/ext/schedule', { method: 'POST', body: { nextPublishAt: at } });
+    console.log('[黑猫] reportSchedule ok=', r.ok, 'status=', r.status, 'at=', at, 'delta=', at ? (at - Date.now()) + 'ms' : 0);
+  } catch (e) {
+    console.error('[黑猫] reportSchedule failed', e);
+  }
 }
 
 // 统一执行：校验挑战 → 填表 → 回报结果。供 background 下发调用。
@@ -1813,16 +1818,21 @@ async function runFill(task, autoSubmit, serverUrl, humanTyping) {
       status('填充异常：' + r.detail);
       await reportDone(task.id, 'failed', r.detail, __delayMs);
     } else if (r.published) {
-      // 真正发布成功：补写「下一篇倒计时」。自动模式后台 scheduleNext 已用真实间隔写好；
-      // 这里兜底（手动拉取/后台未写时）改为用后端「发布间隔+随机延迟」计算，并向后端上报供桌面倒计时。
+      // 真正发布成功：补写「下一篇倒计时」并上报后端，供桌面批量发布页同步显示。
+      // 优先用后台已算好的 nextPublishAt；没有则用后端「发布间隔+随机延迟」重新计算。
       try {
         const cur = await new Promise((res) => chrome.storage.local.get({ nextPublishAt: 0 }, (r) => res(r.nextPublishAt || 0)));
-        if (!(cur > Date.now())) {
-          const at = Date.now() + await getIntervalMs();
+        let at = 0;
+        if (cur > Date.now()) {
+          at = cur;
+          console.log('[黑猫] 使用后台已写 countdown:', at, 'delta=', (at - Date.now()) + 'ms');
+        } else {
+          at = Date.now() + await getIntervalMs();
           chrome.storage.local.set({ nextPublishAt: at });
-          reportSchedule(at);
+          console.log('[黑猫] 重新计算 countdown:', at, 'delta=', (at - Date.now()) + 'ms');
         }
-      } catch (e) {}
+        if (at) reportSchedule(at);
+      } catch (e) { console.error('[黑猫] 写 countdown 异常', e); }
       await reportDone(task.id, 'published', '已自动发布成功', __delayMs);
       status('✓ 已发布，下一篇倒计时见上方 ↑');
     } else if (r.clicked) {

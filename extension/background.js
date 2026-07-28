@@ -297,7 +297,12 @@ function clearSchedule() {
 }
 // 把「下一篇最早发布时刻」上报给后端（桌面批量发布页需要它做倒计时）
 async function notifyServerSchedule(at) {
-  try { await api('/api/ext/schedule', { method: 'POST', body: { nextPublishAt: at } }); } catch (e) {}
+  try {
+    const r = await api('/api/ext/schedule', { method: 'POST', body: { nextPublishAt: at } });
+    console.log('[黑猫][BG] notifyServerSchedule ok=', r.ok, 'status=', r.status, 'at=', at, 'delta=', at ? (at - Date.now()) + 'ms' : 0);
+  } catch (e) {
+    console.error('[黑猫][BG] notifyServerSchedule failed', e);
+  }
 }
 // 重新挂「开下一篇」的定时器（始终走异步 setTimeout，不递归）：
 //   - 已到时间 → 1s 后 tryAdvance；未到 → 按剩余时间。
