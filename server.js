@@ -573,6 +573,9 @@ const server = http.createServer(async (req, res) => {
       return sendJSON(res, 200, {
         appVersion: APP_VERSION,
         ...merged,
+        // 把用户自己设置的间隔原值保留下来，供设置页回显；实际发布仍用下方 ...iv 的套餐档位值
+        userPublishIntervalSeconds: merged.publishIntervalSeconds,
+        userPublishIntervalRandomDelaySeconds: merged.publishIntervalRandomDelaySeconds,
         ...iv, // 频率档位覆盖用户自定义间隔：套餐决定两篇之间的延时
         plan: { key: plan.key, label: plan.label, autoSubmit: plan.autoSubmit, freqTier: plan.freqTier },
         maxAccounts: maxAccounts(DATA),
