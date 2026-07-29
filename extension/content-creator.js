@@ -1826,6 +1826,8 @@ async function runFill(task, autoSubmit, serverUrl, humanTyping) {
     return;
   }
   __fillLock.add(task.id);
+  window.__xhsPublish.publishing = true;
+  updateStartBtn();
   try {
     const r = await fillTask(task, autoSubmit, serverUrl, humanTyping);
     console.log('[黑猫] fillTask 结果:', JSON.stringify(r));
@@ -1877,6 +1879,9 @@ async function runFill(task, autoSubmit, serverUrl, humanTyping) {
     }
   } finally {
     stopTaskHeartbeat();
+    window.__xhsPublish.publishing = false;
+    updateStartBtn();
+    refreshQueue(); // 任务结束 → 重新统计本账号队列（决定按钮是否仍可用）
     // 30s 后解锁，允许后续重试（如用户手动点重试 / 下次批量）
     setTimeout(() => __fillLock.delete(task.id), 30 * 1000);
   }
@@ -1976,6 +1981,36 @@ function startToastCountdown() {
 }
 
 
+// 侧栏「开始批量发布」按钮状态：发布中 / 批次进行中 / 有待发队列 三者共同决定可用性
+//  - publishing：正在填+发某一篇（runFill 期间）
+//  - batchActive：本批次已开始且仍有任务（防止重复点开始导致重复开标签）
+//  - hasQueue：本账号在后台有待发任务（由 background getQueue 按账号统计）
+window.__xhsPublish = window.__xhsPublish || { publishing: false, batchActive: false, hasQueue: false };
+
+function updateStartBtn() {
+  const btn = document.getElementById('xhs-h-start');
+  if (!btn) return;
+  const p = window.__xhsPublish || { publishing: false, batchActive: false, hasQueue: false };
+  const disabled = p.publishing || p.batchActive || !p.hasQueue;
+  btn.disabled = disabled;
+  if (p.publishing || p.batchActive) btn.textContent = '发布中…';
+  else if (!p.hasQueue) btn.textContent = '无待发队列';
+  else btn.textContent = '开始批量发布';
+  btn.classList.toggle('xhs-h-start-busy', p.publishing || p.batchActive);
+}
+
+// 向 background 查询本账号待发队列数量，刷新 hasQueue / batchActive
+async function refreshQueue() {
+  try {
+    const r = await new Promise((res) => chrome.runtime.sendMessage({ type: 'getQueue' }, (resp) => res(resp)));
+    const queued = (r && r.ok && typeof r.queued === 'number') ? r.queued : 0;
+    const p = window.__xhsPublish;
+    p.hasQueue = queued > 0;
+    if (queued === 0) p.batchActive = false; // 队列空了，批次自然结束
+    updateStartBtn();
+  } catch (e) { /* 网络/背景断开时保持现状，下次刷新再试 */ }
+}
+
 // 注入侧栏 UI + 顶部 Toast
 function buildPanel() {
   if (!document.getElementById('xhs-helper-css')) {
@@ -1998,8 +2033,33 @@ function buildPanel() {
     <div class="xhs-h-body">
       <span class="xhs-h-dot" id="xhs-h-dot"></span>
       <span class="xhs-h-status" id="xhs-c-status">就绪</span>
+    </div>
+    <div class="xhs-h-actions">
+      <button class="xhs-h-start" id="xhs-h-start" type="button" disabled>无待发队列</button>
     </div>`;
   document.body.appendChild(box);
+  // 侧栏「开始批量发布」按钮：等价于扩展弹窗的同一按钮（发 startPublish 给 background 调度器）
+  const startBtn = box.querySelector('#xhs-h-start');
+  if (startBtn) {
+    startBtn.addEventListener('click', () => {
+      if (startBtn.disabled) return;
+      const status = (window.__xhsHelper && window.__xhsHelper.status) || (() => {});
+      window.__xhsPublish.batchActive = true;
+      updateStartBtn();
+      chrome.runtime.sendMessage({ type: 'startPublish' }, (r) => {
+        const ok = !!(r && r.ok);
+        status(ok ? '已开始批量发布（每篇开新标签，自动发布）' : '开始失败：' + ((r && r.msg) || '未知'));
+        if (!ok) { window.__xhsPublish.batchActive = false; }
+        updateStartBtn();
+        refreshQueue();
+      });
+    });
+    updateStartBtn();
+    refreshQueue();
+    if (!window.__xhsQueueTimer) {
+      window.__xhsQueueTimer = setInterval(() => { refreshQueue(); }, 15000);
+    }
+  }
   // 让头部可拖动整个浮窗
   if (window.XhsCommon && window.XhsCommon.xhsMakeDraggable) {
     window.XhsCommon.xhsMakeDraggable(box, box.querySelector('.xhs-h-head'));

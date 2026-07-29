@@ -196,6 +196,37 @@
   line-height: 1.5 !important;
   word-break: break-word !important;
 }
+/* 侧栏底部「开始批量发布」按钮 */
+#xhs-creator-helper .xhs-h-actions {
+  padding: 0 12px 12px !important;
+}
+#xhs-creator-helper .xhs-h-start {
+  width: 100% !important;
+  padding: 10px 12px !important;
+  border: 0 !important;
+  border-radius: 10px !important;
+  background: linear-gradient(90deg, #00f0ff, #b829f7) !important;
+  color: #06121a !important;
+  font-size: 13px !important;
+  font-weight: 700 !important;
+  letter-spacing: 0.3px !important;
+  cursor: pointer !important;
+  box-shadow: 0 6px 18px rgba(0, 240, 255, 0.25) !important;
+  transition: filter .15s ease, transform .1s ease, opacity .15s ease !important;
+}
+#xhs-creator-helper .xhs-h-start:hover:not(:disabled) { filter: brightness(1.08) !important; }
+#xhs-creator-helper .xhs-h-start:active:not(:disabled) { transform: scale(.98) !important; }
+#xhs-creator-helper .xhs-h-start:disabled {
+  cursor: not-allowed !important;
+  background: #232a33 !important;
+  color: #6b7682 !important;
+  box-shadow: none !important;
+  opacity: 1 !important;
+}
+#xhs-creator-helper .xhs-h-start.xhs-h-start-busy {
+  background: linear-gradient(90deg, rgba(0,240,255,.35), rgba(184,41,247,.35)) !important;
+  color: #cfe9ef !important;
+}
 
 /* =========================================================
    选品浮窗（#xhs-ark-helper）拖动手柄

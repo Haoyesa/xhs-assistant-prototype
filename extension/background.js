@@ -541,7 +541,9 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         sendResponse({ ok: true, serverUrl: s.serverUrl, extAccount: s.extAccount || '', extProfile: s.extProfile || '', instanceId: s.instanceId || '' });
       } else if (msg.type === 'getQueue') {
         try {
-          const r = await api('/api/batch/queue', { method: 'GET' });
+          // 按本窗口绑定账号过滤（多账号并行：每个窗口只关心自己账号的队列）
+          const q = await accountQuery();
+          const r = await api('/api/batch/queue' + q, { method: 'GET' });
           const tasks = (r.data && r.data.tasks) || [];
           const queued = tasks.filter((t) => t.status === 'queued' || t.status === 'picked').length;
           sendResponse({ ok: r.ok, queued, total: tasks.length });
