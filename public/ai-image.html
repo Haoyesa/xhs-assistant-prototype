@@ -76,7 +76,7 @@
 <body>
   <div class="wrap">
     <h2>🖼️ AI 生图 <span class="badge">批量封面生成</span></h2>
-    <div class="sub">上传 CSV（含 <b>宝贝id</b> 与 <b>标题</b> 列），按你写的提示词逐行生成封面图，自动保存到 <code>images/&lt;商品ID&gt;_&lt;序号&gt;/</code>。</div>
+    <div class="sub">上传 CSV（含 <b>宝贝id</b> 与 <b>标题</b> 列），按你写的提示词逐行生成封面图，自动保存到 <code>images/&lt;商品ID&gt;_1/</code>。</div>
 
     <!-- 配置 -->
     <div class="card">
@@ -131,7 +131,7 @@
     <!-- 生成 -->
     <div class="card">
       <h3>🚀 开始生成</h3>
-      <div class="hint">将逐行调用图像 API（串行，避免并发超限）。生成结果写入图片根目录下的 <code>images/&lt;商品ID&gt;_&lt;序号&gt;/1.png</code>，并写入 <code>title.txt</code> 供发布流水线使用。</div>
+      <div class="hint">将逐行调用图像 API（串行，避免并发超限）。生成结果写入图片根目录下的 <code>images/&lt;商品ID&gt;_1/1.png</code>，并写入 <code>title.txt</code> 供发布流水线使用。</div>
       <div class="row between" style="margin-top:10px">
         <div class="row">
           <button id="genBtn" class="primary" disabled>▶ 开始生成（已选 0 行）</button>
@@ -325,8 +325,8 @@ $('#genBtn').onclick = async () => {
   for (let i = 0; i < selected.length; i++) {
     if (stopFlag) { log('⏹ 已停止（已处理 ' + i + '/' + selected.length + '）', 'info'); break; }
     const item = selected[i];
-    const seq = rows.indexOf(item) + 1; // 文件夹序号仍按原始行号，避免同名覆盖
-    const folder = (item.productId ? item.productId + '_' + seq : 'row_' + seq);
+    const seq = rows.indexOf(item) + 1;
+    const folder = (item.productId ? item.productId + '_1' : 'row_1');
     const prompt = buildPrompt(tpl, item);
     log(`[${i + 1}/${selected.length}] #${seq} ${item.productId || '(无id)'} → ${folder}`, 'info');
     try {
