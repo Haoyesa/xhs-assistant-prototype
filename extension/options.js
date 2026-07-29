@@ -101,8 +101,49 @@
     }
   }
 
+  // 测试 chrome.debugger 是否可用（比特浏览器是否允许 debugger attach）
+  async function testDebugger() {
+    const st = $('status');
+    st.textContent = '正在测试 debugger…';
+    try {
+      const tab = await new Promise((resolve, reject) => {
+        chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+          if (!tabs || !tabs[0]) return reject(new Error('未找到当前标签'));
+          const t = tabs[0];
+          if (!t.id) return reject(new Error('当前标签无 ID'));
+          // chrome:// 页面不允许 attach，提示用户切到普通网页
+          if (t.url && (t.url.startsWith('chrome://') || t.url.startsWith('chrome-extension://') || t.url.startsWith('devtools://'))) {
+            return reject(new Error('当前页面是浏览器内置页，请切到一个普通网页（如小红书创作者页）再测'));
+          }
+          resolve(t.id);
+        });
+      });
+      await new Promise((resolve, reject) => {
+        chrome.debugger.attach({ tabId: tab }, '1.3', () => {
+          const err = chrome.runtime.lastError;
+          if (err) return reject(new Error(err.message));
+          resolve();
+        });
+      });
+      await new Promise((resolve, reject) => {
+        chrome.debugger.detach({ tabId: tab }, () => {
+          const err = chrome.runtime.lastError;
+          if (err) return reject(new Error(err.message));
+          resolve();
+        });
+      });
+      st.textContent = '✅ debugger 权限正常，可以自动点发布按钮。';
+    } catch (e) {
+      st.textContent = '❌ debugger 测试失败：' + (e && e.message ? e.message : e);
+      if (e && e.message && e.message.includes('Cannot access')) {
+        st.textContent += '（比特浏览器可能未开启 debugger 支持，需改用 CDP 方案）';
+      }
+    }
+  }
+
   window.addEventListener('DOMContentLoaded', () => {
     $('saveBtn').addEventListener('click', save);
+    $('dbgTestBtn').addEventListener('click', testDebugger);
     load();
   });
 })();

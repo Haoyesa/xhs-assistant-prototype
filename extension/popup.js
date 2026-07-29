@@ -10,15 +10,20 @@ function setAutoLabel(on) { $('autoToggle').textContent = on ? '自动提交：�
 // 诊断：后端连通性 + 待发任务数 + 当前自动提交开关
 function refresh() {
   diag('后端：检测中… ｜ 待发：—');
-  chrome.runtime.sendMessage({ type: 'ping' }, () => {
+  chrome.runtime.sendMessage({ type: 'getConfig' }, (c) => {
+    const acc = (c && c.extAccount) ? c.extAccount : '';
+    const profile = (c && c.extProfile) ? c.extProfile : '';
+    const settings = c && c.settings;
+    if (settings) setAutoLabel(!!settings.autoSubmit);
     chrome.runtime.sendMessage({ type: 'getQueue' }, (q) => {
       const queued = q && typeof q.queued === 'number' ? q.queued : '—';
       const ok = q && q.ok;
-      diag(`后端：${ok ? '已连接 ✓' : '未连接 ✗'} ｜ 待发：${queued}`);
+      const parts = [`后端：${ok ? '已连接 ✓' : '未连接 ✗'}`];
+      if (acc) parts.push(`账号：${acc}`);
+      if (profile) parts.push(`窗口：${profile.slice(0, 10)}…`);
+      parts.push(`待发：${queued}`);
+      diag(parts.join(' ｜ '));
     });
-  });
-  chrome.runtime.sendMessage({ type: 'getConfig' }, (c) => {
-    if (c && c.settings) setAutoLabel(!!c.settings.autoSubmit);
   });
 }
 
