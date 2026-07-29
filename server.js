@@ -837,6 +837,11 @@ const server = http.createServer(async (req, res) => {
       if (body.name != null) acc.name = String(body.name);
       if (body.bitProfile != null) acc.bitProfile = String(body.bitProfile); // 比特浏览器配置名/ID
       if (body.note != null) acc.note = String(body.note);
+      // 每账号独立发布间隔（秒）；0/空/非法 → 跟随全局设置（不覆盖套餐下限由 ext/next 保证）
+      if (body.interval != null) {
+        const n = Number(body.interval);
+        acc.interval = (Number.isFinite(n) && n > 0) ? n : null;
+      }
       await writeStore(stores.account, { accounts: list });
       return sendJSON(res, 200, { ok: true, account: acc, accounts: list, max: maxAccounts(DATA) });
     }
@@ -1263,17 +1268,29 @@ const server = http.createServer(async (req, res) => {
       await writeStore(stores.tasks, mergeTask(tasks, task));
       const settings = { ...DEFAULT_SETTINGS, ...(await readStore(stores.settings, {})) };
       const effAuto = effectiveAutoSubmit(settings, DATA);
-      // 发布间隔：尊重用户设置，套餐只作最短间隔下限
+      // 发布间隔：尊重用户设置，套餐只作最短间隔下限；若本账号单独配置 interval，则以账号间隔为准（仍不低于套餐下限）
       const eff = effectiveInterval(settings);
+      let ivSec = eff.publishIntervalSeconds;
+      const ivRand = eff.publishIntervalRandomDelaySeconds;
+      if (reqAccountId) {
+        const accReg = await readStore(stores.account, { accounts: [] });
+        const accList = Array.isArray(accReg.accounts) ? accReg.accounts : [];
+        const acc = accList.find((x) => x.id === reqAccountId);
+        const accIv = acc && acc.interval ? Number(acc.interval) : 0;
+        if (accIv > 0) {
+          const floor = planIntervalSeconds(DATA).publishIntervalSeconds; // 套餐最短下限
+          ivSec = Math.max(accIv, floor);
+        }
+      }
       return sendJSON(res, 200, {
         ok: true, task,
         serverUrl: `http://127.0.0.1:${PORT}`,
         autoSubmit: effAuto,
         humanTyping: settings.humanTyping,
         qianfanUrl: settings.qianfanUrl,
-        // 发布间隔沿用用户设置（套餐只规定最短下限）
-        publishIntervalSeconds: eff.publishIntervalSeconds,
-        publishIntervalRandomDelaySeconds: eff.publishIntervalRandomDelaySeconds,
+        // 发布间隔沿用用户设置（套餐只规定最短下限），账号专属间隔可低于全局但不可低于套餐下限
+        publishIntervalSeconds: ivSec,
+        publishIntervalRandomDelaySeconds: ivRand,
       });
     }
     // 插件上报「下一篇最早发布时刻」：供桌面批量发布页同步显示倒计时

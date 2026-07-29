@@ -29,9 +29,9 @@ $$('.tab-btn').forEach((b) => b.addEventListener('click', () => {
   $(`.tab[data-tab="${b.dataset.tab}"]`).classList.add('active');
   if ($('#pageTitle')) $('#pageTitle').textContent = PAGE_TITLES[b.dataset.tab] || '';
   if (b.dataset.tab === 'batch') { startPoll(); } else { stopPoll(); }
+  if (b.dataset.tab === 'accounts') { loadAccounts(); startInstancesPoll(); } else { stopInstancesPoll(); }
   if (b.dataset.tab === 'history') loadHistory();
   if (b.dataset.tab === 'products') loadImageFolders();
-  if (b.dataset.tab === 'accounts') loadAccounts();
   if (b.dataset.tab === 'sensitive') loadSensitiveMeta();
   loadStats();
 }));
@@ -329,6 +329,10 @@ async function loadAccounts() {
           比特配置名：<input class="acc-bit" value="${esc(a.bitProfile || '')}" placeholder="比特窗口配置名" style="width:170px" />
           <button class="mini save-bit" data-id="${esc(a.id)}">保存</button>
         </div>
+        <div class="acc-meta">
+          发布间隔(秒)：<input class="acc-iv" value="${esc(a.interval || '')}" placeholder="留空=跟随全局" style="width:110px" />
+          <span class="hint-inline">该账号独立节奏，不低于套餐下限</span>
+        </div>
         <div class="acc-meta">绑定于 ${a.createdAt ? new Date(a.createdAt).toLocaleString('zh-CN') : '—'}</div>
       </div>
       <button class="mini danger del-acc" data-id="${esc(a.id)}">解绑</button>
@@ -342,10 +346,41 @@ async function loadAccounts() {
     const acc = b.closest('.acc');
     const id = acc.dataset.id;
     const val = acc.querySelector('.acc-bit').value;
-    const r = await callApi('POST', `/api/accounts/${id}/patch`, { bitProfile: val });
-    if (r.ok) { toast('已更新比特配置名', 'ok'); loadAccounts(); } else toast('更新失败', 'err');
+    const iv = acc.querySelector('.acc-iv').value;
+    const r = await callApi('POST', `/api/accounts/${id}/patch`, { bitProfile: val, interval: iv });
+    if (r.ok) { toast('已更新账号配置', 'ok'); loadAccounts(); } else toast('更新失败', 'err');
   }));
 }
+
+// ---- 在线比特窗口（实例）监控（比特多账号并行）----
+let instancesTimer = null;
+async function loadInstances() {
+  const box = $('#instancesList'); if (!box) return;
+  let data;
+  try { data = await callApi('GET', '/api/ext/instances'); } catch { box.innerHTML = '<div class="empty">实例列表加载失败，请检查后端连接。</div>'; return; }
+  const list = (data.instances || []).slice().sort((a, b) => (b.online ? 1 : 0) - (a.online ? 1 : 0));
+  if (!list.length) {
+    box.innerHTML = '<div class="empty"><span class="em">🪟</span>暂无在线实例。<br/>在各比特窗口的扩展「选项页」绑定账号并保存，扩展会自动注册、每 30s 上报心跳后这里即出现。</div>';
+    return;
+  }
+  let accMap = {};
+  try { const ad = await callApi('GET', '/api/accounts'); (ad.accounts || []).forEach((a) => { accMap[a.id] = a.name; }); } catch {}
+  box.innerHTML = list.map((it) => {
+    const ago = it.lastSeen != null ? Math.max(0, Math.round((Date.now() - it.lastSeen) / 1000)) : null;
+    const acc = it.accountId ? (accMap[it.accountId] || it.accountId) : '（未绑定账号）';
+    return `<div class="inst ${it.online ? 'inst-on' : 'inst-off'}">
+      <span class="inst-dot"></span>
+      <div class="inst-main">
+        <div class="inst-id">${esc(it.profileName || it.instanceId)} <span class="inst-tag">${esc(it.instanceId)}</span></div>
+        <div class="inst-meta">账号：${esc(acc)} ｜ 比特配置：${esc(it.profileName || '—')} ｜ 扩展 v${esc(it.extVersion || '—')}</div>
+        <div class="inst-meta">最后心跳：${ago != null ? ago + ' 秒前' : '—'} ｜ 首次接入：${it.firstSeen ? new Date(it.firstSeen).toLocaleString('zh-CN') : '—'}</div>
+      </div>
+      <span class="inst-state">${it.online ? '● 在线' : '○ 离线'}</span>
+    </div>`;
+  }).join('');
+}
+function startInstancesPoll() { stopInstancesPoll(); loadInstances(); instancesTimer = setInterval(loadInstances, 8000); }
+function stopInstancesPoll() { if (instancesTimer) { clearInterval(instancesTimer); instancesTimer = null; } }
 $('#addAccountBtn').addEventListener('click', async () => {
   const name = $('#accountName').value.trim();
   $('#accountMsg').textContent = '添加中…';

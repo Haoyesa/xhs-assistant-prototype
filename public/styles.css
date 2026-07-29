@@ -284,3 +284,19 @@ button.ghost:hover { background: var(--panel2); }
 .acc-online { color: var(--ok); font-size: 12px; font-weight: 700; margin-left: 6px; }
 .acc-offline { color: var(--faint); font-size: 12px; margin-left: 6px; }
 .acc-bit { padding: 4px 8px; border: 1px solid var(--border); border-radius: 7px; background: var(--panel2); color: var(--text); font-size: 12px; }
+.acc-iv { padding: 4px 8px; border: 1px solid var(--border); border-radius: 7px; background: var(--panel2); color: var(--text); font-size: 12px; }
+.hint-inline { color: var(--faint); font-size: 11px; margin-left: 4px; }
+
+/* 在线比特窗口（实例）监控 */
+.instance-list { display: flex; flex-direction: column; gap: 10px; margin-top: 6px; }
+.inst { display: flex; align-items: center; gap: 12px; padding: 12px 14px; border: 1px solid var(--border); border-radius: 12px; background: var(--panel); }
+.inst-on { border-color: color-mix(in srgb, var(--ok) 45%, var(--border)); }
+.inst-off { opacity: 0.62; }
+.inst-dot { width: 10px; height: 10px; border-radius: 50%; flex: none; background: var(--faint); }
+.inst-on .inst-dot { background: var(--ok); box-shadow: 0 0 0 3px color-mix(in srgb, var(--ok) 22%, transparent); }
+.inst-main { flex: 1; min-width: 0; }
+.inst-id { font-weight: 700; color: var(--text); font-size: 14px; display: flex; align-items: center; gap: 8px; }
+.inst-tag { font-weight: 500; font-size: 11px; color: var(--faint); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+.inst-meta { color: var(--muted); font-size: 12px; margin-top: 3px; }
+.inst-state { font-size: 13px; font-weight: 700; color: var(--faint); white-space: nowrap; }
+.inst-on .inst-state { color: var(--ok); }
