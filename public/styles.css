@@ -108,9 +108,11 @@ body {
   display: block;
 }
 /* 批量作图 子导航：批量作图 / AI生图 切换 */
-.sub-nav { display: inline-flex; gap: 6px; margin-left: auto; }
-.sub-btn { padding: 6px 14px; font-size: 13px; border-radius: 20px; border: 1px solid var(--border); background: var(--bg2); color: var(--muted); }
-.sub-btn.active { background: linear-gradient(135deg, var(--brand), var(--brand2)); color: #fff; border: none; }
+.gen-subheader { justify-content: flex-start; padding-bottom: 8px; border-bottom: 1px solid var(--border); margin-bottom: 14px; }
+.gen-subheader .sub-nav { display: inline-flex; gap: 6px; }
+.sub-btn { padding: 6px 14px; font-size: 13px; border-radius: 20px; border: 1px solid var(--border); background: var(--bg2); color: var(--muted); cursor: pointer; transition: .2s; }
+.sub-btn:hover { border-color: var(--faint); color: var(--text); }
+.sub-btn.active { background: linear-gradient(135deg, var(--accent), #ff7a59); color: #fff; border: none; }
 .card-h { display: flex; align-items: center; }
 
 /* ---------- 卡片 ---------- */

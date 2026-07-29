@@ -24,6 +24,16 @@
       --shadow: 0 4px 20px rgba(0,0,0,0.25);
       --transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
     }
+    /* 自定义复选框，适配暗色主题 */
+    input[type="checkbox"] {
+      appearance: none; width: 16px; height: 16px; border: 1px solid var(--border2); border-radius: 4px;
+      background: var(--bg2); cursor: pointer; position: relative; vertical-align: middle; transition: var(--transition);
+    }
+    input[type="checkbox"]:checked { background: var(--red); border-color: var(--red); }
+    input[type="checkbox"]:checked::after {
+      content: ''; position: absolute; left: 5px; top: 2px; width: 4px; height: 8px; border: solid #fff; border-width: 0 2px 2px 0; transform: rotate(45deg);
+    }
+    input[type="checkbox"]:disabled { opacity: .4; cursor: not-allowed; }
     * { box-sizing: border-box; }
     body { margin: 0; font: 14px/1.6 -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif; color: var(--text); background: var(--bg); background-image: radial-gradient(1200px 600px at 80% -10%, #1a2030 0%, var(--bg) 55%) fixed; }
     .wrap { padding: 18px 20px 40px; max-width: 1080px; margin: 0 auto; }
@@ -124,7 +134,7 @@
       <div class="hint">将逐行调用图像 API（串行，避免并发超限）。生成结果写入图片根目录下的 <code>images/&lt;商品ID&gt;_&lt;序号&gt;/1.png</code>，并写入 <code>title.txt</code> 供发布流水线使用。</div>
       <div class="row between" style="margin-top:10px">
         <div class="row">
-          <button id="genBtn" class="primary" disabled>▶ 开始生成</button>
+          <button id="genBtn" class="primary" disabled>▶ 开始生成（已选 0 行）</button>
           <button id="stopBtn" disabled>⏹ 停止</button>
           <span id="genMsg" class="msg"></span>
         </div>
@@ -139,7 +149,7 @@
 const $ = (s) => document.querySelector(s);
 const api = (m, u, b) => fetch(u, { method: m, headers: { 'Content-Type': 'application/json' }, body: b ? JSON.stringify(b) : undefined }).then(r => r.json());
 
-let rows = [];          // 解析出的 [{productId, title, content}]
+let rows = [];          // 解析出的 [{productId, title, content, selected}]
 let running = false;
 let stopFlag = false;
 
@@ -227,22 +237,50 @@ $('#parseBtn').onclick = () => {
       const title = (titleIdx >= 0 ? (cells[titleIdx] || '').trim() : '');
       const content = (contentIdx >= 0 ? (cells[contentIdx] || '').trim() : '');
       if (!title && !productId) continue;
-      rows.push({ productId, title, content });
+      rows.push({ productId, title, content, selected: true });
     }
     $('#parseMsg').textContent = `解析成功，共 ${rows.length} 行`; $('#parseMsg').className = 'msg ok';
     renderPreview();
-    $('#genBtn').disabled = rows.length === 0;
+    updateGenBtn();
   };
   reader.readAsText(f, 'utf-8');
 };
 
 function renderPreview() {
-  const head = '<tr><th>#</th><th>宝贝id</th><th>标题</th></tr>';
-  const body = rows.slice(0, 200).map((r, i) => `<tr><td>${i + 1}</td><td>${esc(r.productId)}</td><td>${esc(r.title)}</td></tr>`).join('');
+  const allChecked = rows.length > 0 && rows.every(r => r.selected);
+  const head = `<tr><th style="width:34px"><input type="checkbox" id="selAll" title="全选/反选" ${allChecked ? 'checked' : ''}></th><th>#</th><th>宝贝id</th><th>标题</th></tr>`;
+  const body = rows.slice(0, 200).map((r, i) => `<tr>
+    <td><input type="checkbox" class="sel-row" data-idx="${i}" ${r.selected ? 'checked' : ''}></td>
+    <td>${i + 1}</td>
+    <td>${esc(r.productId)}</td>
+    <td>${esc(r.title)}</td>
+  </tr>`).join('');
   $('#preview').innerHTML = `<table><thead>${head}</thead><tbody>${body}</tbody></table>`;
   $('#preview').style.display = rows.length ? 'block' : 'none';
+
+  $('#selAll').onclick = () => {
+    const checked = $('#selAll').checked;
+    rows.forEach(r => r.selected = checked);
+    renderPreview();
+    updateGenBtn();
+  };
+  $$('.sel-row').forEach(cb => {
+    cb.onclick = () => {
+      const idx = parseInt(cb.dataset.idx, 10);
+      rows[idx].selected = cb.checked;
+      renderPreview();
+      updateGenBtn();
+    };
+  });
+}
+
+function updateGenBtn() {
+  const n = rows.filter(r => r.selected).length;
+  $('#genBtn').disabled = n === 0 || running;
+  $('#genBtn').textContent = `▶ 开始生成（已选 ${n} 行）`;
 }
 const esc = (s) => (s || '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const $$ = (s) => Array.from(document.querySelectorAll(s));
 
 function buildPrompt(tpl, item) {
   return (tpl || '')
@@ -264,27 +302,30 @@ $('#genBtn').onclick = async () => {
   if (running) return;
   const tpl = $('#imgPrompt').value;
   if (!tpl.trim()) { log('请先填写提示词模板（或在配置中点「保存配置」）。', 'bad'); return; }
+  const selected = rows.filter(r => r.selected);
+  if (!selected.length) { log('请先在 CSV 预览中勾选要生成的行。', 'bad'); return; }
   running = true; stopFlag = false;
   $('#genBtn').disabled = true; $('#stopBtn').disabled = false;
   $('#log').innerHTML = '';
   let okCount = 0, failCount = 0;
-  for (let i = 0; i < rows.length; i++) {
-    if (stopFlag) { log('⏹ 已停止（已处理 ' + i + '/' + rows.length + '）', 'info'); break; }
-    const item = rows[i];
-    const seq = i + 1;
+  for (let i = 0; i < selected.length; i++) {
+    if (stopFlag) { log('⏹ 已停止（已处理 ' + i + '/' + selected.length + '）', 'info'); break; }
+    const item = selected[i];
+    const seq = rows.indexOf(item) + 1; // 文件夹序号仍按原始行号，避免同名覆盖
     const folder = (item.productId ? item.productId + '_' + seq : 'row_' + seq);
     const prompt = buildPrompt(tpl, item);
-    log(`[${seq}/${rows.length}] ${item.productId || '(无id)'} → ${folder}`, 'info');
+    log(`[${i + 1}/${selected.length}] #${seq} ${item.productId || '(无id)'} → ${folder}`, 'info');
     try {
       const r = await api('POST', '/api/ai-image/generate', { folderName: folder, prompt, title: item.title, count: $('#imgCount').value });
       if (r.ok) { okCount++; log('  ✓ 已保存 ' + (r.files || []).join(', '), 'ok'); }
       else { failCount++; log('  ✗ ' + (r.error || '生成失败'), 'bad'); }
     } catch (e) { failCount++; log('  ✗ 请求异常：' + e.message, 'bad'); }
-    $('#bar').style.width = Math.round(((i + 1) / rows.length) * 100) + '%';
+    $('#bar').style.width = Math.round(((i + 1) / selected.length) * 100) + '%';
   }
   log(`完成：成功 ${okCount} / 失败 ${failCount}。图片位于 images/ 目录下。`, okCount && !failCount ? 'ok' : (failCount ? 'bad' : 'info'));
   running = false;
-  $('#genBtn').disabled = rows.length === 0; $('#stopBtn').disabled = true;
+  updateGenBtn();
+  $('#stopBtn').disabled = true;
 };
 
 $('#stopBtn').onclick = () => { stopFlag = true; };
