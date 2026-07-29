@@ -14,6 +14,10 @@
 const DEFAULTS = {
   serverUrl: 'http://127.0.0.1:5199',
   autoConnect: true,
+  // 比特多账号并行身份：每个扩展窗口在 options 页绑定一个后台账号 accountId + 比特配置名 extProfile
+  extAccount: '',
+  extProfile: '',
+  instanceId: '',
 };
 
 // 创作者图文发布页（每篇都开一个全新的标签页，地址固定为此）
@@ -46,10 +50,47 @@ async function pushProducts(products) {
   return r.data;
 }
 
-// 取一条待发笔记给创作者 content script
+// 取一条待发笔记给创作者 content script（按本窗口绑定账号过滤，多账号互不抢）
+async function accountQuery() {
+  const s = await storageGet();
+  return s.extAccount ? ('?accountId=' + encodeURIComponent(s.extAccount)) : '';
+}
 async function pullNext() {
-  const r = await api('/api/ext/next', { method: 'GET' });
+  const q = await accountQuery();
+  const r = await api('/api/ext/next' + q, { method: 'GET' });
   return r.data;
+}
+
+// 生成并持久化本扩展实例的唯一 id（每个比特窗口/浏览器 Profile 不同）
+async function ensureInstanceId() {
+  const s = await storageGet();
+  if (s.instanceId) return s.instanceId;
+  const id = 'ext_' + (crypto && crypto.randomUUID ? crypto.randomUUID().slice(0, 8) : Math.random().toString(36).slice(2, 10));
+  await storageSet({ instanceId: id });
+  return id;
+}
+
+// 注册/心跳本扩展实例到服务端（比特多账号并行核心）：上报 instanceId + 绑定账号 + 比特配置名，
+// 服务端据此维护「在线实例」注册表，并把任务按 accountId 路由给对应窗口，天然互不抢。
+async function registerInstance() {
+  try {
+    const s = await storageGet();
+    const instanceId = await ensureInstanceId();
+    const r = await api('/api/ext/register', {
+      method: 'POST',
+      body: {
+        instanceId,
+        accountId: s.extAccount || '',
+        profileName: s.extProfile || '',
+        extVersion: (chrome.runtime.getManifest() || {}).version || '',
+        serverUrl: s.serverUrl,
+      },
+    });
+    if (r.ok) console.log('[黑猫][BG] registerInstance ok pending=' + ((r.data && r.data.pending) != null ? r.data.pending : '?'));
+    return r.data;
+  } catch (e) {
+    console.warn('[黑猫][BG] registerInstance failed', e && e.message);
+  }
 }
 
 // 回报发布结果
@@ -314,7 +355,8 @@ async function scheduleNext() {
   // 确认是否还有待发任务
   let hasPending = true;
   try {
-    const q = await api('/api/batch/queue', { method: 'GET' });
+    const aq = await accountQuery();
+    const q = await api('/api/batch/queue' + aq, { method: 'GET' });
     hasPending = !!(q && q.tasks && q.tasks.some((t) => t.status === 'queued' || t.status === 'picked'));
   } catch (e) { hasPending = true; } // 查不到时保守继续，最终由 fillTab 空路径兜底清除
   if (!hasPending) {
@@ -492,7 +534,11 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       } else if (msg.type === 'getConfig') {
         const s = await storageGet();
         const r = await api('/api/settings');
-        sendResponse({ ok: true, serverUrl: s.serverUrl, settings: r.data });
+        sendResponse({ ok: true, serverUrl: s.serverUrl, extAccount: s.extAccount || '', extProfile: s.extProfile || '', settings: r.data });
+      } else if (msg.type === 'getIdentity') {
+        // popup/页面查询本扩展绑定的账号身份
+        const s = await storageGet();
+        sendResponse({ ok: true, serverUrl: s.serverUrl, extAccount: s.extAccount || '', extProfile: s.extProfile || '', instanceId: s.instanceId || '' });
       } else if (msg.type === 'getQueue') {
         try {
           const r = await api('/api/batch/queue', { method: 'GET' });
@@ -515,6 +561,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         chrome.alarms.clear('clearSchedule').catch(() => {}); // 撤销上次批次遗留的兜底清理，避免误清新批次倒计时
         chrome.alarms.clear('nextPublish').catch(() => {});  // 撤销上一批次遗留的「开下一篇」闹钟
         persistSched();
+        registerInstance().catch(() => {}); // 开始发布时确保实例以当前绑定账号在线
         openNextTab();
         sendResponse({ ok: true, ...schedulerState(), msg: '已开启批量发布' });
       } else if (msg.type === 'pausePublish') {
@@ -528,6 +575,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         chrome.alarms.clear('clearSchedule').catch(() => {}); // 撤销上次批次遗留的兜底清理，避免误清新批次倒计时
         chrome.alarms.clear('nextPublish').catch(() => {});  // 撤销上一批次遗留的「开下一篇」闹钟
         persistSched();
+        registerInstance().catch(() => {}); // 继续发布时确保实例在线
         openNextTab();
         sendResponse({ ok: true, ...schedulerState(), msg: '已继续批量发布' });
       } else if (msg.type === 'stopNow') {
@@ -569,6 +617,11 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 chrome.runtime.onInstalled.addListener(() => {
   broadcast({ kind: 'info', msg: '已安装。请在 popup 中确认后端地址，并打开商品页/创作者发布台使用。' });
 });
+
+// 比特多账号并行：SW 启动即注册一次实例（身份已随 storage 持久化），并每 30s 续命心跳。
+// MV3 的 Service Worker 空闲会被回收，回收后下次事件会重新执行本段顶层代码，重新注册+续命，在线状态不丢。
+registerInstance().catch(() => {});
+setInterval(() => { registerInstance().catch(() => {}); }, 30000);
 
 // 保活心跳：内容脚本持常驻端口时，service worker 不会被回收
 chrome.runtime.onConnect.addListener((port) => {

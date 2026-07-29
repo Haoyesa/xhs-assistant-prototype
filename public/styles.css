@@ -278,3 +278,9 @@ button.ghost:hover { background: var(--panel2); }
 .sens-cat { color: var(--muted); font-size: 12px; white-space: nowrap; }
 .sens-word { font-weight: 700; color: var(--bad); white-space: nowrap; }
 .sens-ctx { color: var(--faint); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; min-width: 0; }
+
+/* 多账号并行：账号徽标与在线状态 */
+.badge.acc { color: var(--accent); border-color: var(--accent); background: color-mix(in srgb, var(--accent) 10%, transparent); }
+.acc-online { color: var(--ok); font-size: 12px; font-weight: 700; margin-left: 6px; }
+.acc-offline { color: var(--faint); font-size: 12px; margin-left: 6px; }
+.acc-bit { padding: 4px 8px; border: 1px solid var(--border); border-radius: 7px; background: var(--panel2); color: var(--text); font-size: 12px; }

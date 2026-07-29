@@ -192,14 +192,20 @@ $('#scanAndImportBtn').addEventListener('click', async () => {
 
 // ---- 批量发布 ----
 async function loadQueue() {
-  const data = await callApi('GET', '/api/batch/queue');
+  const [data, accData] = await Promise.all([
+    callApi('GET', '/api/batch/queue'),
+    callApi('GET', '/api/accounts').catch(() => ({ accounts: [] })),
+  ]);
   const tasks = data.tasks;
+  const accMap = {};
+  (accData.accounts || []).forEach((a) => { accMap[a.id] = a.name; });
   queueHasPending = !!(tasks && tasks.some((t) => t.status === 'queued' || t.status === 'picked'));
   nextPublishAtAt = data.nextPublishAt || 0;
   renderCountdown();
   $('#queueList').innerHTML = tasks.length ? tasks.map((t) => `
     <div class="qitem">
       <span class="badge ${t.status}">${esc(t.status)}</span>
+      ${t.accountId ? `<span class="badge acc">${esc(accMap[t.accountId] || t.accountId)}</span>` : ''}
       <span class="qname">${esc(t.product?.productName || t.itemId || '商品')}</span>
       ${thumbStrip(t.images)}
       <span class="qstep">${esc(t.step || '')}</span>
@@ -210,7 +216,7 @@ async function loadQueue() {
     await callApi('POST', `/api/batch/${b.dataset.id}/cancel`); loadQueue();
   }));
 }
-function startPoll() { stopPoll(); loadQueue(); pollTimer = setInterval(loadQueue, 2000); }
+function startPoll() { stopPoll(); refreshAssignAccounts(); loadQueue(); pollTimer = setInterval(loadQueue, 2000); }
 function stopPoll() { if (pollTimer) clearInterval(pollTimer); pollTimer = null; }
 
 // ---- 批量发布页「下一篇倒计时」：读取插件上报的 nextPublishAt，每秒刷新 ----
@@ -263,6 +269,30 @@ $('#retryBtn').addEventListener('click', async () => {
   } else toast('重置失败', 'err');
 });
 
+// ---- 多账号并行：任务指派控件 ----
+async function refreshAssignAccounts() {
+  const sel = $('#assignAccount'); if (!sel) return;
+  let accounts = [];
+  try { const d = await callApi('GET', '/api/accounts'); accounts = d.accounts || []; } catch { return; }
+  sel.innerHTML = '<option value="">（通用 / 未指派）</option>'
+    + accounts.map((a) => `<option value="${esc(a.id)}">${esc(a.name)}${a.online ? ' ●在线' : ''}</option>`).join('');
+}
+$('#assignAllBtn').addEventListener('click', async () => {
+  const accountId = $('#assignAccount').value;
+  $('#assignMsg').textContent = '指派中…';
+  const r = await callApi('POST', '/api/batch/assign', { all: true, accountId });
+  if (r.ok) {
+    $('#assignMsg').textContent = `✅ 已指派 ${r.assigned} 条${accountId ? ' 到所选账号' : '（通用）'}`;
+    toast(`已指派 ${r.assigned} 条任务`, 'ok'); loadQueue();
+  } else { $('#assignMsg').textContent = '❌ ' + (r.error || '失败'); toast('指派失败', 'err'); }
+});
+$('#assignUnassignBtn').addEventListener('click', async () => {
+  $('#assignMsg').textContent = '取消指派中…';
+  const r = await callApi('POST', '/api/batch/assign', { all: true, accountId: '' });
+  if (r.ok) { $('#assignMsg').textContent = `✅ 已取消 ${r.assigned} 条的指派`; toast('已取消指派', 'ok'); loadQueue(); }
+  else { $('#assignMsg').textContent = '❌ 失败'; toast('取消失败', 'err'); }
+});
+
 // ---- 历史 ----
 async function loadHistory() {
   const h = await callApi('GET', '/api/history');
@@ -294,7 +324,11 @@ async function loadAccounts() {
   box.innerHTML = (data.accounts || []).map((a) => `
     <div class="acc" data-id="${esc(a.id)}">
       <div class="acc-info">
-        <div class="acc-name">${esc(a.name)}</div>
+        <div class="acc-name">${esc(a.name)} ${a.online ? '<span class="acc-online">● 在线</span>' : '<span class="acc-offline">○ 离线</span>'}</div>
+        <div class="acc-meta">
+          比特配置名：<input class="acc-bit" value="${esc(a.bitProfile || '')}" placeholder="比特窗口配置名" style="width:170px" />
+          <button class="mini save-bit" data-id="${esc(a.id)}">保存</button>
+        </div>
         <div class="acc-meta">绑定于 ${a.createdAt ? new Date(a.createdAt).toLocaleString('zh-CN') : '—'}</div>
       </div>
       <button class="mini danger del-acc" data-id="${esc(a.id)}">解绑</button>
@@ -303,6 +337,13 @@ async function loadAccounts() {
     if (!confirm('确定解绑该账号吗？\n（仅解除本地绑定记录，不影响该账号本身）')) return;
     const r = await callApi('POST', `/api/accounts/${b.dataset.id}/delete`);
     if (r.ok) { toast('已解绑账号', 'ok'); loadAccounts(); } else toast('解绑失败', 'err');
+  }));
+  $$('#accountList .save-bit').forEach((b) => b.addEventListener('click', async () => {
+    const acc = b.closest('.acc');
+    const id = acc.dataset.id;
+    const val = acc.querySelector('.acc-bit').value;
+    const r = await callApi('POST', `/api/accounts/${id}/patch`, { bitProfile: val });
+    if (r.ok) { toast('已更新比特配置名', 'ok'); loadAccounts(); } else toast('更新失败', 'err');
   }));
 }
 $('#addAccountBtn').addEventListener('click', async () => {

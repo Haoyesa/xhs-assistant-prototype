@@ -29,7 +29,7 @@
           <span class="conn-dot" id="connDot"></span>
           <span id="connText">连接中…</span>
         </div>
-        <div class="side-hint">本地创作 · 内容辅助 <span class="app-ver" id="appVer">v0.3.0</span></div>
+        <div class="side-hint">本地创作 · 内容辅助 <span class="app-ver" id="appVer">v0.4.0</span></div>
       </div>
     </aside>
 
@@ -130,6 +130,18 @@
             </div>
             <div class="hint">本页用于批量生成内容；可在「设置」配置本地生成参数。需要发布到各平台时，请在对应平台后台手动操作，本工具不代为发布。</div>
             <div id="nextCountdown" class="next-countdown">⏳ 距下一篇发布：—</div>
+          </div>
+          <div class="card">
+            <div class="card-h">
+              <h3>多账号并行 · 任务指派</h3>
+              <span class="hint">比特浏览器多窗口并行时，先把笔记任务指派给某个账号，对应窗口的扩展才会拉取发布。未指派的任务仅由「未绑定账号」的扩展兜底。</span>
+            </div>
+            <div class="row">
+              <select id="assignAccount" style="flex:1"></select>
+              <button id="assignAllBtn" class="primary">把全部待发任务指派给该账号</button>
+              <button id="assignUnassignBtn">取消指派（回到通用）</button>
+              <span id="assignMsg" class="msg"></span>
+            </div>
           </div>
           <div id="queueList" class="card"></div>
         </section>

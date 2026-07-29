@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>黑猫智记AI · 扩展身份设置</title>
+  <style>
+    :root { color-scheme: light; }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; padding: 28px 32px; font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+      background: #f6f7fb; color: #1f2430; line-height: 1.6;
+    }
+    h1 { font-size: 20px; margin: 0 0 4px; }
+    .sub { color: #6b7280; font-size: 13px; margin: 0 0 22px; }
+    .card {
+      background: #fff; border: 1px solid #e6e8f0; border-radius: 12px;
+      padding: 20px 22px; max-width: 560px; box-shadow: 0 1px 3px rgba(20,30,60,.05);
+    }
+    .field { margin-bottom: 18px; }
+    label { display: block; font-weight: 600; font-size: 13px; margin-bottom: 6px; }
+    .hint { color: #8b90a0; font-size: 12px; margin-top: 4px; font-weight: 400; }
+    input, select {
+      width: 100%; padding: 9px 11px; border: 1px solid #d2d6e2; border-radius: 8px;
+      font-size: 14px; background: #fff; color: #1f2430;
+    }
+    input:focus, select:focus { outline: none; border-color: #2f6bff; box-shadow: 0 0 0 3px rgba(47,107,255,.12); }
+    button {
+      background: #2f6bff; color: #fff; border: none; border-radius: 8px;
+      padding: 10px 18px; font-size: 14px; font-weight: 600; cursor: pointer;
+    }
+    button:hover { background: #245ae0; }
+    #status { margin-top: 14px; font-size: 13px; color: #2f8a4a; min-height: 18px; }
+    .tip {
+      margin-top: 18px; font-size: 12px; color: #6b7280; background: #eef2ff;
+      border: 1px solid #dbe3ff; border-radius: 8px; padding: 12px 14px;
+    }
+    code { background: #f0f1f6; padding: 1px 5px; border-radius: 4px; font-size: 12px; }
+  </style>
+</head>
+<body>
+  <h1>扩展身份设置</h1>
+  <p class="sub">比特浏览器多账号并行发布时，每个窗口的扩展需绑定一个后台账号。</p>
+
+  <div class="card">
+    <div class="field">
+      <label for="serverUrl">后端地址</label>
+      <input id="serverUrl" type="text" placeholder="http://127.0.0.1:5199" />
+      <div class="hint">本地服务端的地址，默认 <code>http://127.0.0.1:5199</code>。</div>
+    </div>
+
+    <div class="field">
+      <label for="accountId">绑定发布账号</label>
+      <select id="accountId"></select>
+      <div class="hint">选择后台「账号」页里的一个账号。服务端只把该账号的任务下发给本窗口，实现多账号并行互不抢。</div>
+    </div>
+
+    <div class="field">
+      <label for="bitProfile">比特浏览器配置名</label>
+      <input id="bitProfile" type="text" placeholder="例如 BitBrowser-环境1 / 窗口A" />
+      <div class="hint">本窗口对应的比特指纹配置标识，仅用于区分与记忆，可留空。</div>
+    </div>
+
+    <button id="saveBtn">保存并注册实例</button>
+    <div id="status"></div>
+  </div>
+
+  <div class="tip">
+    使用流程：① 后台「账号」页添加并确认要用的小红书账号；② 每个比特窗口打开本设置页，绑定对应账号并保存；
+    ③ 后台「发布」页把笔记任务「批量指派」给该账号；④ 各窗口的扩展各自拉取自己账号的任务并行发布。
+  </div>
+
+  <script src="options.js"></script>
+</body>
+</html>

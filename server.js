@@ -37,6 +37,7 @@ const stores = {
   history: path.join(DATA, 'history.json'),
   account: path.join(DATA, 'account.json'),
   importedFolders: path.join(DATA, 'importedFolders.json'),
+  instances: path.join(DATA, 'ext-instances.json'), // 在线插件实例注册表（比特多账号并行）
 };
 
 async function readStore(file, fallback) {
@@ -209,6 +210,33 @@ function getNextPublishAt() {
   // 两端都活跃时，显示最近（最小）的一次；只有一端活跃时显示那一端
   if (cdp && ext) return Math.min(cdp, ext);
   return cdp || ext || 0;
+}
+
+// 在线插件实例注册表（BitBrowser 多账号并行模型）：
+// 每个比特窗口里的扩展在 options 页绑定一个后台「账号」(accountId) + 比特配置名(bitProfile)，
+// 然后每隔约 30s 调 /api/ext/register 上报一次「在线」；服务端把任务按 accountId 路由给对应窗口实例，
+// 各窗口互不抢任务，天然并行。内存 Map + 落盘，进程重启可恢复在线状态。
+const extInstances = new Map(); // instanceId -> { instanceId, accountId, profileName, extVersion, serverUrl, firstSeen, lastSeen }
+const INSTANCE_TTL_MS = 90 * 1000; // 超过 90s 未心跳视为离线（比特窗口关闭/崩溃）
+(async function loadInstances() {
+  try {
+    const arr = await readStore(stores.instances, []);
+    if (Array.isArray(arr)) for (const it of arr) extInstances.set(it.instanceId, it);
+  } catch {}
+})();
+function gcInstances() {
+  const now = Date.now();
+  for (const [k, v] of extInstances) if (now - (v.lastSeen || 0) > INSTANCE_TTL_MS) extInstances.delete(k);
+}
+async function saveInstances() {
+  try { await writeStore(stores.instances, [...extInstances.values()]); } catch {}
+}
+// 判断一条任务是否属于某请求实例的「账号范畴」：
+//   - 实例配置了 accountId → 仅匹配 task.accountId === accountId（严格按账号隔离）
+//   - 实例未配置 accountId（兼容旧的单账号部署）→ 仅匹配「未指派账号」的任务（catch-all）
+function taskMatchesAccount(task, reqAccountId) {
+  if (reqAccountId) return task.accountId === reqAccountId;
+  return !task.accountId || task.accountId === '';
 }
 
 // 发布间隔：套餐频率档只规定「最短间隔」下限（反爬安全），用户设置若更大则取其大；
@@ -756,7 +784,15 @@ const server = http.createServer(async (req, res) => {
     // 账号注册表（套餐配额门禁）：绑定/解绑发布平台账号，受 plan.accounts 限制
     if (p === '/api/accounts' && method === 'GET') {
       const reg = await readStore(stores.account, { accounts: [] });
-      const list = Array.isArray(reg.accounts) ? reg.accounts : [];
+      const raw = Array.isArray(reg.accounts) ? reg.accounts : [];
+      gcInstances();
+      const now = Date.now();
+      const onlineIds = new Set(
+        [...extInstances.values()]
+          .filter((it) => (now - (it.lastSeen || 0)) <= INSTANCE_TTL_MS && it.accountId)
+          .map((it) => it.accountId)
+      );
+      const list = raw.map((a) => ({ ...a, online: onlineIds.has(a.id) }));
       return sendJSON(res, 200, { ok: true, accounts: list, max: maxAccounts(DATA) });
     }
     if (p === '/api/accounts' && method === 'POST') {
@@ -789,6 +825,20 @@ const server = http.createServer(async (req, res) => {
       const next = list.filter((x) => x.id !== id);
       await writeStore(stores.account, { accounts: next });
       return sendJSON(res, 200, { ok: true, accounts: next, max: maxAccounts(DATA) });
+    }
+    // 更新单个账号（比特配置名 bitProfile、备注名等）。多账号并行时，扩展在 options 页绑定账号即PATCH bitProfile。
+    if (p.startsWith('/api/accounts/') && p.endsWith('/patch') && method === 'POST') {
+      const id = p.split('/')[3];
+      const body = await readBody(req).catch(() => ({}));
+      const reg = await readStore(stores.account, { accounts: [] });
+      const list = Array.isArray(reg.accounts) ? reg.accounts : [];
+      const acc = list.find((x) => x.id === id);
+      if (!acc) return sendJSON(res, 404, { ok: false, error: 'account not found' });
+      if (body.name != null) acc.name = String(body.name);
+      if (body.bitProfile != null) acc.bitProfile = String(body.bitProfile); // 比特浏览器配置名/ID
+      if (body.note != null) acc.note = String(body.note);
+      await writeStore(stores.account, { accounts: list });
+      return sendJSON(res, 200, { ok: true, account: acc, accounts: list, max: maxAccounts(DATA) });
     }
 
     // 敏感词 / 合规自检：本地词库，不依赖平台接口
@@ -979,7 +1029,10 @@ const server = http.createServer(async (req, res) => {
 
     // 队列 / 控制
     if (p === '/api/batch/queue' && method === 'GET') {
-      const tasks = await readStore(stores.tasks, []);
+      let tasks = await readStore(stores.tasks, []);
+      const qa = url.searchParams.get('accountId');
+      // 多账号并行：按账号过滤队列（未传 accountId 仍返回全量，向后兼容）
+      if (qa) tasks = tasks.filter((t) => t.accountId === qa);
       const nextPublishAt = getNextPublishAt();
       return sendJSON(res, 200, { tasks, pump: { running: pump.running, paused: pump.paused, stop: pump.stop }, nextPublishAt });
     }
@@ -1018,6 +1071,28 @@ const server = http.createServer(async (req, res) => {
       if (t) { t.status = 'skipped'; t.statusDetail = '已取消'; t.updatedAt = nowISO(); }
       await writeStore(stores.tasks, tasks);
       return sendJSON(res, 200, { ok: true });
+    }
+    // 指派任务到某发布账号（比特多账号并行）：把一批 queued/picked/manual_hold/failed 任务绑定 accountId，
+    // 服务端 /api/ext/next 据此只把该账号任务下发给对应窗口实例。taskIds 为空且 all=true 时指派全部可指派任务。
+    if (p === '/api/batch/assign' && method === 'POST') {
+      const body = await readBody(req);
+      const ids = Array.isArray(body.taskIds) ? body.taskIds : [];
+      const all = body.all === true;
+      if (!ids.length && !all) return sendJSON(res, 400, { ok: false, error: 'taskIds required' });
+      const accountId = (body && body.accountId) || ''; // 空字符串 = 取消指派（回到 catch-all）
+      const tasks = await readStore(stores.tasks, []);
+      const assignable = new Set(['queued', 'picked', 'manual_hold', 'failed']);
+      let n = 0;
+      for (const t of tasks) {
+        if (ids.length && !ids.includes(t.id)) continue;
+        if (!ids.length && !all) continue;
+        if (!assignable.has(t.status)) continue;
+        t.accountId = accountId;
+        t.updatedAt = nowISO();
+        n++;
+      }
+      await writeStore(stores.tasks, tasks);
+      return sendJSON(res, 200, { ok: true, assigned: n, accountId });
     }
 
     // CDP 连接状态 / 启动
@@ -1147,6 +1222,7 @@ const server = http.createServer(async (req, res) => {
     }
     // 拉待发笔记：扩展在创作者页取一条去填充（标记 picked 防重复）
     if (p === '/api/ext/next' && method === 'GET') {
+      const reqAccountId = (url.searchParams.get('accountId') || '').trim();
       const tasks = await readStore(stores.tasks, []);
       const now = Date.now();
       // 1) 先做一次"sweep"：把 picked 超时未回报的任务主动标成 failed，避免永远卡 picked
@@ -1156,6 +1232,7 @@ const server = http.createServer(async (req, res) => {
       const stale = [];
       for (const t of tasks) {
         if (t.status !== 'picked') continue;
+        if (!taskMatchesAccount(t, reqAccountId)) continue; // 只回收本账号范畴内的 picked，多账号互不干扰
         const pickedMs = t.pickedAt ? new Date(t.pickedAt).getTime() : new Date(t.updatedAt || 0).getTime();
         if (now - pickedMs > PICK_TIMEOUT_MS) {
           t.status = 'failed';
@@ -1177,8 +1254,8 @@ const server = http.createServer(async (req, res) => {
         await writeStore(stores.history, history.slice(0, 500));
       }
       // 2) 优先取 queued；若没有，找一个未超时的 picked（理论上此时已被 sweep 清理）
-      const task = tasks.find((t) => t.status === 'queued')
-        || tasks.find((t) => t.status === 'picked' && now - new Date(t.pickedAt || t.updatedAt || 0).getTime() <= PICK_TIMEOUT_MS);
+      const task = tasks.find((t) => t.status === 'queued' && taskMatchesAccount(t, reqAccountId))
+        || tasks.find((t) => t.status === 'picked' && taskMatchesAccount(t, reqAccountId) && now - new Date(t.pickedAt || t.updatedAt || 0).getTime() <= PICK_TIMEOUT_MS);
       if (!task) return sendJSON(res, 200, { ok: true, task: null });
       task.status = 'picked'; task.step = 'fill_form'; task.statusDetail = '扩展已取走，填充中';
       task.pickedAt = new Date(now).toISOString();
@@ -1243,6 +1320,46 @@ const server = http.createServer(async (req, res) => {
       });
       await writeStore(stores.history, history.slice(0, 500));
       return sendJSON(res, 200, { ok: true });
+    }
+    // 插件实例注册 / 心跳（比特多账号并行核心）：每个扩展窗口周期性上报 instanceId + accountId + 比特配置名，
+    // 服务端据此维护「在线实例」注册表，并据此把任务按账号路由到对应窗口。
+    if (p === '/api/ext/register' && method === 'POST') {
+      const body = await readBody(req).catch(() => ({}));
+      const instanceId = (body && body.instanceId) || (url.searchParams.get('instanceId')) || '';
+      if (!instanceId) return sendJSON(res, 400, { ok: false, error: 'missing instanceId' });
+      const accountId = (body && body.accountId) || '';
+      const profileName = (body && body.profileName) || '';
+      const extVersion = (body && body.extVersion) || '';
+      const now = Date.now();
+      const prev = extInstances.get(instanceId) || {};
+      const inst = {
+        instanceId,
+        accountId,
+        profileName,
+        extVersion,
+        serverUrl: (body && body.serverUrl) || '',
+        firstSeen: prev.firstSeen || now,
+        lastSeen: now,
+      };
+      extInstances.set(instanceId, inst);
+      await saveInstances();
+      // 回吐该账号当前待发任务数，便于实例侧感知自己的队列是否还有活
+      const tasks = await readStore(stores.tasks, []);
+      const pending = tasks.filter((t) =>
+        taskMatchesAccount(t, accountId) && (t.status === 'queued' || t.status === 'picked')
+      ).length;
+      console.log('[ext/register] instance=' + instanceId + ' account=' + (accountId || '(none)') + ' profile=' + (profileName || '(none)') + ' pending=' + pending);
+      return sendJSON(res, 200, { ok: true, instance: inst, pending });
+    }
+    // 列出当前在线实例（前端「账号/实例」面板展示哪些比特窗口在线、绑定了哪个账号）
+    if (p === '/api/ext/instances' && method === 'GET') {
+      gcInstances();
+      const now = Date.now();
+      const list = [...extInstances.values()].map((it) => ({
+        ...it,
+        online: (now - (it.lastSeen || 0)) <= INSTANCE_TTL_MS,
+      }));
+      return sendJSON(res, 200, { ok: true, instances: list, ttlMs: INSTANCE_TTL_MS });
     }
 
     // 图片代理：把远程商品图下载到本地并返回（带 CORS），供浏览器插件在发布平台页面注入图片时绕过防盗链
