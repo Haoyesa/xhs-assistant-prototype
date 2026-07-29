@@ -354,7 +354,7 @@ function armNextTimer() {
   const delayMs = Math.max(1500, nextAllowedAt - Date.now());
   const delayMinutes = delayMs / 60000;
   console.log('[黑猫][BG] armNextTimer delayMs=', Math.round(delayMs), 'nextAllowedAt=', nextAllowedAt, 'state=', schedulerState());
-  chrome.alarms.create('nextPublish', { delayInMinutes });
+  chrome.alarms.create('nextPublish', { delayInMinutes: delayMinutes });
 }
 // 推进到下一篇：满足所有安全条件才真正 openNextTab（倒计时到点后由 pump/定时器调用）
 function tryAdvance(source = 'unknown') {
