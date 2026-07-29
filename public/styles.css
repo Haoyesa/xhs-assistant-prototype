@@ -304,3 +304,14 @@ button.ghost:hover { background: var(--panel2); }
 .inst-meta { color: var(--muted); font-size: 12px; margin-top: 3px; }
 .inst-state { font-size: 13px; font-weight: 700; color: var(--faint); white-space: nowrap; }
 .inst-on .inst-state { color: var(--ok); }
+
+/* 关于页 */
+.about-ver { margin: 4px 0 12px; font-size: 14px; font-weight: 700; color: var(--text); }
+.about-intro { margin: 0; }
+.about-steps { margin: 6px 0 10px; padding-left: 20px; }
+.about-steps li { margin: 8px 0; font-size: 13px; line-height: 1.6; color: var(--text); }
+.about-steps li b { color: var(--accent); }
+.about-contact { display: flex; flex-direction: column; gap: 10px; margin: 6px 0 12px; }
+.ac-row { display: flex; align-items: center; gap: 12px; }
+.ac-label { flex: none; width: 56px; font-weight: 700; color: var(--muted); font-size: 13px; }
+.ac-val { color: var(--text); font-size: 13px; }

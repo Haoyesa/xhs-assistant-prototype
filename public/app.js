@@ -19,9 +19,10 @@ const thumbStrip = (imgs) => (imgs && imgs.length)
 let pollTimer = null;
 let nextPublishAtAt = 0; // 插件上报的「下一篇最早发布时刻(ms)」，用于批量发布页倒计时
 let queueHasPending = false; // 队列是否还有 queued/picked 待发任务（用于决定是否显示倒计时）
+let SETTINGS = null; // 最近一次 /api/settings 响应，供「关于」页读取版本号等
 
 // ---- 标签页 ----
-const PAGE_TITLES = { products: '素材库', generator: '批量作图', batch: '批量发布', history: '历史', accounts: '账号管理', sensitive: '敏感词检测', settings: '设置' };
+const PAGE_TITLES = { products: '素材库', generator: '批量作图', batch: '批量发布', history: '历史', accounts: '账号管理', sensitive: '敏感词检测', settings: '设置', about: '关于' };
 $$('.tab-btn').forEach((b) => b.addEventListener('click', () => {
   $$('.tab-btn').forEach((x) => x.classList.remove('active'));
   $$('.tab').forEach((x) => x.classList.remove('active'));
@@ -33,6 +34,7 @@ $$('.tab-btn').forEach((b) => b.addEventListener('click', () => {
   if (b.dataset.tab === 'history') loadHistory();
   if (b.dataset.tab === 'products') loadImageFolders();
   if (b.dataset.tab === 'sensitive') loadSensitiveMeta();
+  if (b.dataset.tab === 'about') { const v = $('#aboutVer'); if (v) v.textContent = (SETTINGS && SETTINGS.appVersion) ? 'v' + SETTINGS.appVersion : '—'; }
   loadStats();
 }));
 
@@ -442,6 +444,7 @@ $('#addAccountBtn').addEventListener('click', async () => {
 // ---- 设置 ----
 async function loadSettings() {
   const s = await callApi('GET', '/api/settings');
+  SETTINGS = s;
   $('#setProvider').value = s.aiProvider || 'deepseek';
   $('#setKey').value = s.aiApiKey || '';
   $('#setBaseUrl').value = s.aiBaseUrl || '';

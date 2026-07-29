@@ -23,6 +23,7 @@
         <button class="tab-btn" data-tab="accounts"><span class="ni">👤</span>账号</button>
         <button class="tab-btn" data-tab="sensitive"><span class="ni">🛡️</span>敏感词</button>
         <button class="tab-btn" data-tab="settings"><span class="ni">⚙️</span>设置</button>
+        <button class="tab-btn" data-tab="about"><span class="ni">ℹ️</span>关于</button>
       </nav>
       <div class="side-foot">
         <div class="conn" id="connBox" title="后端连接状态">
@@ -298,6 +299,36 @@
               <button id="clearDataBtn" class="danger">清除发布数据</button>
               <span id="clearMsg" class="msg"></span>
             </div>
+          </div>
+        </section>
+
+        <!-- 关于 -->
+        <section class="tab" data-tab="about">
+          <div class="card">
+            <h3>关于 黑猫智记AI</h3>
+            <p class="about-ver">版本：<span id="aboutVer">—</span></p>
+            <p class="hint about-intro">黑猫智记AI 是一款本地运行的「内容创作辅助」工具：采集商品 → AI 生成图文笔记 → 通过浏览器插件一键发布到小红书。所有 AI 密钥与数据均保存在本机，不上传任何云端。</p>
+          </div>
+
+          <div class="card">
+            <h3>使用说明</h3>
+            <ol class="about-steps">
+              <li><b>采集素材</b>：在「素材库」粘贴商品页链接或手动添加商品信息，按商品 ID 去重入库。</li>
+              <li><b>生成笔记</b>：在「批量作图」勾选素材 →「生成笔记并入队」，AI 自动产出标题 / 正文 / 话题。</li>
+              <li><b>发布</b>：在「发布」页把笔记指派给账号；在创作者发布台页面点浏览器插件（或右下角悬浮面板）的「开始批量发布」，自动逐篇填充并发布。</li>
+              <li><b>多账号并行</b>：在比特浏览器中为每个窗口装好插件并绑定不同账号，分别点「开始批量发布」即可并行、互不抢占。</li>
+            </ol>
+            <p class="hint">提示：插件模式下后台「开始批量发布」按钮无效，由浏览器插件内的按钮驱动；发布中或本账号无待发任务时该按钮自动禁用。</p>
+          </div>
+
+          <div class="card">
+            <h3>联系与反馈</h3>
+            <div class="about-contact">
+              <div class="ac-row"><span class="ac-label">微信</span><span class="ac-val" id="aboutWechat">（在此填写你的微信号）</span></div>
+              <div class="ac-row"><span class="ac-label">邮箱</span><span class="ac-val" id="aboutEmail">（在此填写你的邮箱）</span></div>
+              <div class="ac-row"><span class="ac-label">其他</span><span class="ac-val" id="aboutOther">（如 QQ / 公众号等）</span></div>
+            </div>
+            <p class="hint">使用问题、功能建议或合作意向，欢迎通过以上方式联系作者。</p>
           </div>
         </section>
       </main>
