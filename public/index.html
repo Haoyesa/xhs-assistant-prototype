@@ -307,26 +307,38 @@
           <div class="card">
             <h3>关于 黑猫智记AI</h3>
             <p class="about-ver">版本：<span id="aboutVer">—</span></p>
-            <p class="hint about-intro">黑猫智记AI 是一款本地运行的「内容创作辅助」工具：采集商品 → AI 生成图文笔记 → 通过浏览器插件一键发布到小红书。所有 AI 密钥与数据均保存在本机，不上传任何云端。</p>
+            <p class="hint about-intro">黑猫智记AI 是一款<b>本地运行</b>的「内容创作辅助」工具：帮你整理素材、借助 AI 生成图文草稿、并通过浏览器插件把草稿回填到创作平台。所有 AI 密钥与数据均保存在本机，不上传任何云端。本工具仅提供创作与回填辅助，是否发布、如何发布由你自行判断与操作。</p>
           </div>
 
           <div class="card">
             <h3>使用说明</h3>
             <ol class="about-steps">
-              <li><b>采集素材</b>：在「素材库」粘贴商品页链接或手动添加商品信息，按商品 ID 去重入库。</li>
-              <li><b>生成笔记</b>：在「批量作图」勾选素材 →「生成笔记并入队」，AI 自动产出标题 / 正文 / 话题。</li>
-              <li><b>发布</b>：在「发布」页把笔记指派给账号；在创作者发布台页面点浏览器插件（或右下角悬浮面板）的「开始批量发布」，自动逐篇填充并发布。</li>
-              <li><b>多账号并行</b>：在比特浏览器中为每个窗口装好插件并绑定不同账号，分别点「开始批量发布」即可并行、互不抢占。</li>
+              <li><b>整理素材</b>：在「素材库」录入你要创作的商品 / 选题信息（按 ID 去重），仅作本地素材管理。</li>
+              <li><b>生成草稿</b>：在「批量作图」勾选素材 →「生成笔记并入队」，AI 产出标题 / 正文 / 话题<b>草稿</b>，供你审阅、修改后使用。</li>
+              <li><b>回填创作台</b>：在创作平台页面点浏览器插件（或右下角悬浮面板）的「开始批量发布」，把草稿<b>逐篇回填</b>到发布表单；<b>发布前请务必人工复核，确认无误后再由你手动或确认发布</b>。</li>
+              <li><b>多账号</b>：如在多个窗口分别登录不同账号，可在各窗口分别启动回填；请严格遵守对应平台的账号规则与权限范围。</li>
             </ol>
-            <p class="hint">提示：插件模式下后台「开始批量发布」按钮无效，由浏览器插件内的按钮驱动；发布中或本账号无待发任务时该按钮自动禁用。</p>
+            <p class="hint">提示：插件模式下后台「开始批量发布」按钮无效，由浏览器插件内的按钮驱动；回填 / 发布中或本账号无待发任务时该按钮自动禁用。所有发布动作均应由你确认后执行，本工具不代为决定发布。</p>
+          </div>
+
+          <div class="card">
+            <h3>免责协议</h3>
+            <div class="about-disclaimer">
+              <p>1. <b>辅助属性</b>：本软件按「现状」提供，仅作为个人内容创作的辅助工具；不保证软件无中断、无错误，亦不保证其生成或回填内容的合规性、准确性与可用性。</p>
+              <p>2. <b>责任边界</b>：你使用本软件生成、编辑、回填的内容，以及由此产生的任何后果（包括但不限于平台处罚、第三方索赔、名誉或财产损失），均由<b>你自行承担全部法律责任</b>，软件提供方不承担任何责任。</p>
+              <p>3. <b>合规义务</b>：你须自行遵守所使用平台的运营规则、社区规范及所在国家 / 地区的法律法规；<b>不得</b>将本工具用于虚假宣传、侵权搬运、刷量作弊、群控矩阵等违规用途。</p>
+              <p>4. <b>自检非保证</b>：敏感词 / 合规模块仅为<b>本地辅助提醒</b>，命中仅作提示、不自动拦截、不上传，<b>不构成</b>对内容合规性的任何保证，最终判断权在你。</p>
+              <p>5. <b>赔偿</b>：因你违反上述义务或任何适用法律法规，导致软件提供方遭受损失的，你应负责赔偿。</p>
+              <p class="about-special">特别提示：内容创作请始终秉持<b>真实、原创、合规</b>的原则。工具是辅助，责任在您。</p>
+            </div>
           </div>
 
           <div class="card">
             <h3>联系与反馈</h3>
             <div class="about-contact">
-              <div class="ac-row"><span class="ac-label">微信</span><span class="ac-val" id="aboutWechat">（在此填写你的微信号）</span></div>
-              <div class="ac-row"><span class="ac-label">邮箱</span><span class="ac-val" id="aboutEmail">（在此填写你的邮箱）</span></div>
-              <div class="ac-row"><span class="ac-label">其他</span><span class="ac-val" id="aboutOther">（如 QQ / 公众号等）</span></div>
+              <div class="ac-row"><span class="ac-label">微信</span><span class="ac-val" id="aboutWechat">zh_2439</span></div>
+              <div class="ac-row"><span class="ac-label">邮箱</span><span class="ac-val" id="aboutEmail">webzhouh@1163.com</span></div>
+              <div class="ac-row"><span class="ac-label">公众号</span><span class="ac-val" id="aboutOther">大龘龘</span></div>
             </div>
             <p class="hint">使用问题、功能建议或合作意向，欢迎通过以上方式联系作者。</p>
           </div>

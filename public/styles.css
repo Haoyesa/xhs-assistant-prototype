@@ -315,3 +315,9 @@ button.ghost:hover { background: var(--panel2); }
 .ac-row { display: flex; align-items: center; gap: 12px; }
 .ac-label { flex: none; width: 56px; font-weight: 700; color: var(--muted); font-size: 13px; }
 .ac-val { color: var(--text); font-size: 13px; }
+
+/* 免责协议 */
+.about-disclaimer { max-height: 280px; overflow-y: auto; margin: 6px 0 4px; padding: 4px 6px; border: 1px solid var(--border); border-radius: 12px; background: var(--panel); }
+.about-disclaimer p { margin: 8px 0; font-size: 12.5px; line-height: 1.7; color: var(--muted); }
+.about-disclaimer p b { color: var(--text); }
+.about-special { color: var(--text) !important; font-weight: 700; border-top: 1px dashed var(--border); padding-top: 10px; }
