@@ -169,12 +169,13 @@ const DEFAULT_SETTINGS = {
   aiModel: '',
   aiBaseUrl: '',
   // AI 生图（图像生成 API，单独配置，独立于上面的文本 AI）
-  imgAiBaseUrl: '',
+  // 默认对接「方舟 gpt-image-2」接口（Apifox 文档 api-418255962），Key 由用户自配
+  imgAiBaseUrl: 'https://api.aiyungc.cn/v1',
   imgAiApiKey: '',
-  imgAiModel: '',
-  imgAiSize: '1024x1536',
+  imgAiModel: 'gpt-image-2',
+  imgAiSize: '1024x1024',
   imgAiCount: 1,
-  imgAiExtra: '',
+  imgAiExtra: '{"quality":"low","format":"jpeg"}',
   imgAiPromptTemplate: DEFAULT_IMG_PROMPT,
   publishMode: 'dry-run',
   cdpBrowserUrl: 'http://127.0.0.1:9222',
@@ -259,8 +260,7 @@ async function generateImages(settings, prompt, count, size, extra) {
     model,
     prompt,
     n: Math.max(1, Math.min(8, count || 1)),
-    size: size || '1024x1536',
-    response_format: 'b64_json',
+    size: size || '1024x1024',
     ...(extra || {}),
   };
   const resp = await fetch(`${baseUrl}/images/generations`, {
@@ -272,15 +272,24 @@ async function generateImages(settings, prompt, count, size, extra) {
     const t = await resp.text().catch(() => '');
     throw new Error(`图像 API HTTP ${resp.status}: ${t.slice(0, 300)}`);
   }
-  const j = await resp.json();
-  const arr = Array.isArray(j.data) ? j.data : [];
+  const j = await resp.json().catch(() => ({}));
+  // 兼容多种返回结构：data[] / images[] / 直接数组 / 顶层 b64_json
+  let arr = [];
+  if (Array.isArray(j.data)) arr = j.data;
+  else if (Array.isArray(j.images)) arr = j.images;
+  else if (Array.isArray(j)) arr = j;
+  else if (j && (j.b64_json || j.url)) arr = [j];
   if (!arr.length) throw new Error('图像 API 返回为空');
   const bufs = [];
   for (const item of arr) {
     if (item && item.b64_json) {
       bufs.push(Buffer.from(item.b64_json, 'base64'));
     } else if (item && item.url) {
-      const r2 = await fetch(item.url);
+      const r2 = await fetch(item.url, { headers: apiKey ? { Authorization: `Bearer ${apiKey}` } : {} });
+      if (!r2.ok) throw new Error(`下载图像失败 HTTP ${r2.status}`);
+      bufs.push(Buffer.from(await r2.arrayBuffer()));
+    } else if (typeof item === 'string') {
+      const r2 = await fetch(item, { headers: apiKey ? { Authorization: `Bearer ${apiKey}` } : {} });
       if (!r2.ok) throw new Error(`下载图像失败 HTTP ${r2.status}`);
       bufs.push(Buffer.from(await r2.arrayBuffer()));
     } else {
@@ -288,6 +297,15 @@ async function generateImages(settings, prompt, count, size, extra) {
     }
   }
   return bufs;
+}
+
+// 按图片魔数判断真实扩展名（避免 .png 写 jpeg 等错配）
+function imageExt(buf) {
+  if (buf.length >= 3 && buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff) return 'jpg';
+  if (buf.length >= 4 && buf.toString('ascii', 1, 4) === 'PNG') return 'png';
+  if (buf.length >= 12 && buf.toString('ascii', 0, 4) === 'RIFF' && buf.toString('ascii', 8, 12) === 'WEBP') return 'webp';
+  if (buf.length >= 3 && buf.toString('ascii', 0, 3) === 'GIF') return 'gif';
+  return 'png';
 }
 
 function localFallback(prompt, kind) {
@@ -680,7 +698,8 @@ const server = http.createServer(async (req, res) => {
         const bufs = await generateImages(settings, prompt, count, settings.imgAiSize, extra);
         const files = [];
         for (let i = 0; i < bufs.length; i++) {
-          const file = path.join(dir, `${i + 1}.png`);
+          const ext = imageExt(bufs[i]);
+          const file = path.join(dir, `${i + 1}.${ext}`);
           await fsp.writeFile(file, bufs[i]);
           files.push(path.relative(root, file));
         }

@@ -6,45 +6,61 @@
   <title>AI 生图 · 黑猫智记AI</title>
   <style>
     :root {
-      --bg: #f5f6f8; --panel: #ffffff; --border: #e6e8ec; --radius: 12px;
-      --txt: #1f2329; --muted: #8a909a; --brand: #ff2e4d; --brand2: #ff7a59;
-      --ok: #16a34a; --bad: #dc2626; --warn: #d97706; --shadow: 0 2px 10px rgba(20,20,40,.06);
+      --header-bg: #161a22;
+      --bg: #0e1014;
+      --bg2: #12151b;
+      --card-bg: #161a22;
+      --border: #283041;
+      --border2: #323a4d;
+      --text: #e7eaf0;
+      --text-light: #9aa3b2;
+      --text-muted: #5c6678;
+      --red: #ff2e4d;
+      --red-hover: #e6203c;
+      --green: #27ae60;
+      --green-hover: #219a52;
+      --blue: #4f8cff;
+      --radius: 12px;
+      --shadow: 0 4px 20px rgba(0,0,0,0.25);
+      --transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
     }
     * { box-sizing: border-box; }
-    body { margin: 0; font: 14px/1.6 -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif; color: var(--txt); background: var(--bg); }
+    body { margin: 0; font: 14px/1.6 -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif; color: var(--text); background: var(--bg); background-image: radial-gradient(1200px 600px at 80% -10%, #1a2030 0%, var(--bg) 55%) fixed; }
     .wrap { padding: 18px 20px 40px; max-width: 1080px; margin: 0 auto; }
-    h2 { margin: 0 0 2px; font-size: 18px; }
-    .sub { color: var(--muted); font-size: 12px; margin-bottom: 14px; }
-    .card { background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px 18px; margin-bottom: 16px; box-shadow: var(--shadow); }
-    .card h3 { margin: 0 0 12px; font-size: 15px; display: flex; align-items: center; gap: 8px; }
-    label { display: block; font-size: 12px; color: var(--muted); margin: 10px 0 4px; }
+    h2 { margin: 0 0 2px; font-size: 18px; color: var(--text); }
+    .sub { color: var(--text-light); font-size: 12px; margin-bottom: 14px; }
+    .card { background: var(--card-bg); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px 18px; margin-bottom: 16px; box-shadow: var(--shadow); }
+    .card h3 { margin: 0 0 12px; font-size: 15px; color: var(--text); display: flex; align-items: center; gap: 8px; }
+    label { display: block; font-size: 12px; color: var(--text-light); margin: 10px 0 4px; }
     input[type=text], input[type=password], input[type=number], textarea, select {
-      width: 100%; padding: 9px 11px; border: 1px solid var(--border); border-radius: 9px; background: #fff; color: var(--txt); font-size: 13px; font-family: inherit;
+      width: 100%; padding: 9px 11px; border: 1px solid var(--border2); border-radius: 9px; background: var(--bg2); color: var(--text); font-size: 13px; font-family: inherit; transition: var(--transition);
     }
+    input:focus, textarea:focus, select:focus { outline: none; border-color: var(--red); box-shadow: 0 0 0 3px rgba(255,46,77,.15); }
     textarea { resize: vertical; min-height: 90px; line-height: 1.5; }
     .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 0 14px; }
     .row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
     .row.between { justify-content: space-between; }
-    button { cursor: pointer; border: 1px solid var(--border); background: #fff; color: var(--txt); padding: 9px 16px; border-radius: 9px; font-size: 13px; font-weight: 600; transition: .15s; }
-    button:hover { border-color: #cfd3da; }
-    button.primary { background: linear-gradient(135deg, var(--brand), var(--brand2)); color: #fff; border: none; }
-    button.primary:disabled { opacity: .5; cursor: not-allowed; }
+    button { cursor: pointer; border: 1px solid var(--border2); background: var(--bg2); color: var(--text); padding: 9px 16px; border-radius: 9px; font-size: 13px; font-weight: 600; transition: var(--transition); }
+    button:hover { border-color: var(--text-muted); }
+    button.primary { background: var(--red); color: #fff; border: none; }
+    button.primary:hover { background: var(--red-hover); transform: translateY(-1px); }
+    button.primary:disabled { opacity: .5; cursor: not-allowed; transform: none; }
     button.mini { padding: 5px 10px; font-size: 12px; }
-    .hint { color: var(--muted); font-size: 12px; }
-    code { background: #f0f1f3; padding: 1px 5px; border-radius: 5px; font-size: 12px; }
+    .hint { color: var(--text-muted); font-size: 12px; }
+    code { background: rgba(255,255,255,.06); padding: 1px 5px; border-radius: 5px; font-size: 12px; color: var(--text-light); }
     .msg { font-size: 12px; margin-left: 6px; }
-    .msg.ok { color: var(--ok); } .msg.bad { color: var(--bad); }
-    details { border: 1px solid var(--border); border-radius: 9px; padding: 8px 12px; background: #fafbfc; }
-    summary { cursor: pointer; font-size: 13px; font-weight: 600; }
-    .preview { margin-top: 10px; max-height: 220px; overflow: auto; border: 1px solid var(--border); border-radius: 9px; }
+    .msg.ok { color: #5ee08a; } .msg.bad { color: #ff6b6b; }
+    details { border: 1px solid var(--border); border-radius: 9px; padding: 8px 12px; background: var(--bg2); }
+    summary { cursor: pointer; font-size: 13px; font-weight: 600; color: var(--text); }
+    .preview { margin-top: 10px; max-height: 220px; overflow: auto; border: 1px solid var(--border); border-radius: 9px; background: var(--bg2); }
     table { border-collapse: collapse; width: 100%; font-size: 12px; }
-    th, td { border-bottom: 1px solid var(--border); padding: 6px 8px; text-align: left; max-width: 360px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    th { background: #f3f4f6; position: sticky; top: 0; }
-    .bar { height: 10px; border-radius: 6px; background: #ececf0; overflow: hidden; margin: 8px 0; }
-    .bar > i { display: block; height: 100%; width: 0; background: linear-gradient(135deg, var(--brand), var(--brand2)); transition: width .2s; }
-    .log { font: 12px/1.6 ui-monospace, Menlo, Consolas, monospace; background: #1b1d22; color: #d6dae0; border-radius: 9px; padding: 12px; max-height: 280px; overflow: auto; white-space: pre-wrap; }
+    th, td { border-bottom: 1px solid var(--border); padding: 6px 8px; text-align: left; max-width: 360px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); }
+    th { background: #1c212b; position: sticky; top: 0; color: var(--text-light); }
+    .bar { height: 10px; border-radius: 6px; background: #1c212b; overflow: hidden; margin: 8px 0; }
+    .bar > i { display: block; height: 100%; width: 0; background: linear-gradient(135deg, var(--red), #ff7a59); transition: width .2s; }
+    .log { font: 12px/1.6 ui-monospace, Menlo, Consolas, monospace; background: #0a0c10; color: #d6dae0; border: 1px solid var(--border); border-radius: 9px; padding: 12px; max-height: 280px; overflow: auto; white-space: pre-wrap; }
     .log .ok { color: #5ee08a; } .log .bad { color: #ff6b6b; } .log .info { color: #8ab4ff; }
-    .badge { display: inline-block; padding: 1px 8px; border-radius: 20px; font-size: 11px; background: #fde8ec; color: var(--brand); font-weight: 600; }
+    .badge { display: inline-block; padding: 1px 8px; border-radius: 20px; font-size: 11px; background: rgba(255,46,77,.15); color: #ff6b81; font-weight: 600; }
   </style>
 </head>
 <body>
@@ -58,19 +74,19 @@
       <div class="grid2">
         <div>
           <label>API Base URL（到 /v1，不含 /images/generations）</label>
-          <input id="imgBaseUrl" type="text" placeholder="https://api.openai.com/v1" />
+          <input id="imgBaseUrl" type="text" placeholder="https://api.aiyungc.cn/v1" />
         </div>
         <div>
           <label>API Key</label>
           <input id="imgApiKey" type="password" placeholder="sk-..." />
         </div>
         <div>
-          <label>模型 Model</label>
-          <input id="imgModel" type="text" placeholder="gpt-image-1 / wanx2.1-t2i-turbo / cogview-3-plus ..." />
+          <label>模型 Model（默认 gpt-image-2，方舟接口）</label>
+          <input id="imgModel" type="text" placeholder="gpt-image-2" />
         </div>
         <div>
-          <label>尺寸 Size（部分模型支持 1024x1536 竖版 3:4）</label>
-          <input id="imgSize" type="text" placeholder="1024x1536" />
+          <label>尺寸 Size（小红书封面建议 1024x1536 竖版 3:4；默认 1024x1024）</label>
+          <input id="imgSize" type="text" placeholder="1024x1024" />
         </div>
         <div>
           <label>每篇生成张数（1-8）</label>
@@ -78,7 +94,7 @@
         </div>
         <div>
           <label>附加请求体（可选 JSON，供应商特殊字段）</label>
-          <input id="imgExtra" type="text" placeholder='{"style":"natural"}' />
+          <input id="imgExtra" type="text" placeholder='{"quality":"low","format":"jpeg"}' />
         </div>
       </div>
       <label>提示词模板（支持占位符 <code>{{标题}}</code> <code>{{商品ID}}</code> <code>{{内容}}</code>）</label>
@@ -135,7 +151,7 @@ async function loadCfg() {
     $('#imgBaseUrl').value = s.imgAiBaseUrl || '';
     $('#imgApiKey').value = s.imgAiApiKey || '';
     $('#imgModel').value = s.imgAiModel || '';
-    $('#imgSize').value = s.imgAiSize || '1024x1536';
+    $('#imgSize').value = s.imgAiSize || '1024x1024';
     $('#imgCount').value = s.imgAiCount || 1;
     $('#imgExtra').value = s.imgAiExtra || '';
     $('#imgPrompt').value = s.imgAiPromptTemplate || '';
