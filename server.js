@@ -181,6 +181,9 @@ const DEFAULT_SETTINGS = {
   publishMode: 'dry-run',
   cdpBrowserUrl: 'http://127.0.0.1:9222',
   cdpChromePath: '',
+  // 比特浏览器本地 API（用于按指纹配置序号 seq 打开/关闭隔离窗口）
+  bitApiHost: 'http://127.0.0.1:54345',
+  bitApiKey: '',
   qianfanUrl: 'https://channel.xiaohongshu.com/ark/product/list',
   // 发布设置（对齐原软件）
   generateTitle: true,
@@ -1158,6 +1161,50 @@ const server = http.createServer(async (req, res) => {
         return sendJSON(res, 200, { ok: false, detail: '启动浏览器失败：' + e.message });
       }
       return sendJSON(res, 200, { ok: true, detail: '已启动 ' + path.basename(exe) + '（调试端口 9222）。首次请在弹出的浏览器里登录发布平台，之后会保持登录。' });
+    }
+
+    // ===== 比特浏览器本地 API 代理（按指纹配置打开/关闭隔离窗口）=====
+    // 比特浏览器多窗口并行：每个配置一个独立指纹 + 独立代理 IP。本后端不直接驱动比特，
+    // 只把「打开/关闭某个配置窗口」的指令转发给比特本地 API（默认 http://127.0.0.1:54345）。
+    // 打开：POST /api/browser/open { seq } ；关闭：POST /api/browser/close { seq } ；列表：GET /api/browser/list
+    async function bitForward(rel, method2, bodyObj) {
+      const settings = { ...DEFAULT_SETTINGS, ...(await readStore(stores.settings, {})) };
+      const host = (settings.bitApiHost || 'http://127.0.0.1:54345').replace(/\/+$/, '');
+      const apiKey = settings.bitApiKey || '';
+      const headers = { 'Content-Type': 'application/json' };
+      if (apiKey) headers['api-key'] = apiKey;
+      const r = await fetch(host + rel, {
+        method: method2,
+        headers,
+        body: bodyObj ? JSON.stringify(bodyObj) : undefined,
+      });
+      const text = await r.text();
+      let data = null; try { data = JSON.parse(text); } catch { data = { raw: text }; }
+      return { r, data };
+    }
+    if (p.startsWith('/api/bitbrowser/') && method === 'POST') {
+      const rel = p === '/api/bitbrowser/open' ? '/api/browser/open'
+        : p === '/api/bitbrowser/close' ? '/api/browser/close' : null;
+      if (!rel) return sendJSON(res, 404, { ok: false, detail: 'unknown endpoint' });
+      const body = await readBody(req);
+      if (!body.seq) return sendJSON(res, 400, { ok: false, detail: '缺少 seq（比特指纹配置序号）' });
+      try {
+        const { r, data } = await bitForward(rel, 'POST', { seq: String(body.seq) });
+        const ok = r.ok && data && data.code === 0;
+        return sendJSON(res, 200, { ok, detail: ok ? '已发送指令' : ((data && (data.msg || data.message)) || ('比特返回 ' + r.status)), data });
+      } catch (e) {
+        return sendJSON(res, 200, { ok: false, detail: '调用比特浏览器失败：' + e.message + '（确认比特客户端已运行且本地 API 端口正确）' });
+      }
+    }
+    if (p === '/api/bitbrowser/list' && method === 'GET') {
+      try {
+        const { r, data } = await bitForward('/api/browser/list?page=1&page_size=200', 'GET');
+        const list = (data && data.data && Array.isArray(data.data.list)) ? data.data.list
+          : (data && Array.isArray(data.list)) ? data.list : [];
+        return sendJSON(res, 200, { ok: r.ok, detail: r.ok ? 'ok' : ((data && (data.msg || data.message)) || ('比特返回 ' + r.status)), list });
+      } catch (e) {
+        return sendJSON(res, 200, { ok: false, detail: '调用比特浏览器失败：' + e.message, list: [] });
+      }
     }
 
     // 历史

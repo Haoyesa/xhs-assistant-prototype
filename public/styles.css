@@ -285,6 +285,10 @@ button.ghost:hover { background: var(--panel2); }
 .acc-offline { color: var(--faint); font-size: 12px; margin-left: 6px; }
 .acc-bit { padding: 4px 8px; border: 1px solid var(--border); border-radius: 7px; background: var(--panel2); color: var(--text); font-size: 12px; }
 .acc-iv { padding: 4px 8px; border: 1px solid var(--border); border-radius: 7px; background: var(--panel2); color: var(--text); font-size: 12px; }
+.acc-actions { display: flex; gap: 6px; flex-shrink: 0; }
+.bit-open { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 45%, var(--border)); }
+.bit-open:hover:not(:disabled) { background: color-mix(in srgb, var(--accent) 14%, transparent); }
+.bit-close { color: var(--faint); }
 .hint-inline { color: var(--faint); font-size: 11px; margin-left: 4px; }
 
 /* 在线比特窗口（实例）监控 */

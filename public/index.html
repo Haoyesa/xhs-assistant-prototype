@@ -171,6 +171,10 @@
               <h3>在线比特窗口（实例）</h3>
               <span class="hint">扩展每 30s 上报一次心跳。这里显示当前在线的比特浏览器窗口、绑定的账号与最后心跳，用于确认多窗口已正确接入服务端（三闸门自测的关键观察点）。</span>
             </div>
+            <div class="row" style="margin-bottom:8px">
+              <button id="openAllBtn" class="mini">🔓 打开全部账号窗口</button>
+              <span id="openAllMsg" class="msg"></span>
+            </div>
             <div id="instancesList" class="instance-list"></div>
           </div>
         </section>
@@ -239,6 +243,17 @@
               <button id="cdpTestBtn">测试 CDP 连接</button>
               <button id="cdpLaunchBtn">启动 Chrome</button>
               <span id="cdpMsg" class="msg"></span>
+            </div>
+          </div>
+
+          <div class="card" style="margin-top:14px">
+            <div class="card-h">
+              <h3>比特浏览器（多窗口并行）</h3>
+              <span class="hint">按「指纹配置序号(seq)」打开/关闭隔离窗口，每个配置独立指纹 + 独立代理 IP。在「账号」页填好每个账号对应的比特配置名/序号后，即可一键打开对应窗口。需比特客户端已运行且开启本地 API。</span>
+            </div>
+            <div class="grid2">
+              <label>比特本地 API 地址<input id="setBitHost" placeholder="http://127.0.0.1:54345" /></label>
+              <label>API Key(可选，列表接口需要)<input id="setBitKey" placeholder="留空则仅用打开/关闭" /></label>
             </div>
           </div>
 

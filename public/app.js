@@ -335,7 +335,11 @@ async function loadAccounts() {
         </div>
         <div class="acc-meta">绑定于 ${a.createdAt ? new Date(a.createdAt).toLocaleString('zh-CN') : '—'}</div>
       </div>
-      <button class="mini danger del-acc" data-id="${esc(a.id)}">解绑</button>
+      <div class="acc-actions">
+        <button class="mini bit-open" data-seq="${esc(a.bitProfile || '')}" ${a.bitProfile ? '' : 'disabled'}>打开窗口</button>
+        <button class="mini bit-close" data-seq="${esc(a.bitProfile || '')}" ${a.bitProfile ? '' : 'disabled'}>关闭窗口</button>
+        <button class="mini danger del-acc" data-id="${esc(a.id)}">解绑</button>
+      </div>
     </div>`).join('');
   $$('#accountList .del-acc').forEach((b) => b.addEventListener('click', async () => {
     if (!confirm('确定解绑该账号吗？\n（仅解除本地绑定记录，不影响该账号本身）')) return;
@@ -349,6 +353,20 @@ async function loadAccounts() {
     const iv = acc.querySelector('.acc-iv').value;
     const r = await callApi('POST', `/api/accounts/${id}/patch`, { bitProfile: val, interval: iv });
     if (r.ok) { toast('已更新账号配置', 'ok'); loadAccounts(); } else toast('更新失败', 'err');
+  }));
+  $$('#accountList .bit-open').forEach((b) => b.addEventListener('click', async () => {
+    const seq = b.dataset.seq;
+    if (!seq) { toast('请先在「比特配置名」填写比特指纹序号', 'err'); return; }
+    b.disabled = true; const old = b.textContent; b.textContent = '打开中…';
+    const r = await callApi('POST', '/api/bitbrowser/open', { seq });
+    b.disabled = !seq; b.textContent = old;
+    toast(r.ok ? '已发送打开指令（请查看比特客户端）' : ('打开失败：' + (r.detail || '')), r.ok ? 'ok' : 'err');
+  }));
+  $$('#accountList .bit-close').forEach((b) => b.addEventListener('click', async () => {
+    const seq = b.dataset.seq;
+    if (!seq) return;
+    const r = await callApi('POST', '/api/bitbrowser/close', { seq });
+    toast(r.ok ? '已发送关闭指令' : ('关闭失败：' + (r.detail || '')), r.ok ? 'ok' : 'err');
   }));
 }
 
@@ -411,6 +429,8 @@ async function loadSettings() {
   $('#setQianfanUrl').value = s.qianfanUrl || '';
   $('#setBrowserUrl').value = s.cdpBrowserUrl || '';
   $('#setChromePath').value = s.cdpChromePath || '';
+  $('#setBitHost').value = s.bitApiHost || 'http://127.0.0.1:54345';
+  $('#setBitKey').value = s.bitApiKey || '';
   $('#setImagesRoot').value = s.imagesRoot || '';
   $('#setCsvExportDir').value = s.csvExportDir || '';
   $('#setGenTitle').checked = !!s.generateTitle;
@@ -443,6 +463,7 @@ $('#saveSetBtn').addEventListener('click', async () => {
   await callApi('POST', '/api/settings', {
     aiProvider: $('#setProvider').value, aiApiKey: $('#setKey').value, aiBaseUrl: $('#setBaseUrl').value, aiModel: $('#setModel').value,
     publishMode: $('#setPublish').value, qianfanUrl: $('#setQianfanUrl').value, cdpBrowserUrl: $('#setBrowserUrl').value, cdpChromePath: $('#setChromePath').value,
+    bitApiHost: $('#setBitHost').value, bitApiKey: $('#setBitKey').value,
     generateTitle: $('#setGenTitle').checked, generateContent: $('#setGenContent').checked, enableAiTopics: $('#setGenTopics').checked,
     topicsCount: +$('#setTopicsCount').value, randomEmoji: +$('#setEmoji').value, autoSubmit: $('#setAutoSubmit').checked, humanTyping: $('#setHumanTyping').checked,
     publishIntervalSeconds: +$('#setInterval').value, publishIntervalRandomDelaySeconds: +$('#setRandomDelay').value, singleProductRepeatLimit: +$('#setRepeat').value,
@@ -573,6 +594,29 @@ $('#sensitiveMaskBtn').addEventListener('click', async () => {
 // 初始化
 loadProducts();
 loadSettings();
+
+// 一键打开全部账号对应的比特窗口（按账号页填写的比特配置序号）
+(function bindOpenAll() {
+  const btn = $('#openAllBtn');
+  if (!btn || btn.dataset.bound) return;
+  btn.dataset.bound = '1';
+  btn.addEventListener('click', async () => {
+    let acc;
+    try { acc = await callApi('GET', '/api/accounts'); } catch { toast('读取账号失败', 'err'); return; }
+    const list = (acc.accounts || []).filter((x) => x.bitProfile);
+    if (!list.length) { toast('没有账号填写比特配置名，无法打开', 'err'); return; }
+    btn.disabled = true; const old = btn.textContent; btn.textContent = '打开中…';
+    let ok = 0, fail = 0;
+    for (const a of list) {
+      try {
+        const r = await callApi('POST', '/api/bitbrowser/open', { seq: a.bitProfile });
+        if (r.ok) ok++; else fail++;
+      } catch { fail++; }
+    }
+    btn.disabled = false; btn.textContent = old;
+    toast(`已发送打开指令：成功 ${ok}，失败 ${fail}`, fail ? 'err' : 'ok');
+  });
+})();
 checkConn();
 loadStats();
 initGenSubNav();
