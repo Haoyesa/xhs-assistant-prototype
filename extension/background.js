@@ -101,7 +101,8 @@ let schedulerActive = false;     // 是否开启「队列自动发布」（由 p
 let busy = false;                // 当前是否有一篇笔记正在发布中（并发=1 的保护）
 let paused = false;              // 遇到验证挑战等需人工，暂停队列（解决后由 content script 回报 published 恢复）
 let current = null;              // { tabId, taskId, resolved } 当前正在发布的任务
-let awaitingTabId = null;        // 刚开的新标签，等其加载完成后再填充
+let currentTaskId = null;        // 当前任务的 id（持久化，抗 SW 回收：pump 兜底轮询用）
+let awaitingTabId = null;        // 刚开的新标签，等其加载完成后再填充（持久化，抗 SW 回收）
 let lastPublishedTabId = null;   // 刚发布成功的标签页：先保留用于显示「下一篇倒计时」，开下一篇时再关
 let nextAllowedAt = 0;           // 下一篇最早可开标签的时间戳（ms），用于保证「发布后延时」
 let lastDelayMs = 500 * 1000 + 200 * 1000; // 上一次取的间隔（默认 500s+200s），按服务端返回覆盖
@@ -110,13 +111,15 @@ let pollTimer = null;
 // ---- 调度状态持久化：MV3 的 Service Worker 会随时被回收，内存里的 schedulerActive / paused /
 // nextAllowedAt 都会重置，导致「发布完一篇后队列停住、不再自动发下一篇」。把这些状态落盘到
 // chrome.storage.local，SW 重启时恢复，并用 pump 闹钟(每分钟)持续推进，保证自动发布不中断。
-const SCHED_KEYS = { sched_running: false, sched_paused: false, nextPublishAt: 0, lastDelayMs: 500 * 1000 + 200 * 1000 };
+const SCHED_KEYS = { sched_running: false, sched_paused: false, nextPublishAt: 0, lastDelayMs: 500 * 1000 + 200 * 1000, awaitingTabId: null, currentTaskId: null };
 function persistSched() {
   chrome.storage.local.set({
     sched_running: schedulerActive,
     sched_paused: paused,
     nextPublishAt: nextAllowedAt,
     lastDelayMs: lastDelayMs,
+    awaitingTabId: awaitingTabId || null,
+    currentTaskId: currentTaskId || null,
   }).catch(() => {});
 }
 (async () => {
@@ -126,10 +129,29 @@ function persistSched() {
     paused = !!s.sched_paused;
     nextAllowedAt = s.nextPublishAt || 0;
     lastDelayMs = Number(s.lastDelayMs) || lastDelayMs;
-    // SW 重启后：若之前在跑队列且已到/接近发布时刻，重新挂定时器推进下一篇
-    if (schedulerActive && !paused && nextAllowedAt) armNextTimer();
+    awaitingTabId = (s.awaitingTabId != null) ? s.awaitingTabId : null;
+    currentTaskId = (s.currentTaskId != null) ? s.currentTaskId : null;
+    // 重建 current（仅 taskId 可靠；tabId 由 awaitingTabId/轮询兜底）。用于 pump 兜底推进。
+    if (currentTaskId && schedulerActive && !paused) current = { tabId: awaitingTabId || null, taskId: currentTaskId, resolved: false };
+    // SW 重启后：若之前在跑队列，重新挂定时器推进；若上一篇标签已加载但 SW 被回收未填充，补填。
+    if (schedulerActive && !paused) {
+      if (nextAllowedAt) armNextTimer();
+      recoverAwaiting();
+    }
   } catch (e) {}
 })();
+
+// SW 重启后恢复「等待加载的发布标签」：若标签仍存在且已加载完成，立即补填充；
+// 否则（仍在加载中）本实例的 onUpdated 会接管。避免 SW 回收导致 awaitingTabId 丢失、标签永不填充、队列卡死。
+async function recoverAwaiting() {
+  const aid = awaitingTabId;
+  if (aid == null) return;
+  try {
+    const t = await new Promise((res) => chrome.tabs.get(aid, (tab) => res(tab)));
+    if (!t) { awaitingTabId = null; chrome.storage.local.remove('awaitingTabId').catch(() => {}); tryAdvance(); return; }
+    if (t.status === 'complete') fillTab(aid); // 未完成则本实例 onUpdated 会接管
+  } catch (e) { awaitingTabId = null; chrome.storage.local.remove('awaitingTabId').catch(() => {}); }
+}
 
 function schedulerState() {
   return { schedulerActive, busy, paused, hasCurrent: !!current, awaiting: !!awaitingTabId, nextAllowedAt };
@@ -153,6 +175,7 @@ function openNextTab() {
     chrome.tabs.create({ url: CREATOR_URL, active: true }, (tab) => {
       if (!tab || tab.id == null) return;
       awaitingTabId = tab.id;
+      chrome.storage.local.set({ awaitingTabId: tab.id }).catch(() => {}); // 持久化，抗 SW 回收后 onUpdated 丢失
       broadcast({ kind: 'info', msg: '已打开新的发布标签，等待加载…' });
     });
   });
@@ -175,6 +198,8 @@ async function fillTab(tabId) {
     }
     lastDelayMs = computeDelay(next);
     current = { tabId, taskId: next.task.id, resolved: false };
+    currentTaskId = next.task.id;
+    chrome.storage.local.set({ currentTaskId: next.task.id, awaitingTabId: null }).catch(() => {}); // 进入填充态：清 awaiting，记 current
     // 转发给创作者页 content script 填充+自动发布
     let sendErr = null;
     const sendOnce = (cb) => new Promise((resolve) => {
@@ -241,7 +266,7 @@ function resolveCurrent(kind, detail, reportTabId, delayMs) {
     busy = false;
   }
   const tabId = hadCurrent ? current.tabId : (reportTabId || null);
-  if (hadCurrent) current = null;
+  if (hadCurrent) { current = null; currentTaskId = null; chrome.storage.local.remove('currentTaskId').catch(() => {}); }
   // 手动拉取路径未走 fillTab，用 content script 回报的真实间隔覆盖默认 lastDelayMs
   if (delayMs && Number(delayMs) > 0) lastDelayMs = Number(delayMs);
 
@@ -275,6 +300,9 @@ async function scheduleNext() {
   persistSched();
   // 上报给后端，供桌面「批量发布」页同步显示倒计时
   notifyServerSchedule(nextAllowedAt);
+  // 先挂「开下一篇」闹钟（在 await 之前）：即便随后 SW 被回收、/api/batch/queue 的 fetch 被中断，
+  // 闹钟已由浏览器持久维护，到点仍会唤醒 SW 触发 tryAdvance，避免「倒计时走完却不再发下一篇」。
+  armNextTimer();
   // 确认是否还有待发任务
   let hasPending = true;
   try {
@@ -282,23 +310,22 @@ async function scheduleNext() {
     hasPending = !!(q && q.tasks && q.tasks.some((t) => t.status === 'queued' || t.status === 'picked'));
   } catch (e) { hasPending = true; } // 查不到时保守继续，最终由 fillTab 空路径兜底清除
   if (!hasPending) {
-    // 队列已空：停止自动链（不再开新标签），但「下一篇倒计时」保留到当前间隔走完再清除，
+    // 队列已空：停止自动链（不再开新标签），撤销刚挂的闹钟，但「下一篇倒计时」保留到当前间隔走完再清除，
     // 用一次性闹钟兜底（SW 回收也能可靠触发），避免倒计时刚出现就被清掉。
+    chrome.alarms.clear('nextPublish').catch(() => {});
     schedulerActive = false;
     persistSched();
     broadcast({ kind: 'idle', msg: '队列已空，没有待发任务了 ✓' });
     const remain = Math.max(1000, nextAllowedAt - Date.now());
     chrome.alarms.create('clearSchedule', { when: Date.now() + remain + 1500 });
-    return;
   }
-  // 真正挂定时器（每次都会重新计算剩余时间，SW 回收后由 pump/schedulerStep 重新 arm）
-  armNextTimer();
 }
 // 清除「下一篇倒计时」：重置内存态、清 storage、上报后端 0（两侧都不再显示读秒）
 function clearSchedule() {
   nextAllowedAt = 0;
   chrome.alarms.clear('nextPublish').catch(() => {}); // 撤销待发的「开下一篇」闹钟
-  chrome.storage.local.set({ nextPublishAt: 0 }).catch(() => {});
+  awaitingTabId = null; currentTaskId = null;
+  chrome.storage.local.set({ nextPublishAt: 0, awaitingTabId: null, currentTaskId: null }).catch(() => {});
   notifyServerSchedule(0);
 }
 // 把「下一篇最早发布时刻」上报给后端（桌面批量发布页需要它做倒计时）
@@ -337,6 +364,24 @@ async function schedulerStep() {
   const s = await storageGet();
   if (!s.autoConnect) return;
   if (!schedulerActive || paused) return;
+  // 若等待中的标签已不存在（被关/卡死），释放占据，避免 tryAdvance 永远因 awaitingTabId 占位而卡死
+  if (awaitingTabId != null) {
+    try {
+      const t = await new Promise((res) => chrome.tabs.get(awaitingTabId, (tab) => res(tab)));
+      if (!t) { awaitingTabId = null; chrome.storage.local.remove('awaitingTabId').catch(() => {}); }
+    } catch { awaitingTabId = null; chrome.storage.local.remove('awaitingTabId').catch(() => {}); }
+  }
+  // 后台兜底：当前任务已在服务端完成（发布/失败/人工）但 startPolling 的 setInterval 因 SW 回收而丢失，
+  // 这里主动查服务端并推进，避免队列卡死在「正在发布」状态不再自动下一篇。
+  if (current && current.taskId && !current.resolved) {
+    try {
+      const r = await api('/api/ext/task?id=' + encodeURIComponent(current.taskId), { method: 'GET' });
+      const st = r.data && r.data.task && r.data.task.status;
+      if (st === 'published') { resolveCurrent('published', st.statusDetail || '已发布'); return; }
+      else if (st === 'manual_hold') { resolveCurrent('manual_hold', st.statusDetail || '验证挑战'); return; }
+      else if (st === 'failed') { resolveCurrent('failed', st.statusDetail || '失败'); return; }
+    } catch {}
+  }
   // 到点则直接开下一篇（pump 闹钟可靠，抗 SW 回收）；未到点则挂一次性闹钟兜底。
   if (Date.now() >= nextAllowedAt) tryAdvance();
   else armNextTimer();
@@ -369,19 +414,19 @@ chrome.tabs.onUpdated.addListener((tabId, info, tab) => {
 // 标签页被关闭（发布后 XHS 可能自动关闭结果页 / 用户手关）：清理引用并兜底释放锁，
 // 避免 current/busy 悬空导致调度器卡死、下一篇永远不开。
 chrome.tabs.onRemoved.addListener((tabId) => {
-  if (awaitingTabId === tabId) awaitingTabId = null;
+  if (awaitingTabId === tabId) { awaitingTabId = null; chrome.storage.local.remove('awaitingTabId').catch(() => {}); }
   if (lastPublishedTabId === tabId) lastPublishedTabId = null;
   if (current && current.tabId === tabId) {
     if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
     if (!current.resolved) {
       // 进行中的标签被关：释放锁，让调度器开新标签续发下一篇
       // （当前 picked 任务留在服务端，不重复本篇，避免重复发布同一笔记）
-      current = null;
+      current = null; currentTaskId = null; chrome.storage.local.remove('currentTaskId').catch(() => {});
       busy = false;
       broadcast({ kind: 'warn', msg: '发布标签页被关闭，已释放并准备续发下一篇' });
       if (schedulerActive && !paused) scheduleNext();
     } else {
-      current = null;
+      current = null; currentTaskId = null; chrome.storage.local.remove('currentTaskId').catch(() => {});
     }
   }
 });
@@ -467,14 +512,17 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         sendResponse({ ok: true, ...schedulerState(), msg: '已继续批量发布' });
       } else if (msg.type === 'stopNow') {
         // 立即停止并清理当前（用于紧急停止）
+        const _curTab = current && current.tabId != null ? current.tabId : null;
+        const _aw = awaitingTabId != null ? awaitingTabId : null;
+        const _lp = lastPublishedTabId != null ? lastPublishedTabId : null;
         schedulerActive = false; paused = false; nextAllowedAt = 0;
         chrome.alarms.clear('nextPublish').catch(() => {}); // 立即停止待发的「开下一篇」闹钟
-        persistSched();
+        current = null; awaitingTabId = null; lastPublishedTabId = null; currentTaskId = null; busy = false;
+        chrome.storage.local.set({ nextPublishAt: 0, awaitingTabId: null, currentTaskId: null }).catch(() => {});
         if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
-        if (current && current.tabId != null) chrome.tabs.remove(current.tabId).catch(() => {});
-        if (awaitingTabId != null) chrome.tabs.remove(awaitingTabId).catch(() => {});
-        if (lastPublishedTabId != null) chrome.tabs.remove(lastPublishedTabId).catch(() => {});
-        current = null; awaitingTabId = null; lastPublishedTabId = null; busy = false;
+        if (_curTab != null) chrome.tabs.remove(_curTab).catch(() => {});
+        if (_aw != null) chrome.tabs.remove(_aw).catch(() => {});
+        if (_lp != null) chrome.tabs.remove(_lp).catch(() => {});
         sendResponse({ ok: true, ...schedulerState(), msg: '已停止' });
       } else if (msg.type === 'getSched') {
         sendResponse({ ok: true, ...schedulerState() });
