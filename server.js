@@ -211,6 +211,18 @@ function getNextPublishAt() {
   return cdp || ext || 0;
 }
 
+// 发布间隔：套餐频率档只规定「最短间隔」下限（反爬安全），用户设置若更大则取其大；
+// 随机延迟同理取用户设置（无则用套餐档位范围）。避免套餐 min 直接覆盖用户自定义间隔。
+function effectiveInterval(stored) {
+  const iv = planIntervalSeconds(DATA);
+  const base = Number(stored && stored.publishIntervalSeconds) || iv.publishIntervalSeconds;
+  const rand = Number(stored && stored.publishIntervalRandomDelaySeconds);
+  return {
+    publishIntervalSeconds: Math.max(base, iv.publishIntervalSeconds),
+    publishIntervalRandomDelaySeconds: Number.isFinite(rand) && rand > 0 ? rand : iv.publishIntervalRandomDelaySeconds,
+  };
+}
+
 const PROVIDERS = {
   deepseek: { baseUrl: 'https://api.deepseek.com/v1', model: 'deepseek-chat' },
   doubao: { baseUrl: 'https://ark.cn-beijing.volces.com/api/v3', model: 'doubao-seed-1-6-250615' },
@@ -456,8 +468,9 @@ async function runPump(settings) {
 
       // 节奏控制（CDP 模式用配置间隔；dry-run 用短间隔便于演示）
       if (mode === 'cdp') {
-        const base = (settings.publishIntervalSeconds ?? 500) * 1000;
-        const extra = (settings.publishIntervalRandomDelaySeconds ?? 200) * 1000 * Math.random();
+        const eff = effectiveInterval(settings);
+        const base = eff.publishIntervalSeconds * 1000;
+        const extra = eff.publishIntervalRandomDelaySeconds * 1000 * Math.random();
         cdpNextPublishAt = Date.now() + base + extra;
         console.log('[runPump] CDP countdown set at=' + cdpNextPublishAt + ' delta=' + (base + extra) + 'ms');
         const { interrupted } = await sleepInterruptible(base + extra);
@@ -718,15 +731,17 @@ const server = http.createServer(async (req, res) => {
     if (p === '/api/settings' && method === 'GET') {
       const s = await readStore(stores.settings, {});
       const merged = { ...DEFAULT_SETTINGS, ...s };
-      const iv = planIntervalSeconds(DATA);
       const plan = resolvedPlan(DATA);
+      // 套餐只规定最短间隔下限；用户设置更大则取用户值（尊重设置），更小才用套餐下限兜底
+      const eff = effectiveInterval(merged);
       return sendJSON(res, 200, {
         appVersion: APP_VERSION,
         ...merged,
-        // 把用户自己设置的间隔原值保留下来，供设置页回显；实际发布仍用下方 ...iv 的套餐档位值
+        // 把用户自己设置的间隔原值保留下来，供设置页回显
         userPublishIntervalSeconds: merged.publishIntervalSeconds,
         userPublishIntervalRandomDelaySeconds: merged.publishIntervalRandomDelaySeconds,
-        ...iv, // 频率档位覆盖用户自定义间隔：套餐决定两篇之间的延时
+        publishIntervalSeconds: eff.publishIntervalSeconds,
+        publishIntervalRandomDelaySeconds: eff.publishIntervalRandomDelaySeconds,
         plan: { key: plan.key, label: plan.label, autoSubmit: plan.autoSubmit, freqTier: plan.freqTier },
         maxAccounts: maxAccounts(DATA),
       });
@@ -1170,16 +1185,17 @@ const server = http.createServer(async (req, res) => {
       await writeStore(stores.tasks, mergeTask(tasks, task));
       const settings = { ...DEFAULT_SETTINGS, ...(await readStore(stores.settings, {})) };
       const effAuto = effectiveAutoSubmit(settings, DATA);
-      const iv = planIntervalSeconds(DATA);
+      // 发布间隔：尊重用户设置，套餐只作最短间隔下限
+      const eff = effectiveInterval(settings);
       return sendJSON(res, 200, {
         ok: true, task,
         serverUrl: `http://127.0.0.1:${PORT}`,
         autoSubmit: effAuto,
         humanTyping: settings.humanTyping,
         qianfanUrl: settings.qianfanUrl,
-        // 发布间隔按套餐频率档位下发（标准/优先/极速）
-        publishIntervalSeconds: iv.publishIntervalSeconds,
-        publishIntervalRandomDelaySeconds: iv.publishIntervalRandomDelaySeconds,
+        // 发布间隔沿用用户设置（套餐只规定最短下限）
+        publishIntervalSeconds: eff.publishIntervalSeconds,
+        publishIntervalRandomDelaySeconds: eff.publishIntervalRandomDelaySeconds,
       });
     }
     // 插件上报「下一篇最早发布时刻」：供桌面批量发布页同步显示倒计时
