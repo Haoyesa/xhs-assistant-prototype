@@ -187,9 +187,18 @@ $('#saveCfgBtn').onclick = async () => {
   if (r.ok) loadCfg();
 };
 
-// ---- CSV 解析（支持引号字段与字段内换行）----
+// ---- CSV 编码检测与解析（支持引号字段与字段内换行）----
+function decodeBuffer(buf) {
+  // 先按 UTF-8 解码；若出现替换字符，则按 GBK/GB18030 重解
+  let utf8 = '';
+  try { utf8 = new TextDecoder('utf-8').decode(buf); } catch (e) { utf8 = ''; }
+  if (!utf8.includes('\uFFFD')) return utf8;
+  try { return new TextDecoder('gbk').decode(buf); } catch (e) {
+    try { return new TextDecoder('gb18030').decode(buf); } catch (e2) { return utf8; }
+  }
+}
 function parseCSV(text) {
-  text = text.replace(/^﻿/, ''); // 去 BOM
+  text = text.replace(/^\uFEFF/, ''); // 去 UTF-8 BOM
   const rows = []; let row = []; let field = ''; let q = false; let i = 0;
   while (i < text.length) {
     const c = text[i];
@@ -210,9 +219,10 @@ function parseCSV(text) {
   return rows.filter(r => r.some(c => c.trim() !== ''));
 }
 
+function cleanHeader(h) { return (h || '').replace(/^\uFEFF/, '').trim().toLowerCase(); }
 function pickCols(header, names) {
   for (const n of names) {
-    const idx = header.findIndex(h => (h || '').trim().toLowerCase() === n.toLowerCase());
+    const idx = header.findIndex(h => cleanHeader(h) === n.toLowerCase());
     if (idx >= 0) return idx;
   }
   return -1;
@@ -223,13 +233,17 @@ $('#parseBtn').onclick = () => {
   if (!f) { $('#parseMsg').textContent = '请先选择 CSV 文件'; $('#parseMsg').className = 'msg bad'; return; }
   const reader = new FileReader();
   reader.onload = () => {
-    const raw = parseCSV(reader.result);
+    const text = decodeBuffer(reader.result);
+    const raw = parseCSV(text);
     if (raw.length < 2) { $('#parseMsg').textContent = 'CSV 内容过少（至少含表头+1 行）'; $('#parseMsg').className = 'msg bad'; return; }
     const header = raw[0];
     const idIdx = pickCols(header, ['宝贝id', '宝贝ID', '商品id', 'id', 'itemid', '宝贝ID'.toLowerCase()]);
     const titleIdx = pickCols(header, ['标题', '宝贝标题', '商品标题', 'name', '商品名称']);
     const contentIdx = pickCols(header, ['内容', '详情', '描述', 'desc', 'description']);
-    if (idIdx < 0 && titleIdx < 0) { $('#parseMsg').textContent = '未找到「宝贝id」或「标题」列'; $('#parseMsg').className = 'msg bad'; return; }
+    if (idIdx < 0 && titleIdx < 0) {
+      $('#parseMsg').textContent = '未找到「宝贝id」或「标题」列。检测到的表头：' + header.map(cleanHeader).join(' / ');
+      $('#parseMsg').className = 'msg bad'; return;
+    }
     rows = [];
     for (let r = 1; r < raw.length; r++) {
       const cells = raw[r];
@@ -243,7 +257,7 @@ $('#parseBtn').onclick = () => {
     renderPreview();
     updateGenBtn();
   };
-  reader.readAsText(f, 'utf-8');
+  reader.readAsArrayBuffer(f);
 };
 
 function renderPreview() {
