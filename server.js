@@ -24,7 +24,7 @@ fs.mkdirSync(UPLOADS, { recursive: true });
 const PORT = process.env.PORT || 5199;
 
 // 应用版本：端口被占用时用于判断「占用者是否为同类后端」（同类则复用，否则提示）
-let APP_VERSION = '0.2.58';
+let APP_VERSION = '0.3.0';
 try {
   const pkg = JSON.parse(fs.readFileSync(path.join(__dirname, 'package.json'), 'utf8'));
   if (pkg && pkg.version) APP_VERSION = String(pkg.version);

@@ -350,6 +350,7 @@ async function loadSettings() {
   $('#setTitlePrompt').value = s.titlePrompt || '';
   $('#setContentPrompt').value = s.contentPrompt || '';
   $('#setTopicsPrompt').value = s.topicsPrompt || '';
+  if (s.appVersion) { const v = $('#appVer'); if (v) v.textContent = 'v' + s.appVersion; }
   updatePublishHint();
 }
 const PUBLISH_HINTS = {
