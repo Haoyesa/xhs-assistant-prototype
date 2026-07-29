@@ -40,6 +40,13 @@ $('autoToggle').addEventListener('click', () => {
 
 $('refresh').addEventListener('click', () => { refresh(); status('已刷新状态'); });
 
+// 一键打开扩展选项页（绑定账号 / 比特窗口 ID）
+$('openOptions').addEventListener('click', () => {
+  try { chrome.runtime.openOptionsPage(); } catch (e) { /* 忽略 */ }
+  status('已打开扩展设置页');
+  setTimeout(() => window.close(), 200);
+});
+
 // ---- 批量发布队列控制 ----
 function schedLabel(s) {
   if (!s) return '队列：未开始';
