@@ -35,10 +35,11 @@ xhs-assistant-prototype/
    - 勾选素材 → 「生成笔记并入队」：`POST /api/batch/enqueue` 对每个素材调用 `aiGenerateNote()`。
    - AI 适配器走 DeepSeek / 豆包 / 自定义 OpenAI 兼容接口（设置里填 Key）；无 Key 时本地兜底，离线可用。
    - 生成内容：精简标题、正文（2–3 段、80–150 字）、热门话题，全部可配置提示词。
-3. **发布（Batch，过渡期）**
-   - 「开始批量发布」：`POST /api/batch/pump` 顺序消费队列，按 `dry-run`（模拟）或 `cdp`（真实浏览器）执行。
-   - CDP 模式：`cdp-publisher.js` 打开创作者发布页 → 上传图 → 关联商品 → 填标题/正文/话题 → 提交 → 验证。
-   - 节奏控制：CDP 模式用 `publishIntervalSeconds + 随机延迟`；检测到验证挑战即停下交人工（不破解）。
+3. **发布（Batch，插件驱动）**
+   - 「开始批量发布」：在创作者页悬浮面板或扩展弹窗点击 → 发 `startPublish` 给 background 调度器（不再走 `POST /api/batch/pump` 的后台按钮，旧 CDP 模式仅作兼容保留）。
+   - 调度流程：background `startPublish` → `pullNext()` 按本窗口绑定账号（`?accountId=`）向 `/api/ext/next` 拉任务 → `openNextTab()` 开新创作者标签 → `fillTab` 注入填充 → 用已验证可用的 `chrome.debugger` 真实点击「发布」→ 成功后倒计时归零自动开下一篇。
+   - 多账号隔离：每个比特窗口各自绑定不同 `accountId`，调度器只消费本账号队列，互不抢、可并行。
+   - 节奏控制：每账号独立 `interval`（默认 30s）间隔；检测到验证挑战即停下交人工（不破解）。
 
 ## 数据模型（data/*.json）
 
