@@ -1819,7 +1819,8 @@ async function runFill(task, autoSubmit, serverUrl, humanTyping) {
       await reportDone(task.id, 'failed', r.detail, __delayMs);
     } else if (r.published) {
       // 真正发布成功：补写「下一篇倒计时」并上报后端，供桌面批量发布页同步显示。
-      // 优先用后台已算好的 nextPublishAt；没有则用后端「发布间隔+随机延迟」重新计算。
+      // 优先用后台已算好的 nextPublishAt；没有则用 runFill 开头已取到的 delayMs 计算，
+      // 避免再调一次 getIntervalMs() 产生新的随机值，导致插件调度器与桌面端倒计时不一致。
       try {
         const cur = await new Promise((res) => chrome.storage.local.get({ nextPublishAt: 0 }, (r) => res(r.nextPublishAt || 0)));
         let at = 0;
@@ -1827,7 +1828,8 @@ async function runFill(task, autoSubmit, serverUrl, humanTyping) {
           at = cur;
           console.log('[黑猫] 使用后台已写 countdown:', at, 'delta=', (at - Date.now()) + 'ms');
         } else {
-          at = Date.now() + await getIntervalMs();
+          const d = window.__xhsLastDelayMs || await getIntervalMs();
+          at = Date.now() + d;
           chrome.storage.local.set({ nextPublishAt: at });
           console.log('[黑猫] 重新计算 countdown:', at, 'delta=', (at - Date.now()) + 'ms');
         }

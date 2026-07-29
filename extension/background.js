@@ -166,17 +166,22 @@ function computeDelay(next) {
 
 // 开一个全新的图文发布标签（每篇一个），标记 awaitingTabId，等 onUpdated 加载完再填充
 function openNextTab() {
-  if (busy || paused || !schedulerActive || current || awaitingTabId) return;
+  if (busy || paused || !schedulerActive || current || awaitingTabId) {
+    console.log('[黑猫][BG] openNextTab skipped: state=', schedulerState());
+    return;
+  }
+  console.log('[黑猫][BG] openNextTab opening new tab...');
   // 关掉所有残留的创作者标签（含刚发布完保留的倒计时标签 / SW 回收遗留的标签），每篇都开新标签，
   // 避免标签堆积，也让「下一篇倒计时」自然转移到新标签上继续读秒。
   chrome.tabs.query({ url: 'https://creator.xiaohongshu.com/*' }, (tabs) => {
     for (const t of (tabs || [])) { if (t.id != null) chrome.tabs.remove(t.id).catch(() => {}); }
     lastPublishedTabId = null;
     chrome.tabs.create({ url: CREATOR_URL, active: true }, (tab) => {
-      if (!tab || tab.id == null) return;
+      if (!tab || tab.id == null) { console.error('[黑猫][BG] chrome.tabs.create returned no tab'); return; }
       awaitingTabId = tab.id;
       chrome.storage.local.set({ awaitingTabId: tab.id }).catch(() => {}); // 持久化，抗 SW 回收后 onUpdated 丢失
       broadcast({ kind: 'info', msg: '已打开新的发布标签，等待加载…' });
+      console.log('[黑猫][BG] openNextTab created tabId=', tab.id);
     });
   });
 }
@@ -255,6 +260,7 @@ function startPolling(taskId) {
 // reportTabId：content script 回报时所在标签 id（手动拉取路径后台未跟踪 current，用它兜底）
 // delayMs：content script 回报时携带的真实间隔（手动拉取路径没走 fillTab，用它覆盖默认 lastDelayMs）
 function resolveCurrent(kind, detail, reportTabId, delayMs) {
+  console.log('[黑猫][BG] resolveCurrent kind=', kind, 'detail=', detail, 'delayMs=', delayMs, 'state=', schedulerState());
   const hadCurrent = !!current && !current.resolved;
   if (!hadCurrent) {
     // 手动拉取路径：后台未通过 fillTab 跟踪 current，但只要调度器在跑（或发布成功）就继续下一篇
@@ -291,15 +297,17 @@ function resolveCurrent(kind, detail, reportTabId, delayMs) {
 
 // 等配置延时后开下一篇（用 nextAllowedAt 保证延时，并每次 SW 唤醒都重新 arm 定时器，抗 SW 回收）
 async function scheduleNext() {
-  if (!schedulerActive || paused) return;
+  if (!schedulerActive || paused) { console.log('[黑猫][BG] scheduleNext skipped: not active or paused'); return; }
   // 先写好「下一篇最早发布时刻」：即便本批已空也先写，保证「最后一篇」的倒计时能完整走完，
   // 避免 content script 的 reportSchedule 刚把倒计时打出来几秒、这里又立刻 clearSchedule 把它清掉（两侧误以为没生效）。
   nextAllowedAt = Date.now() + lastDelayMs;
-  // 写入 storage，供创作者页 Toast 显示「下一篇倒计时」（同时持久化调度状态，抗 SW 回收）
-  chrome.storage.local.set({ nextPublishAt: nextAllowedAt }).catch(() => {});
-  persistSched();
-  // 上报给后端，供桌面「批量发布」页同步显示倒计时
-  notifyServerSchedule(nextAllowedAt);
+  console.log('[黑猫][BG] scheduleNext nextAllowedAt=', nextAllowedAt, 'delayMs=', Math.round(lastDelayMs));
+    // 写入 storage，供创作者页 Toast 显示「下一篇倒计时」（同时持久化调度状态，抗 SW 回收）
+    chrome.storage.local.set({ nextPublishAt: nextAllowedAt }).catch(() => {});
+    persistSched();
+    // 上报给后端，供桌面「批量发布」页同步显示倒计时
+    notifyServerSchedule(nextAllowedAt);
+    console.log('[黑猫][BG] published -> scheduleNext scheduled');
   // 先挂「开下一篇」闹钟（在 await 之前）：即便随后 SW 被回收、/api/batch/queue 的 fetch 被中断，
   // 闹钟已由浏览器持久维护，到点仍会唤醒 SW 触发 tryAdvance，避免「倒计时走完却不再发下一篇」。
   armNextTimer();
@@ -317,7 +325,7 @@ async function scheduleNext() {
     persistSched();
     broadcast({ kind: 'idle', msg: '队列已空，没有待发任务了 ✓' });
     const remain = Math.max(1000, nextAllowedAt - Date.now());
-    chrome.alarms.create('clearSchedule', { when: Date.now() + remain + 1500 });
+    chrome.alarms.create('clearSchedule', { delayInMinutes: (remain + 1500) / 60000 });
   }
 }
 // 清除「下一篇倒计时」：重置内存态、清 storage、上报后端 0（两侧都不再显示读秒）
@@ -340,13 +348,17 @@ async function notifyServerSchedule(at) {
 // 重新挂「开下一篇」的定时器：改用 chrome.alarms 一次性闹钟（可靠跨 SW 回收）。
 // MV3 的 Service Worker 空闲约 30s 会被系统回收，setTimeout 长延时必然丢失；
 // 而 chrome.alarms 由浏览器持久维护，即使 SW 被回收也能在到点时唤醒 SW 触发 tryAdvance。
+// 使用 delayInMinutes（相对延迟）而非 when（绝对时间戳），避免系统时间/时钟漂移导致 alarm 失效。
 function armNextTimer() {
   if (!schedulerActive || paused) return;
-  const when = Math.max(Date.now() + 1500, nextAllowedAt);
-  chrome.alarms.create('nextPublish', { when });
+  const delayMs = Math.max(1500, nextAllowedAt - Date.now());
+  const delayMinutes = delayMs / 60000;
+  console.log('[黑猫][BG] armNextTimer delayMs=', Math.round(delayMs), 'nextAllowedAt=', nextAllowedAt, 'state=', schedulerState());
+  chrome.alarms.create('nextPublish', { delayInMinutes });
 }
 // 推进到下一篇：满足所有安全条件才真正 openNextTab（倒计时到点后由 pump/定时器调用）
-function tryAdvance() {
+function tryAdvance(source = 'unknown') {
+  console.log('[黑猫][BG] tryAdvance source=', source, 'state=', schedulerState(), 'now>=next?', Date.now() >= nextAllowedAt);
   if (!schedulerActive || paused || busy || current || awaitingTabId) {
     // 还没准备好（正忙/有进行中任务/等待新标签加载）：稍后由 pump 或本函数重试
     if (schedulerActive && !paused) armNextTimer();
@@ -364,11 +376,13 @@ async function schedulerStep() {
   const s = await storageGet();
   if (!s.autoConnect) return;
   if (!schedulerActive || paused) return;
-  // 若等待中的标签已不存在（被关/卡死），释放占据，避免 tryAdvance 永远因 awaitingTabId 占位而卡死
+  // 若等待中的标签已不存在（被关/卡死），释放占据，避免 tryAdvance 永远因 awaitingTabId 占位而卡死；
+  // 若标签仍存在且已加载完成，但 onUpdated 因 SW 回收未触发，这里补填。
   if (awaitingTabId != null) {
     try {
       const t = await new Promise((res) => chrome.tabs.get(awaitingTabId, (tab) => res(tab)));
       if (!t) { awaitingTabId = null; chrome.storage.local.remove('awaitingTabId').catch(() => {}); }
+      else if (t.status === 'complete') { awaitingTabId = null; fillTab(t.id); return; }
     } catch { awaitingTabId = null; chrome.storage.local.remove('awaitingTabId').catch(() => {}); }
   }
   // 后台兜底：当前任务已在服务端完成（发布/失败/人工）但 startPolling 的 setInterval 因 SW 回收而丢失，
@@ -383,7 +397,8 @@ async function schedulerStep() {
     } catch {}
   }
   // 到点则直接开下一篇（pump 闹钟可靠，抗 SW 回收）；未到点则挂一次性闹钟兜底。
-  if (Date.now() >= nextAllowedAt) tryAdvance();
+  console.log('[黑猫][BG] schedulerStep state=', schedulerState(), 'now>=next?', Date.now() >= nextAllowedAt);
+  if (Date.now() >= nextAllowedAt) tryAdvance('schedulerStep');
   else armNextTimer();
 }
 
@@ -394,7 +409,11 @@ chrome.alarms.onAlarm.addListener((a) => {
   // 队列已空后的兜底清理：间隔走完再清除倒计时（仅当没重新开始新批次时）
   else if (a.name === 'clearSchedule') { if (!schedulerActive) clearSchedule(); }
   // 到点开下一篇：由可靠闹钟唤醒（抗 SW 回收）。临近即触发，真正校验在 tryAdvance 内做。
-  else if (a.name === 'nextPublish') { if (Date.now() >= nextAllowedAt - 3000) tryAdvance(); else armNextTimer(); }
+  else if (a.name === 'nextPublish') {
+    console.log('[黑猫][BG] alarm nextPublish fired at=', Date.now(), 'nextAllowedAt=', nextAllowedAt, 'state=', schedulerState());
+    if (Date.now() >= nextAllowedAt - 3000) tryAdvance('alarm.nextPublish');
+    else armNextTimer();
+  }
 });
 
 // 创作者页加载完成：仅填充「本调度器刚开的新标签页」（awaitingTabId 路径）。
