@@ -40,12 +40,16 @@
           opt.value = a.id;
           const parts = [a.name];
           if (a.online) parts.push('●在线');
-          if (a.bitProfile) parts.push('[' + a.bitProfile + ']');
+          if (a.bitProfile) parts.push('[已配ID]');
           opt.textContent = parts.join(' ');
           sel.appendChild(opt);
         }
+      } else {
+        sel.innerHTML = '<option value="">账号加载失败</option>';
       }
-    } catch (e) { /* 服务端不可用时仍允许保存本地设置 */ }
+    } catch (e) {
+      sel.innerHTML = '<option value="">账号加载失败：' + (e && e.message ? e.message : '连接失败') + '</option>';
+    }
     sel.value = selected || '';
   }
 
@@ -61,6 +65,10 @@
     const serverUrl = $('serverUrl').value.trim();
     const accountId = $('accountId').value;
     const bitProfile = $('bitProfile').value.trim();
+    if (!accountId) {
+      $('status').textContent = '⚠️ 请先选择一个后台账号，否则扩展只处于「旧单账号兼容模式」，不会被多账号路由。';
+      return;
+    }
     await new Promise((res) => chrome.storage.local.set(
       { serverUrl, extAccount: accountId, extProfile: bitProfile }, res));
     $('status').textContent = '已保存本地设置。';
@@ -85,6 +93,9 @@
         + (pending != null ? '（该账号待发 ' + pending + ' 篇）' : '');
       // 刷新下拉，显示在线状态变化
       await refreshAccounts(serverUrl, accountId);
+      if (!bitProfile && accountId) {
+        $('status').textContent += '；注意：未填比特窗口 ID，后台无法通过按钮打开本窗口。';
+      }
     } catch (e) {
       $('status').textContent = '已保存，但注册实例失败：' + (e && e.message ? e.message : e);
     }

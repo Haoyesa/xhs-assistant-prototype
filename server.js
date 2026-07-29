@@ -1164,9 +1164,9 @@ const server = http.createServer(async (req, res) => {
     }
 
     // ===== 比特浏览器本地 API 代理（按指纹配置打开/关闭隔离窗口）=====
-    // 比特浏览器多窗口并行：每个配置一个独立指纹 + 独立代理 IP。本后端不直接驱动比特，
-    // 只把「打开/关闭某个配置窗口」的指令转发给比特本地 API（默认 http://127.0.0.1:54345）。
-    // 打开：POST /api/browser/open { seq } ；关闭：POST /api/browser/close { seq } ；列表：GET /api/browser/list
+    // 比特浏览器多窗口并行：每个配置一个独立指纹 + 独立代理 IP。本后端只把指令转发给比特本地 API。
+    // 比特 Local API 默认 http://127.0.0.1:54345，路径为 /browser/*，不需要 /api 前缀。
+    // 打开/关闭窗口都需要传窗口配置 ID（UUID），不是 seq；列表是 POST /browser/list。
     async function bitForward(rel, method2, bodyObj) {
       const settings = { ...DEFAULT_SETTINGS, ...(await readStore(stores.settings, {})) };
       const host = (settings.bitApiHost || 'http://127.0.0.1:54345').replace(/\/+$/, '');
@@ -1182,15 +1182,18 @@ const server = http.createServer(async (req, res) => {
       let data = null; try { data = JSON.parse(text); } catch { data = { raw: text }; }
       return { r, data };
     }
+    function bitOk(data) {
+      return data && (data.success === true || data.code === 0 || data.code === '0');
+    }
     if (p.startsWith('/api/bitbrowser/') && method === 'POST') {
-      const rel = p === '/api/bitbrowser/open' ? '/api/browser/open'
-        : p === '/api/bitbrowser/close' ? '/api/browser/close' : null;
+      const rel = p === '/api/bitbrowser/open' ? '/browser/open'
+        : p === '/api/bitbrowser/close' ? '/browser/close' : null;
       if (!rel) return sendJSON(res, 404, { ok: false, detail: 'unknown endpoint' });
       const body = await readBody(req);
-      if (!body.seq) return sendJSON(res, 400, { ok: false, detail: '缺少 seq（比特指纹配置序号）' });
+      if (!body.id) return sendJSON(res, 400, { ok: false, detail: '缺少 id（比特窗口 ID / 配置 UUID）' });
       try {
-        const { r, data } = await bitForward(rel, 'POST', { seq: String(body.seq) });
-        const ok = r.ok && data && data.code === 0;
+        const { r, data } = await bitForward(rel, 'POST', { id: String(body.id) });
+        const ok = r.ok && bitOk(data);
         return sendJSON(res, 200, { ok, detail: ok ? '已发送指令' : ((data && (data.msg || data.message)) || ('比特返回 ' + r.status)), data });
       } catch (e) {
         return sendJSON(res, 200, { ok: false, detail: '调用比特浏览器失败：' + e.message + '（确认比特客户端已运行且本地 API 端口正确）' });
@@ -1198,10 +1201,10 @@ const server = http.createServer(async (req, res) => {
     }
     if (p === '/api/bitbrowser/list' && method === 'GET') {
       try {
-        const { r, data } = await bitForward('/api/browser/list?page=1&page_size=200', 'GET');
+        const { r, data } = await bitForward('/browser/list', 'POST', { page: 0, pageSize: 200 });
         const list = (data && data.data && Array.isArray(data.data.list)) ? data.data.list
           : (data && Array.isArray(data.list)) ? data.list : [];
-        return sendJSON(res, 200, { ok: r.ok, detail: r.ok ? 'ok' : ((data && (data.msg || data.message)) || ('比特返回 ' + r.status)), list });
+        return sendJSON(res, 200, { ok: r.ok && bitOk(data), detail: (data && (data.msg || data.message)) || (r.ok ? 'ok' : ('比特返回 ' + r.status)), list });
       } catch (e) {
         return sendJSON(res, 200, { ok: false, detail: '调用比特浏览器失败：' + e.message, list: [] });
       }

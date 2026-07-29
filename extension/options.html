@@ -56,9 +56,9 @@
     </div>
 
     <div class="field">
-      <label for="bitProfile">比特浏览器配置名</label>
-      <input id="bitProfile" type="text" placeholder="例如 BitBrowser-环境1 / 窗口A" />
-      <div class="hint">本窗口对应的比特指纹配置标识，仅用于区分与记忆，可留空。</div>
+      <label for="bitProfile">比特窗口 ID（打开窗口用）</label>
+      <input id="bitProfile" type="text" placeholder="粘贴比特客户端里的「窗口 ID」UUID" />
+      <div class="hint">本窗口对应的比特浏览器配置 ID（UUID）。后台账号页「打开窗口」按钮会拿这个 ID 调比特 Local API 打开本窗口。打开比特客户端 → 对应窗口 ⋮ →「复制窗口 ID」后粘贴。</div>
     </div>
 
     <button id="saveBtn">保存并注册实例</button>

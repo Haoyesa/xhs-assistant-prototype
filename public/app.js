@@ -326,18 +326,20 @@ async function loadAccounts() {
       <div class="acc-info">
         <div class="acc-name">${esc(a.name)} ${a.online ? '<span class="acc-online">● 在线</span>' : '<span class="acc-offline">○ 离线</span>'}</div>
         <div class="acc-meta">
-          比特配置名：<input class="acc-bit" value="${esc(a.bitProfile || '')}" placeholder="比特窗口配置名" style="width:170px" />
+          比特窗口 ID：<input class="acc-bit" value="${esc(a.bitProfile || '')}" placeholder="粘贴比特窗口 UUID" style="width:260px" />
           <button class="mini save-bit" data-id="${esc(a.id)}">保存</button>
+          <button class="mini pick-bit" data-id="${esc(a.id)}">从比特选</button>
+          <select class="bit-pick" style="display:none;width:220px"></select>
         </div>
         <div class="acc-meta">
           发布间隔(秒)：<input class="acc-iv" value="${esc(a.interval || '')}" placeholder="留空=跟随全局" style="width:110px" />
           <span class="hint-inline">该账号独立节奏，不低于套餐下限</span>
         </div>
-        <div class="acc-meta">绑定于 ${a.createdAt ? new Date(a.createdAt).toLocaleString('zh-CN') : '—'}</div>
+        <div class="acc-meta hint-inline">打开比特客户端 → 对应窗口 ⋮ → 复制窗口 ID，粘贴到上方。</div>
       </div>
       <div class="acc-actions">
-        <button class="mini bit-open" data-seq="${esc(a.bitProfile || '')}" ${a.bitProfile ? '' : 'disabled'}>打开窗口</button>
-        <button class="mini bit-close" data-seq="${esc(a.bitProfile || '')}" ${a.bitProfile ? '' : 'disabled'}>关闭窗口</button>
+        <button class="mini bit-open" data-bitid="${esc(a.bitProfile || '')}" ${a.bitProfile ? '' : 'disabled'}>打开窗口</button>
+        <button class="mini bit-close" data-bitid="${esc(a.bitProfile || '')}" ${a.bitProfile ? '' : 'disabled'}>关闭窗口</button>
         <button class="mini danger del-acc" data-id="${esc(a.id)}">解绑</button>
       </div>
     </div>`).join('');
@@ -355,18 +357,37 @@ async function loadAccounts() {
     if (r.ok) { toast('已更新账号配置', 'ok'); loadAccounts(); } else toast('更新失败', 'err');
   }));
   $$('#accountList .bit-open').forEach((b) => b.addEventListener('click', async () => {
-    const seq = b.dataset.seq;
-    if (!seq) { toast('请先在「比特配置名」填写比特指纹序号', 'err'); return; }
+    const id = b.dataset.bitid;
+    if (!id) { toast('请先在「比特窗口 ID」填写比特窗口 UUID', 'err'); return; }
     b.disabled = true; const old = b.textContent; b.textContent = '打开中…';
-    const r = await callApi('POST', '/api/bitbrowser/open', { seq });
-    b.disabled = !seq; b.textContent = old;
+    const r = await callApi('POST', '/api/bitbrowser/open', { id });
+    b.disabled = !id; b.textContent = old;
     toast(r.ok ? '已发送打开指令（请查看比特客户端）' : ('打开失败：' + (r.detail || '')), r.ok ? 'ok' : 'err');
   }));
   $$('#accountList .bit-close').forEach((b) => b.addEventListener('click', async () => {
-    const seq = b.dataset.seq;
-    if (!seq) return;
-    const r = await callApi('POST', '/api/bitbrowser/close', { seq });
+    const id = b.dataset.bitid;
+    if (!id) return;
+    const r = await callApi('POST', '/api/bitbrowser/close', { id });
     toast(r.ok ? '已发送关闭指令' : ('关闭失败：' + (r.detail || '')), r.ok ? 'ok' : 'err');
+  }));
+  $$('#accountList .pick-bit').forEach((b) => b.addEventListener('click', async () => {
+    const acc = b.closest('.acc');
+    const sel = acc.querySelector('.bit-pick');
+    const input = acc.querySelector('.acc-bit');
+    b.disabled = true; b.textContent = '加载中…';
+    try {
+      const r = await callApi('GET', '/api/bitbrowser/list');
+      if (!r.ok || !Array.isArray(r.list)) { toast('获取比特窗口列表失败：' + (r.detail || ''), 'err'); return; }
+      if (!r.list.length) { toast('比特列表为空（确认比特客户端已运行）', 'err'); return; }
+      sel.innerHTML = '<option value="">选择窗口…</option>' + r.list.map((w) => {
+        const wid = esc(w.id || '');
+        const label = esc((w.name || w.seq || '未命名') + ' · ' + wid.slice(0, 8));
+        return `<option value="${wid}">${label}</option>`;
+      }).join('');
+      sel.style.display = 'inline-block';
+      sel.onchange = () => { if (sel.value) { input.value = sel.value; sel.style.display = 'none'; b.textContent = '从比特选'; } };
+    } catch (e) { toast('加载失败', 'err'); }
+    finally { b.disabled = false; if (b.textContent === '加载中…') b.textContent = '从比特选'; }
   }));
 }
 
@@ -389,8 +410,8 @@ async function loadInstances() {
     return `<div class="inst ${it.online ? 'inst-on' : 'inst-off'}">
       <span class="inst-dot"></span>
       <div class="inst-main">
-        <div class="inst-id">${esc(it.profileName || it.instanceId)} <span class="inst-tag">${esc(it.instanceId)}</span></div>
-        <div class="inst-meta">账号：${esc(acc)} ｜ 比特配置：${esc(it.profileName || '—')} ｜ 扩展 v${esc(it.extVersion || '—')}</div>
+        <div class="inst-id">${esc(it.instanceId)}</div>
+        <div class="inst-meta">账号：${esc(acc)} ｜ 比特窗口 ID：${esc(it.profileName || '未填')} ｜ 扩展 v${esc(it.extVersion || '—')}</div>
         <div class="inst-meta">最后心跳：${ago != null ? ago + ' 秒前' : '—'} ｜ 首次接入：${it.firstSeen ? new Date(it.firstSeen).toLocaleString('zh-CN') : '—'}</div>
       </div>
       <span class="inst-state">${it.online ? '● 在线' : '○ 离线'}</span>
@@ -604,12 +625,12 @@ loadSettings();
     let acc;
     try { acc = await callApi('GET', '/api/accounts'); } catch { toast('读取账号失败', 'err'); return; }
     const list = (acc.accounts || []).filter((x) => x.bitProfile);
-    if (!list.length) { toast('没有账号填写比特配置名，无法打开', 'err'); return; }
+    if (!list.length) { toast('没有账号填写比特窗口 ID，无法打开', 'err'); return; }
     btn.disabled = true; const old = btn.textContent; btn.textContent = '打开中…';
     let ok = 0, fail = 0;
     for (const a of list) {
       try {
-        const r = await callApi('POST', '/api/bitbrowser/open', { seq: a.bitProfile });
+        const r = await callApi('POST', '/api/bitbrowser/open', { id: a.bitProfile });
         if (r.ok) ok++; else fail++;
       } catch { fail++; }
     }
