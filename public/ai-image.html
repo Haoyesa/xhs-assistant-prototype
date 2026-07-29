@@ -95,8 +95,17 @@
           <input id="imgModel" type="text" placeholder="gpt-image-2" />
         </div>
         <div>
-          <label>尺寸 Size（小红书封面建议 1024x1536 竖版 3:4；默认 1024x1024）</label>
-          <input id="imgSize" type="text" placeholder="1024x1024" />
+          <label>尺寸 Size（auto=模型默认；默认 auto）</label>
+          <select id="imgSize">
+            <option value="auto">auto 默认</option>
+            <option value="1024x1024">1024x1024 正方形</option>
+            <option value="1536x1024">1536x1024 横版</option>
+            <option value="1024x1536">1024x1536 竖版</option>
+            <option value="2048x2048">2048x2048 2K正方形</option>
+            <option value="2048x1152">2048x1152 2K横版</option>
+            <option value="3840x2160">3840x2160 4K横版</option>
+            <option value="2160x3840">2160x3840 4K竖版</option>
+          </select>
         </div>
         <div>
           <label>每篇生成张数（1-8）</label>
@@ -161,7 +170,7 @@ async function loadCfg() {
     $('#imgBaseUrl').value = s.imgAiBaseUrl || '';
     $('#imgApiKey').value = s.imgAiApiKey || '';
     $('#imgModel').value = s.imgAiModel || '';
-    $('#imgSize').value = s.imgAiSize || '1024x1024';
+    $('#imgSize').value = s.imgAiSize || 'auto';
     $('#imgCount').value = s.imgAiCount || 1;
     $('#imgExtra').value = s.imgAiExtra || '';
     $('#imgPrompt').value = s.imgAiPromptTemplate || '';
@@ -176,7 +185,7 @@ $('#saveCfgBtn').onclick = async () => {
     imgAiBaseUrl: $('#imgBaseUrl').value.trim(),
     imgAiApiKey: $('#imgApiKey').value.trim(),
     imgAiModel: $('#imgModel').value.trim(),
-    imgAiSize: $('#imgSize').value.trim() || '1024x1536',
+    imgAiSize: $('#imgSize').value.trim() || 'auto',
     imgAiCount: Math.max(1, Math.min(8, parseInt($('#imgCount').value, 10) || 1)),
     imgAiExtra: $('#imgExtra').value.trim(),
     imgAiPromptTemplate: $('#imgPrompt').value,

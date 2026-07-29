@@ -173,7 +173,7 @@ const DEFAULT_SETTINGS = {
   imgAiBaseUrl: 'https://api.aiyungc.cn/v1',
   imgAiApiKey: '',
   imgAiModel: 'gpt-image-2',
-  imgAiSize: '1024x1024',
+  imgAiSize: 'auto',
   imgAiCount: 1,
   imgAiExtra: '{"quality":"low","format":"jpeg"}',
   imgAiPromptTemplate: DEFAULT_IMG_PROMPT,
