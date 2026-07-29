@@ -38,6 +38,7 @@ const stores = {
   account: path.join(DATA, 'account.json'),
   importedFolders: path.join(DATA, 'importedFolders.json'),
   instances: path.join(DATA, 'ext-instances.json'), // 在线插件实例注册表（比特多账号并行）
+  agreement: path.join(DATA, 'agreement.json'), // 免责协议同意状态（首次启动弹窗）
 };
 
 async function readStore(file, fallback) {
@@ -782,6 +783,22 @@ const server = http.createServer(async (req, res) => {
       const cur = await readStore(stores.settings, {});
       await writeStore(stores.settings, { ...DEFAULT_SETTINGS, ...cur, ...body });
       return sendJSON(res, 200, { ok: true });
+    }
+
+    // 免责协议同意状态（首次启动弹窗，落盘 DATA/agreement.json，清缓存不可绕过）
+    if (p === '/api/agreement') {
+      if (method === 'GET') {
+        const a = await readStore(stores.agreement, { agreed: false });
+        return sendJSON(res, 200, { agreed: !!(a && a.agreed), agreedAt: (a && a.agreedAt) || null });
+      }
+      if (method === 'POST') {
+        const body = await readBody(req);
+        if (!body || body.agreed !== true) {
+          return sendJSON(res, 400, { ok: false, error: 'must-agree' });
+        }
+        await writeStore(stores.agreement, { agreed: true, agreedAt: new Date().toISOString() });
+        return sendJSON(res, 200, { ok: true });
+      }
     }
 
     // 账号注册表（套餐配额门禁）：绑定/解绑发布平台账号，受 plan.accounts 限制

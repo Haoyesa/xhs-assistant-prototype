@@ -347,6 +347,29 @@
     </div>
   </div>
 
+  <div id="agreementModal" class="agreement-modal" hidden>
+    <div class="agreement-box" role="dialog" aria-modal="true">
+      <h2>软件许可与免责协议</h2>
+      <div class="agreement-body">
+        <ol class="agr-terms">
+          <li><b>软件性质</b>：本软件按「现状」提供，仅为内容创作辅助工具，不保证其持续可用、无错误、无中断，亦不保证生成内容的合规性或发布结果。</li>
+          <li><b>风险与责任</b>：您使用本软件所产生的任何后果（包括但不限于账号受限、内容下架、平台处罚、第三方索赔或任何直接或间接损失）均由您自行承担，软件提供方不承担任何责任。</li>
+          <li><b>合规义务</b>：您须遵守所在平台规则及相关法律法规。严禁使用本软件从事虚假宣传、搬运侵权、刷量刷评、矩阵群控等违反平台规则或法律的行为。</li>
+          <li><b>内容自检</b>：软件内置的敏感词 / 合规模块仅为本地辅助提醒，命中仅作提示、不自动拦截、不上传，不构成对内容合规性的任何保证；是否发布由您独立判断并全权负责。</li>
+          <li><b>免责范围</b>：在任何情况下，软件提供方均不对因使用或无法使用本软件导致的任何损失承担责任。</li>
+          <li><b>赔偿</b>：因您违反上述义务或法律法规导致软件提供方遭受损失的，您应负责赔偿。</li>
+        </ol>
+        <p class="agr-special">特别提示：内容创作请始终秉持<b>真实、原创、合规</b>的原则。工具是辅助，责任在您。不同意本协议将无法使用本软件。</p>
+      </div>
+      <label class="agreement-check">
+        <input type="checkbox" id="agreeChk" /> 我已阅读并充分理解、同意上述全部条款
+      </label>
+      <div class="agreement-actions">
+        <button id="agreeEnterBtn" class="primary" disabled>同意并进入</button>
+      </div>
+    </div>
+  </div>
+
   <div id="toast" class="toast-wrap"></div>
   <script src="/static/app.js"></script>
 </body>

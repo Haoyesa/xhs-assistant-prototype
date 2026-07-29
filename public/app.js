@@ -644,3 +644,39 @@ loadSettings();
 checkConn();
 loadStats();
 initGenSubNav();
+
+// ---- 首次启动免责协议弹窗（未同意则全屏拦截；同意状态落盘 DATA/agreement.json，清缓存不可绕过）----
+async function ensureAgreement() {
+  const modal = document.getElementById('agreementModal');
+  if (!modal) return;
+  let agreed = false;
+  try {
+    const r = await fetch('/api/agreement');
+    const j = await r.json().catch(() => ({}));
+    agreed = !!(j && j.agreed);
+  } catch { agreed = false; }
+  if (agreed) { modal.hidden = true; return; }
+  modal.hidden = false; // 未同意 → 全屏拦截，无法进入主界面
+  const chk = document.getElementById('agreeChk');
+  const btn = document.getElementById('agreeEnterBtn');
+  if (chk && btn) {
+    chk.addEventListener('change', () => { btn.disabled = !chk.checked; });
+    btn.addEventListener('click', async () => {
+      btn.disabled = true;
+      try {
+        const r = await fetch('/api/agreement', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ agreed: true }),
+        });
+        const j = await r.json().catch(() => ({}));
+        if (j && j.ok) { modal.hidden = true; }
+        else { btn.disabled = false; alert('提交失败，请重试'); }
+      } catch {
+        btn.disabled = false;
+        alert('网络错误，请重试');
+      }
+    });
+  }
+}
+ensureAgreement();

@@ -321,3 +321,18 @@ button.ghost:hover { background: var(--panel2); }
 .about-disclaimer p { margin: 8px 0; font-size: 12.5px; line-height: 1.7; color: var(--muted); }
 .about-disclaimer p b { color: var(--text); }
 .about-special { color: var(--text) !important; font-weight: 700; border-top: 1px dashed var(--border); padding-top: 10px; }
+
+/* 首次启动免责协议弹窗 */
+.agreement-modal { position: fixed; inset: 0; z-index: 9999; display: flex; align-items: center; justify-content: center; background: rgba(10, 12, 16, 0.82); backdrop-filter: blur(4px); padding: 24px; }
+.agreement-modal[hidden] { display: none; }
+.agreement-box { width: min(640px, 100%); max-height: 86vh; display: flex; flex-direction: column; background: var(--bg); border: 1px solid var(--border); border-radius: 18px; box-shadow: 0 24px 80px rgba(0, 0, 0, 0.5); overflow: hidden; }
+.agreement-box h2 { margin: 0; padding: 18px 22px; font-size: 17px; color: var(--text); border-bottom: 1px solid var(--border); background: var(--panel); }
+.agreement-body { padding: 16px 22px; overflow-y: auto; }
+.agr-terms { margin: 0; padding-left: 20px; }
+.agr-terms li { margin: 10px 0; font-size: 13px; line-height: 1.7; color: var(--muted); }
+.agr-terms li b { color: var(--text); }
+.agr-special { margin: 14px 0 0; font-size: 13px; font-weight: 700; color: var(--text); border-top: 1px dashed var(--border); padding-top: 12px; }
+.agreement-check { display: flex; align-items: center; gap: 10px; padding: 14px 22px; font-size: 13px; color: var(--text); border-top: 1px solid var(--border); cursor: pointer; }
+.agreement-check input { width: 16px; height: 16px; accent-color: var(--accent); }
+.agreement-actions { padding: 0 22px 20px; display: flex; justify-content: flex-end; }
+.agreement-actions .primary { min-width: 140px; }
