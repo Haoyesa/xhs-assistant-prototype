@@ -108,9 +108,13 @@
           <div class="card gen-card">
             <div class="card-h">
               <h3>批量作图</h3>
-              <span class="hint">通用封面素材生成器：批量导入商品，自动生成封面与文案素材。</span>
+              <div class="sub-nav">
+                <button class="sub-btn active" data-gen="generator">🎨 批量作图</button>
+                <button class="sub-btn" data-gen="ai-image">🖼️ AI生图</button>
+              </div>
             </div>
-            <iframe src="/generator" class="gen-frame" title="批量作图" loading="lazy"></iframe>
+            <iframe src="/generator" class="gen-frame" data-gen-frame="generator" title="批量作图" loading="lazy"></iframe>
+            <iframe src="/ai-image" class="gen-frame" data-gen-frame="ai-image" title="AI生图" loading="lazy" style="display:none"></iframe>
           </div>
         </section>
 

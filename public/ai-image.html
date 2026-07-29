@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AI 生图 · 黑猫智记AI</title>
+  <style>
+    :root {
+      --bg: #f5f6f8; --panel: #ffffff; --border: #e6e8ec; --radius: 12px;
+      --txt: #1f2329; --muted: #8a909a; --brand: #ff2e4d; --brand2: #ff7a59;
+      --ok: #16a34a; --bad: #dc2626; --warn: #d97706; --shadow: 0 2px 10px rgba(20,20,40,.06);
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; font: 14px/1.6 -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif; color: var(--txt); background: var(--bg); }
+    .wrap { padding: 18px 20px 40px; max-width: 1080px; margin: 0 auto; }
+    h2 { margin: 0 0 2px; font-size: 18px; }
+    .sub { color: var(--muted); font-size: 12px; margin-bottom: 14px; }
+    .card { background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px 18px; margin-bottom: 16px; box-shadow: var(--shadow); }
+    .card h3 { margin: 0 0 12px; font-size: 15px; display: flex; align-items: center; gap: 8px; }
+    label { display: block; font-size: 12px; color: var(--muted); margin: 10px 0 4px; }
+    input[type=text], input[type=password], input[type=number], textarea, select {
+      width: 100%; padding: 9px 11px; border: 1px solid var(--border); border-radius: 9px; background: #fff; color: var(--txt); font-size: 13px; font-family: inherit;
+    }
+    textarea { resize: vertical; min-height: 90px; line-height: 1.5; }
+    .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 0 14px; }
+    .row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+    .row.between { justify-content: space-between; }
+    button { cursor: pointer; border: 1px solid var(--border); background: #fff; color: var(--txt); padding: 9px 16px; border-radius: 9px; font-size: 13px; font-weight: 600; transition: .15s; }
+    button:hover { border-color: #cfd3da; }
+    button.primary { background: linear-gradient(135deg, var(--brand), var(--brand2)); color: #fff; border: none; }
+    button.primary:disabled { opacity: .5; cursor: not-allowed; }
+    button.mini { padding: 5px 10px; font-size: 12px; }
+    .hint { color: var(--muted); font-size: 12px; }
+    code { background: #f0f1f3; padding: 1px 5px; border-radius: 5px; font-size: 12px; }
+    .msg { font-size: 12px; margin-left: 6px; }
+    .msg.ok { color: var(--ok); } .msg.bad { color: var(--bad); }
+    details { border: 1px solid var(--border); border-radius: 9px; padding: 8px 12px; background: #fafbfc; }
+    summary { cursor: pointer; font-size: 13px; font-weight: 600; }
+    .preview { margin-top: 10px; max-height: 220px; overflow: auto; border: 1px solid var(--border); border-radius: 9px; }
+    table { border-collapse: collapse; width: 100%; font-size: 12px; }
+    th, td { border-bottom: 1px solid var(--border); padding: 6px 8px; text-align: left; max-width: 360px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    th { background: #f3f4f6; position: sticky; top: 0; }
+    .bar { height: 10px; border-radius: 6px; background: #ececf0; overflow: hidden; margin: 8px 0; }
+    .bar > i { display: block; height: 100%; width: 0; background: linear-gradient(135deg, var(--brand), var(--brand2)); transition: width .2s; }
+    .log { font: 12px/1.6 ui-monospace, Menlo, Consolas, monospace; background: #1b1d22; color: #d6dae0; border-radius: 9px; padding: 12px; max-height: 280px; overflow: auto; white-space: pre-wrap; }
+    .log .ok { color: #5ee08a; } .log .bad { color: #ff6b6b; } .log .info { color: #8ab4ff; }
+    .badge { display: inline-block; padding: 1px 8px; border-radius: 20px; font-size: 11px; background: #fde8ec; color: var(--brand); font-weight: 600; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h2>🖼️ AI 生图 <span class="badge">批量封面生成</span></h2>
+    <div class="sub">上传 CSV（含 <b>宝贝id</b> 与 <b>标题</b> 列），按你写的提示词逐行生成封面图，自动保存到 <code>images/&lt;商品ID&gt;_&lt;序号&gt;/</code>。</div>
+
+    <!-- 配置 -->
+    <div class="card">
+      <h3>⚙️ 图像生成 API 配置 <span class="hint">（独立于文本 AI，单独配置）</span></h3>
+      <div class="grid2">
+        <div>
+          <label>API Base URL（到 /v1，不含 /images/generations）</label>
+          <input id="imgBaseUrl" type="text" placeholder="https://api.openai.com/v1" />
+        </div>
+        <div>
+          <label>API Key</label>
+          <input id="imgApiKey" type="password" placeholder="sk-..." />
+        </div>
+        <div>
+          <label>模型 Model</label>
+          <input id="imgModel" type="text" placeholder="gpt-image-1 / wanx2.1-t2i-turbo / cogview-3-plus ..." />
+        </div>
+        <div>
+          <label>尺寸 Size（部分模型支持 1024x1536 竖版 3:4）</label>
+          <input id="imgSize" type="text" placeholder="1024x1536" />
+        </div>
+        <div>
+          <label>每篇生成张数（1-8）</label>
+          <input id="imgCount" type="number" min="1" max="8" value="1" />
+        </div>
+        <div>
+          <label>附加请求体（可选 JSON，供应商特殊字段）</label>
+          <input id="imgExtra" type="text" placeholder='{"style":"natural"}' />
+        </div>
+      </div>
+      <label>提示词模板（支持占位符 <code>{{标题}}</code> <code>{{商品ID}}</code> <code>{{内容}}</code>）</label>
+      <textarea id="imgPrompt" rows="6"></textarea>
+      <div class="row" style="margin-top:10px">
+        <button id="saveCfgBtn" class="primary">💾 保存配置</button>
+        <span id="cfgMsg" class="msg"></span>
+        <span class="hint">配置保存在本地设置，下次自动读取。</span>
+      </div>
+    </div>
+
+    <!-- CSV -->
+    <div class="card">
+      <h3>📄 上传 CSV 并解析</h3>
+      <div class="row">
+        <input id="csvFile" type="file" accept=".csv,text/csv" />
+        <button id="parseBtn" class="mini">解析</button>
+        <span id="parseMsg" class="msg"></span>
+      </div>
+      <div class="hint" style="margin-top:6px">CSV 需含 <b>宝贝id</b> 与 <b>标题</b> 两列（其余列忽略）。参考格式：<code>宝贝id,标题,内容,话题,发布日期,发布时间</code></div>
+      <div id="preview" class="preview" style="display:none"></div>
+    </div>
+
+    <!-- 生成 -->
+    <div class="card">
+      <h3>🚀 开始生成</h3>
+      <div class="hint">将逐行调用图像 API（串行，避免并发超限）。生成结果写入图片根目录下的 <code>images/&lt;商品ID&gt;_&lt;序号&gt;/1.png</code>，并写入 <code>title.txt</code> 供发布流水线使用。</div>
+      <div class="row between" style="margin-top:10px">
+        <div class="row">
+          <button id="genBtn" class="primary" disabled>▶ 开始生成</button>
+          <button id="stopBtn" disabled>⏹ 停止</button>
+          <span id="genMsg" class="msg"></span>
+        </div>
+        <div class="hint">图片根目录：<code id="rootPreview">—</code></div>
+      </div>
+      <div class="bar"><i id="bar"></i></div>
+      <div id="log" class="log"></div>
+    </div>
+  </div>
+
+<script>
+const $ = (s) => document.querySelector(s);
+const api = (m, u, b) => fetch(u, { method: m, headers: { 'Content-Type': 'application/json' }, body: b ? JSON.stringify(b) : undefined }).then(r => r.json());
+
+let rows = [];          // 解析出的 [{productId, title, content}]
+let running = false;
+let stopFlag = false;
+
+// 读取配置回填
+async function loadCfg() {
+  try {
+    const r = await api('GET', '/api/settings');
+    const s = r || {};
+    $('#imgBaseUrl').value = s.imgAiBaseUrl || '';
+    $('#imgApiKey').value = s.imgAiApiKey || '';
+    $('#imgModel').value = s.imgAiModel || '';
+    $('#imgSize').value = s.imgAiSize || '1024x1536';
+    $('#imgCount').value = s.imgAiCount || 1;
+    $('#imgExtra').value = s.imgAiExtra || '';
+    $('#imgPrompt').value = s.imgAiPromptTemplate || '';
+    $('#rootPreview').textContent = s.imagesRoot || '(默认：软件数据目录/images)';
+  } catch (e) {
+    log('读取配置失败：' + e.message, 'bad');
+  }
+}
+
+$('#saveCfgBtn').onclick = async () => {
+  const cfg = {
+    imgAiBaseUrl: $('#imgBaseUrl').value.trim(),
+    imgAiApiKey: $('#imgApiKey').value.trim(),
+    imgAiModel: $('#imgModel').value.trim(),
+    imgAiSize: $('#imgSize').value.trim() || '1024x1536',
+    imgAiCount: Math.max(1, Math.min(8, parseInt($('#imgCount').value, 10) || 1)),
+    imgAiExtra: $('#imgExtra').value.trim(),
+    imgAiPromptTemplate: $('#imgPrompt').value,
+  };
+  const r = await api('POST', '/api/settings', cfg);
+  $('#cfgMsg').textContent = r.ok ? '已保存 ✓' : ('失败：' + (r.error || ''));
+  $('#cfgMsg').className = 'msg ' + (r.ok ? 'ok' : 'bad');
+  if (r.ok) loadCfg();
+};
+
+// ---- CSV 解析（支持引号字段与字段内换行）----
+function parseCSV(text) {
+  text = text.replace(/^﻿/, ''); // 去 BOM
+  const rows = []; let row = []; let field = ''; let q = false; let i = 0;
+  while (i < text.length) {
+    const c = text[i];
+    if (q) {
+      if (c === '"') {
+        if (text[i + 1] === '"') { field += '"'; i += 2; continue; }
+        q = false; i++; continue;
+      }
+      field += c; i++; continue;
+    }
+    if (c === '"') { q = true; i++; continue; }
+    if (c === ',') { row.push(field); field = ''; i++; continue; }
+    if (c === '\r') { i++; continue; }
+    if (c === '\n') { row.push(field); rows.push(row); row = []; field = ''; i++; continue; }
+    field += c; i++;
+  }
+  if (field.length || row.length) { row.push(field); rows.push(row); }
+  return rows.filter(r => r.some(c => c.trim() !== ''));
+}
+
+function pickCols(header, names) {
+  for (const n of names) {
+    const idx = header.findIndex(h => (h || '').trim().toLowerCase() === n.toLowerCase());
+    if (idx >= 0) return idx;
+  }
+  return -1;
+}
+
+$('#parseBtn').onclick = () => {
+  const f = $('#csvFile').files[0];
+  if (!f) { $('#parseMsg').textContent = '请先选择 CSV 文件'; $('#parseMsg').className = 'msg bad'; return; }
+  const reader = new FileReader();
+  reader.onload = () => {
+    const raw = parseCSV(reader.result);
+    if (raw.length < 2) { $('#parseMsg').textContent = 'CSV 内容过少（至少含表头+1 行）'; $('#parseMsg').className = 'msg bad'; return; }
+    const header = raw[0];
+    const idIdx = pickCols(header, ['宝贝id', '宝贝ID', '商品id', 'id', 'itemid', '宝贝ID'.toLowerCase()]);
+    const titleIdx = pickCols(header, ['标题', '宝贝标题', '商品标题', 'name', '商品名称']);
+    const contentIdx = pickCols(header, ['内容', '详情', '描述', 'desc', 'description']);
+    if (idIdx < 0 && titleIdx < 0) { $('#parseMsg').textContent = '未找到「宝贝id」或「标题」列'; $('#parseMsg').className = 'msg bad'; return; }
+    rows = [];
+    for (let r = 1; r < raw.length; r++) {
+      const cells = raw[r];
+      const productId = (idIdx >= 0 ? (cells[idIdx] || '').trim() : '');
+      const title = (titleIdx >= 0 ? (cells[titleIdx] || '').trim() : '');
+      const content = (contentIdx >= 0 ? (cells[contentIdx] || '').trim() : '');
+      if (!title && !productId) continue;
+      rows.push({ productId, title, content });
+    }
+    $('#parseMsg').textContent = `解析成功，共 ${rows.length} 行`; $('#parseMsg').className = 'msg ok';
+    renderPreview();
+    $('#genBtn').disabled = rows.length === 0;
+  };
+  reader.readAsText(f, 'utf-8');
+};
+
+function renderPreview() {
+  const head = '<tr><th>#</th><th>宝贝id</th><th>标题</th></tr>';
+  const body = rows.slice(0, 200).map((r, i) => `<tr><td>${i + 1}</td><td>${esc(r.productId)}</td><td>${esc(r.title)}</td></tr>`).join('');
+  $('#preview').innerHTML = `<table><thead>${head}</thead><tbody>${body}</tbody></table>`;
+  $('#preview').style.display = rows.length ? 'block' : 'none';
+}
+const esc = (s) => (s || '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+function buildPrompt(tpl, item) {
+  return (tpl || '')
+    .replace(/\{\{\s*标题\s*\}\}/g, item.title)
+    .replace(/\{\{\s*商品ID\s*\}\}/g, item.productId)
+    .replace(/\{\{\s*内容\s*\}\}/g, item.content);
+}
+
+function log(msg, cls) {
+  const el = $('#log');
+  const line = document.createElement('div');
+  if (cls) line.className = cls;
+  line.textContent = msg;
+  el.appendChild(line);
+  el.scrollTop = el.scrollHeight;
+}
+
+$('#genBtn').onclick = async () => {
+  if (running) return;
+  const tpl = $('#imgPrompt').value;
+  if (!tpl.trim()) { log('请先填写提示词模板（或在配置中点「保存配置」）。', 'bad'); return; }
+  running = true; stopFlag = false;
+  $('#genBtn').disabled = true; $('#stopBtn').disabled = false;
+  $('#log').innerHTML = '';
+  let okCount = 0, failCount = 0;
+  for (let i = 0; i < rows.length; i++) {
+    if (stopFlag) { log('⏹ 已停止（已处理 ' + i + '/' + rows.length + '）', 'info'); break; }
+    const item = rows[i];
+    const seq = i + 1;
+    const folder = (item.productId ? item.productId + '_' + seq : 'row_' + seq);
+    const prompt = buildPrompt(tpl, item);
+    log(`[${seq}/${rows.length}] ${item.productId || '(无id)'} → ${folder}`, 'info');
+    try {
+      const r = await api('POST', '/api/ai-image/generate', { folderName: folder, prompt, title: item.title, count: $('#imgCount').value });
+      if (r.ok) { okCount++; log('  ✓ 已保存 ' + (r.files || []).join(', '), 'ok'); }
+      else { failCount++; log('  ✗ ' + (r.error || '生成失败'), 'bad'); }
+    } catch (e) { failCount++; log('  ✗ 请求异常：' + e.message, 'bad'); }
+    $('#bar').style.width = Math.round(((i + 1) / rows.length) * 100) + '%';
+  }
+  log(`完成：成功 ${okCount} / 失败 ${failCount}。图片位于 images/ 目录下。`, okCount && !failCount ? 'ok' : (failCount ? 'bad' : 'info'));
+  running = false;
+  $('#genBtn').disabled = rows.length === 0; $('#stopBtn').disabled = true;
+};
+
+$('#stopBtn').onclick = () => { stopFlag = true; };
+
+loadCfg();
+</script>
+</body>
+</html>

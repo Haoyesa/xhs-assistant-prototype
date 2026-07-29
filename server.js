@@ -151,11 +151,31 @@ const DEFAULT_CONTENT_PROMPT = `你是一个中文文案助手。请根据我提
 4. 只输出正文，不要解释，不要标题。
 5. 如果生成内容不符合以上规则，请立即重写，直到只剩合格正文。`;
 
+// AI 生图默认提示词模板（支持占位符 {{标题}} / {{商品ID}}，逐行替换后调用图像 API）
+const DEFAULT_IMG_PROMPT = `你是小红书的专家，擅长小红书爆款封面设计。请根据下面这条宝贝信息，直接生成一张适合小红书发布的封面图。
+
+宝贝ID：{{商品ID}}
+宝贝标题：{{标题}}
+
+要求：
+1. 提取标题里的核心卖点关键词，作为封面主标题文字（醒目、易读、不超过 12 字）。
+2. 小红书风格：竖版 3:4 比例，干净背景，清新高级配色，有质感。
+3. 画面不要出现违规、低俗、虚假夸大内容。
+4. 只输出图片，不要任何解释文字。`;
+
 const DEFAULT_SETTINGS = {
   aiProvider: 'deepseek',
   aiApiKey: '',
   aiModel: '',
   aiBaseUrl: '',
+  // AI 生图（图像生成 API，单独配置，独立于上面的文本 AI）
+  imgAiBaseUrl: '',
+  imgAiApiKey: '',
+  imgAiModel: '',
+  imgAiSize: '1024x1536',
+  imgAiCount: 1,
+  imgAiExtra: '',
+  imgAiPromptTemplate: DEFAULT_IMG_PROMPT,
   publishMode: 'dry-run',
   cdpBrowserUrl: 'http://127.0.0.1:9222',
   cdpChromePath: '',
@@ -226,6 +246,48 @@ async function callAI(settings, systemPrompt, userPrompt) {
   }
   const j = await resp.json();
   return (j.choices?.[0]?.message?.content || '').trim();
+}
+
+// ---- AI 生图适配器（OpenAI 风格 /images/generations，可配置 BaseURL/Key/Model）----
+// 兼容返回 b64_json（直接落盘）或 url（二次下载）。extra 为用户自定义附加请求体（JSON）。
+async function generateImages(settings, prompt, count, size, extra) {
+  const baseUrl = (settings.imgAiBaseUrl || '').trim().replace(/\/+$/, '');
+  const apiKey = settings.imgAiApiKey || '';
+  const model = settings.imgAiModel || '';
+  if (!apiKey || !baseUrl || !model) throw new Error('未配置 AI 生图（缺 Key / BaseURL / Model）');
+  const body = {
+    model,
+    prompt,
+    n: Math.max(1, Math.min(8, count || 1)),
+    size: size || '1024x1536',
+    response_format: 'b64_json',
+    ...(extra || {}),
+  };
+  const resp = await fetch(`${baseUrl}/images/generations`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
+    body: JSON.stringify(body),
+  });
+  if (!resp.ok) {
+    const t = await resp.text().catch(() => '');
+    throw new Error(`图像 API HTTP ${resp.status}: ${t.slice(0, 300)}`);
+  }
+  const j = await resp.json();
+  const arr = Array.isArray(j.data) ? j.data : [];
+  if (!arr.length) throw new Error('图像 API 返回为空');
+  const bufs = [];
+  for (const item of arr) {
+    if (item && item.b64_json) {
+      bufs.push(Buffer.from(item.b64_json, 'base64'));
+    } else if (item && item.url) {
+      const r2 = await fetch(item.url);
+      if (!r2.ok) throw new Error(`下载图像失败 HTTP ${r2.status}`);
+      bufs.push(Buffer.from(await r2.arrayBuffer()));
+    } else {
+      throw new Error('图像 API 返回缺少 b64_json 或 url');
+    }
+  }
+  return bufs;
 }
 
 function localFallback(prompt, kind) {
@@ -553,6 +615,11 @@ const server = http.createServer(async (req, res) => {
       return sendFile(res, path.join(PUBLIC, 'generator.html'));
     }
 
+    // AI 生图：根据提示词 + CSV 批量生成封面图，落盘到 images/<商品ID>_<序号>/
+    if (method === 'GET' && p === '/ai-image') {
+      return sendFile(res, path.join(PUBLIC, 'ai-image.html'));
+    }
+
     // 批量作图：图片入库 — 把生成的图片保存到项目设置的图片根目录
     if (p === '/api/generator/import-chunk' && method === 'POST') {
       try {
@@ -585,6 +652,46 @@ const server = http.createServer(async (req, res) => {
       } catch (err) {
         console.error('[generator/import-chunk]', err);
         return sendJSON(res, 500, { ok: false, error: err.message || '保存失败' });
+      }
+    }
+
+    // AI 生图：单条任务生成。请求体 { folderName, prompt, title?, count? }；图像 API 配置取自 settings。
+    // 把生成结果逐张保存到 images/<folderName>/ 下（1.png/2.png...），并写 title.txt 供发布流水线当文案种子。
+    if (p === '/api/ai-image/generate' && method === 'POST') {
+      try {
+        const body = await readBody(req);
+        const s = await readStore(stores.settings, {});
+        const settings = { ...DEFAULT_SETTINGS, ...s };
+        const folderName = String(body.folderName || '').trim().replace(/[\\/:*?"<>|]/g, '_');
+        const prompt = (body.prompt || '').toString();
+        const title = (body.title || '').toString();
+        const count = Math.max(1, Math.min(8, parseInt(body.count, 10) || settings.imgAiCount || 1));
+        if (!folderName) return sendJSON(res, 400, { ok: false, error: '缺少 folderName' });
+        if (!prompt) return sendJSON(res, 400, { ok: false, error: '缺少 prompt' });
+        const root = resolveImagesRoot(settings);
+        if (!root) return sendJSON(res, 400, { ok: false, error: '图片根目录未配置' });
+        const dir = path.join(root, folderName);
+        fs.mkdirSync(dir, { recursive: true });
+        let extra = {};
+        if (settings.imgAiExtra && settings.imgAiExtra.trim()) {
+          try { extra = JSON.parse(settings.imgAiExtra); }
+          catch (e) { return sendJSON(res, 400, { ok: false, error: '附加参数不是合法 JSON：' + e.message }); }
+        }
+        const bufs = await generateImages(settings, prompt, count, settings.imgAiSize, extra);
+        const files = [];
+        for (let i = 0; i < bufs.length; i++) {
+          const file = path.join(dir, `${i + 1}.png`);
+          await fsp.writeFile(file, bufs[i]);
+          files.push(path.relative(root, file));
+        }
+        if (title) {
+          await fsp.writeFile(path.join(dir, 'title.txt'), title, 'utf-8').catch(() => {});
+        }
+        console.log('[ai-image/generate] 已保存', folderName, files);
+        return sendJSON(res, 200, { ok: true, folderName, files });
+      } catch (err) {
+        console.error('[ai-image/generate]', err);
+        return sendJSON(res, 500, { ok: false, error: err.message || '生成失败' });
       }
     }
 

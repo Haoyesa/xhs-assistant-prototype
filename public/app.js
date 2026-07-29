@@ -413,6 +413,22 @@ function switchTab(name) {
   $$('.tab').forEach((x) => x.classList.toggle('active', x.dataset.tab === name));
 }
 
+// 批量作图 子导航：批量作图 / AI生图 切换两个 iframe
+function initGenSubNav() {
+  $$('.sub-btn').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const key = btn.dataset.gen;
+      $$('.sub-btn').forEach((b) => b.classList.toggle('active', b === btn));
+      $$('.gen-frame').forEach((f) => {
+        const show = f.dataset.genFrame === key;
+        f.style.display = show ? '' : 'none';
+        // 切换时让 iframe 重新加载，避免停留在上次状态
+        if (show && !f.dataset.loaded) { f.dataset.loaded = '1'; }
+      });
+    });
+  });
+}
+
 // ---- 敏感词 / 合规自检 ----
 async function loadSensitiveMeta() {
   const el = $('#sensitiveCover'); if (!el) return;
@@ -482,3 +498,4 @@ loadProducts();
 loadSettings();
 checkConn();
 loadStats();
+initGenSubNav();
