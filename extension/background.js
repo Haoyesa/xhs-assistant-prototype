@@ -390,10 +390,11 @@ async function schedulerStep() {
   if (current && current.taskId && !current.resolved) {
     try {
       const r = await api('/api/ext/task?id=' + encodeURIComponent(current.taskId), { method: 'GET' });
-      const st = r.data && r.data.task && r.data.task.status;
-      if (st === 'published') { resolveCurrent('published', st.statusDetail || '已发布'); return; }
-      else if (st === 'manual_hold') { resolveCurrent('manual_hold', st.statusDetail || '验证挑战'); return; }
-      else if (st === 'failed') { resolveCurrent('failed', st.statusDetail || '失败'); return; }
+      const task = r.data && r.data.task;
+      const st = task && task.status;
+      if (st === 'published') { resolveCurrent('published', task.statusDetail || '已发布'); return; }
+      else if (st === 'manual_hold') { resolveCurrent('manual_hold', task.statusDetail || '验证挑战'); return; }
+      else if (st === 'failed') { resolveCurrent('failed', task.statusDetail || '失败'); return; }
     } catch {}
   }
   // 到点则直接开下一篇（pump 闹钟可靠，抗 SW 回收）；未到点则挂一次性闹钟兜底。
@@ -450,19 +451,6 @@ chrome.tabs.onRemoved.addListener((tabId) => {
   }
 });
 
-// content script 回报结果：作为「完成」的快速信号（轮询是兜底）。仅处理来自创作者页的回报。
-chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
-  if (msg?.type === 'reportDone') {
-    const s = (sender.tab && sender.tab.url || '');
-    if (/creator\.xiaohongshu\.com/.test(s)) {
-      const rid = sender.tab && sender.tab.id;
-      if (msg.status === 'published') resolveCurrent('published', msg.detail, rid, msg.delayMs);
-      else if (msg.status === 'manual_hold') resolveCurrent('manual_hold', msg.detail, rid, msg.delayMs);
-      else if (msg.status === 'failed') resolveCurrent('failed', msg.detail, rid, msg.delayMs);
-    }
-  }
-});
-
 // ---------------- 消息路由 ----------------
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (!msg || !msg.type) return;
@@ -487,7 +475,20 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       } else if (msg.type === 'pullNext') {
         sendResponse({ ok: true, data: await pullNext() });
       } else if (msg.type === 'reportDone') {
-        sendResponse({ ok: true, data: await reportDone(msg.taskId, msg.status, msg.detail) });
+        // content script 发来的完成信号：先直连后端更新任务状态，再推进队列。
+        // 即使后端更新失败也尝试推进，避免消息通道问题导致队列卡住。
+        const rid = sender.tab && sender.tab.id;
+        let data = null;
+        try { data = await reportDone(msg.taskId, msg.status, msg.detail); } catch (e) {}
+        if (rid) {
+          if (msg.status === 'published') resolveCurrent('published', msg.detail, rid, msg.delayMs);
+          else if (msg.status === 'manual_hold') resolveCurrent('manual_hold', msg.detail, rid, msg.delayMs);
+          else if (msg.status === 'failed') resolveCurrent('failed', msg.detail, rid, msg.delayMs);
+        }
+        sendResponse({ ok: true, data });
+      } else if (msg.type === 'schedulerStep') {
+        schedulerStep();
+        sendResponse({ ok: true });
       } else if (msg.type === 'getConfig') {
         const s = await storageGet();
         const r = await api('/api/settings');

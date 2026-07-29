@@ -1755,6 +1755,12 @@ async function reportDone(taskId, statusVal, detail, delayMs) {
     return null;
   }
 }
+// 同时给 background service worker 发完成信号（快速通道），避免只靠轮询/SW 回收兜底导致延迟
+function notifyBgDone(taskId, statusVal, detail, delayMs) {
+  try {
+    chrome.runtime.sendMessage({ type: 'reportDone', taskId, status: statusVal, detail, delayMs: delayMs || 0 }).catch(() => {});
+  } catch (e) {}
+}
 
 // 取「两篇之间的间隔(ms)」：优先用后端设置里的「发布间隔 + 随机延迟」，取不到则用兜底值
 async function getIntervalMs() {
@@ -1772,6 +1778,19 @@ async function getIntervalMs() {
 function sendDelay(delayMs) {
   try { chrome.runtime.sendMessage({ type: 'reportDelay', delayMs: Math.round(Number(delayMs) || 0) }); } catch (e) {}
 }
+// 长时间填充时定期心跳，防止服务端 120s 超时把任务标失败
+function startTaskHeartbeat(taskId) {
+  if (window.__xhsHeartbeatTimer) clearInterval(window.__xhsHeartbeatTimer);
+  window.__xhsHeartbeatTimer = setInterval(async () => {
+    try {
+      await window.XhsCommon.xhsFetch('/api/ext/heartbeat?id=' + encodeURIComponent(taskId), { method: 'POST' });
+      console.log('[黑猫] heartbeat task=', taskId);
+    } catch (e) { console.log('[黑猫] heartbeat failed', e); }
+  }, 25000);
+}
+function stopTaskHeartbeat() {
+  if (window.__xhsHeartbeatTimer) { clearInterval(window.__xhsHeartbeatTimer); window.__xhsHeartbeatTimer = null; }
+}
 // 把「下一篇最早发布时刻」上报给后端，供桌面批量发布页同步显示倒计时
 async function reportSchedule(at) {
   try {
@@ -1788,6 +1807,7 @@ const __fillLock = (window.__xhsFillLock = window.__xhsFillLock || new Set());
 async function runFill(task, autoSubmit, serverUrl, humanTyping) {
   const status = (window.__xhsHelper?.status) || (() => {});
   console.log('[黑猫] runFill', (task.title || '').slice(0, 24), 'autoSubmit=', autoSubmit, 'humanTyping=', humanTyping);
+  startTaskHeartbeat(task.id);
   // 取真实间隔并回报后台调度器（手动拉取路径没走 fillTab，不回报就会用默认 ~11.6 分钟）
   const __delayMs = await getIntervalMs();
   window.__xhsLastDelayMs = __delayMs;
@@ -1812,11 +1832,13 @@ async function runFill(task, autoSubmit, serverUrl, humanTyping) {
     if (r.hold) {
       // 验证挑战：转人工（合规红线，绝不自动破解）。挂接监听，用户解决并手动发布后回报 published，恢复队列。
       await reportDone(task.id, 'manual_hold', r.detail || '验证挑战，转人工', __delayMs);
+      notifyBgDone(task.id, 'manual_hold', r.detail || '验证挑战，转人工', __delayMs);
       status('检测到验证挑战，已停下，请人工处理；解决后手动点「发布」将自动继续下一篇');
       armManualSuccessWatch(task.id);
     } else if (!r.ok) {
       status('填充异常：' + r.detail);
       await reportDone(task.id, 'failed', r.detail, __delayMs);
+      notifyBgDone(task.id, 'failed', r.detail, __delayMs);
     } else if (r.published) {
       // 真正发布成功：补写「下一篇倒计时」并上报后端，供桌面批量发布页同步显示。
       // 优先用后台已算好的 nextPublishAt；没有则用 runFill 开头已取到的 delayMs 计算，
@@ -1836,20 +1858,25 @@ async function runFill(task, autoSubmit, serverUrl, humanTyping) {
         if (at) reportSchedule(at);
       } catch (e) { console.error('[黑猫] 写 countdown 异常', e); }
       await reportDone(task.id, 'published', '已自动发布成功', __delayMs);
+      notifyBgDone(task.id, 'published', '已自动发布成功', __delayMs);
       status('✓ 已发布，下一篇倒计时见上方 ↑');
     } else if (r.clicked) {
       // 点了发布但未确认成功：转失败待重试，不前进队列、不写倒计时（避免误判已发）
       await reportDone(task.id, 'failed', '已点击发布但未确认成功', __delayMs);
+      notifyBgDone(task.id, 'failed', '已点击发布但未确认成功', __delayMs);
       status('已点击发布但未确认成功，已转失败待重试 —— 你也可手动点「确认发布」');
     } else if (autoSubmit) {
       await reportDone(task.id, 'failed', '想自动发布但未找到发布按钮，请手动发布或在 app 重试', __delayMs);
+      notifyBgDone(task.id, 'failed', '想自动发布但未找到发布按钮，请手动发布或在 app 重试', __delayMs);
       status('已填好但未找到发布按钮，已转失败待重试 —— 你也可手动点发布');
     } else {
       await reportDone(task.id, 'waiting_submit', '表单已填好，等待人工点击发布', __delayMs);
+      notifyBgDone(task.id, 'waiting_submit', '表单已填好，等待人工点击发布', __delayMs);
       status('已填好，请人工复核后点击「发布」');
       armManualSuccessWatch(task.id);
     }
   } finally {
+    stopTaskHeartbeat();
     // 30s 后解锁，允许后续重试（如用户手动点重试 / 下次批量）
     setTimeout(() => __fillLock.delete(task.id), 30 * 1000);
   }
@@ -1926,14 +1953,21 @@ function startToastCountdown() {
   if (window.__xhsCountdownTimer) return;
   const el = document.getElementById('xhs-toast-countdown');
   if (!el) return;
+  window.__xhsLastCountdownAt = 0;
   window.__xhsCountdownTimer = setInterval(async () => {
     try {
       const v = await new Promise((res) => chrome.storage.local.get({ nextPublishAt: 0 }, (r) => res(r)));
       const at = v.nextPublishAt || 0;
+      window.__xhsLastCountdownAt = at;
       if (at > Date.now()) {
         const s = Math.ceil((at - Date.now()) / 1000);
         const m = Math.floor(s / 60), ss = s % 60;
         el.textContent = '⏳ 下一篇：' + (m > 0 ? m + '分' : '') + ss + '秒';
+      } else if (at > 0 && Date.now() - at > 5000) {
+        // 已过期 5 秒以上仍未更新，可能 background 的 alarm 没被触发/SW 回收丢了，主动唤醒推进
+        el.textContent = '⏳ 正在启动下一篇…';
+        console.log('[黑猫] 倒计时已过期，主动唤醒 schedulerStep');
+        try { chrome.runtime.sendMessage({ type: 'schedulerStep' }).catch(() => {}); } catch (e) {}
       } else {
         el.textContent = ''; // 已过期（本篇正在发/已发完），不显示
       }

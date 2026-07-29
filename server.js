@@ -1151,7 +1151,8 @@ const server = http.createServer(async (req, res) => {
       const now = Date.now();
       // 1) 先做一次"sweep"：把 picked 超时未回报的任务主动标成 failed，避免永远卡 picked
       //    之前只有"下一次 tick 顺便回收"，用户看到状态不动会误以为扩展死了。
-      const PICK_TIMEOUT_MS = 120 * 1000;
+      //    视频/大图填充可能较慢，且有心跳续命，这里放宽到 300s。
+      const PICK_TIMEOUT_MS = 300 * 1000;
       const stale = [];
       for (const t of tasks) {
         if (t.status !== 'picked') continue;
@@ -1206,6 +1207,18 @@ const server = http.createServer(async (req, res) => {
       extNextPublishAt = at;
       console.log('[ext/schedule] nextPublishAt=' + at + ' delta=' + (at ? (at - Date.now()) + 'ms' : '0') + ' old=' + old);
       return sendJSON(res, 200, { ok: true, nextPublishAt: at });
+    }
+    // 插件心跳：content script 长时间填充时定期续命，防止服务端把 picked 任务误判为超时失败
+    if (p === '/api/ext/heartbeat' && method === 'POST') {
+      const id = url.searchParams.get('id');
+      const tasks = await readStore(stores.tasks, []);
+      const t = id ? tasks.find((x) => x.id === id) : null;
+      if (t && t.status === 'picked') {
+        t.pickedAt = new Date(Date.now()).toISOString();
+        t.updatedAt = t.pickedAt;
+        await writeStore(stores.tasks, mergeTask(tasks, t));
+      }
+      return sendJSON(res, 200, { ok: true, task: t || null });
     }
     // 按 id 查单条任务状态：插件调度器用它轮询「当前这篇是否已发布/失败/需人工」，作为开新标签的可靠信号
     if (p === '/api/ext/task' && method === 'GET') {
