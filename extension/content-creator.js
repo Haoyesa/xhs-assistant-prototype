@@ -2051,7 +2051,7 @@ function startToastCountdown() {
 }
 
 
-// 侧栏「开始批量发布」按钮状态：发布中 / 批次进行中 / 有待发队列 三者共同决定可用性
+// 侧栏「开始批量发布」按钮状态：发布中 / 批次进行中 / 有待发队列
 //  - publishing：正在填+发某一篇（runFill 期间）
 //  - batchActive：本批次已开始且仍有任务（防止重复点开始导致重复开标签）
 //  - hasQueue：本账号在后台有待发任务（由 background getQueue 按账号统计）
@@ -2061,7 +2061,7 @@ function updateStartBtn() {
   const btn = document.getElementById('xhs-h-start');
   if (!btn) return;
   const p = window.__xhsPublish || { publishing: false, batchActive: false, hasQueue: false };
-  const disabled = p.publishing || p.batchActive || !p.hasQueue;
+  const disabled = p.publishing || p.batchActive; // 无队列时仍允许点击，点击后提示原因
   btn.disabled = disabled;
   if (p.publishing || p.batchActive) btn.textContent = '发布中…';
   else if (!p.hasQueue) btn.textContent = '无待发队列';
@@ -2069,16 +2069,32 @@ function updateStartBtn() {
   btn.classList.toggle('xhs-h-start-busy', p.publishing || p.batchActive);
 }
 
+// 更新面板诊断信息区：账号、队列数、最近错误
+function updateMeta(account, queued, err) {
+  const el = document.getElementById('xhs-h-meta');
+  if (!el) return;
+  const a = account || '—';
+  const q = typeof queued === 'number' ? queued : '—';
+  const e = err ? `<br><span style="color:#f87171;">错误：${err}</span>` : '';
+  el.innerHTML = `账号：${a}<br>待发：${q}${e}`;
+}
+
 // 向 background 查询本账号待发队列数量，刷新 hasQueue / batchActive
 async function refreshQueue() {
   try {
+    const status = (window.__xhsHelper && window.__xhsHelper.status) || (() => {});
+    const identity = await new Promise((res) => chrome.runtime.sendMessage({ type: 'getIdentity' }, (resp) => res(resp || {})));
+    const account = (identity && identity.extAccount) || '';
     const r = await new Promise((res) => chrome.runtime.sendMessage({ type: 'getQueue' }, (resp) => res(resp)));
     const queued = (r && r.ok && typeof r.queued === 'number') ? r.queued : 0;
     const p = window.__xhsPublish;
     p.hasQueue = queued > 0;
     if (queued === 0) p.batchActive = false; // 队列空了，批次自然结束
+    updateMeta(account, queued, (r && !r.ok && r.msg) ? r.msg : '');
     updateStartBtn();
-  } catch (e) { /* 网络/背景断开时保持现状，下次刷新再试 */ }
+  } catch (e) {
+    updateMeta('', 0, e.message || '查询队列失败');
+  }
 }
 
 // 注入侧栏 UI + 顶部 Toast
@@ -2104,17 +2120,27 @@ function buildPanel() {
       <span class="xhs-h-dot" id="xhs-h-dot"></span>
       <span class="xhs-h-status" id="xhs-c-status">就绪</span>
     </div>
+    <div class="xhs-h-meta" id="xhs-h-meta" style="font-size:11px;color:#9ca3af;line-height:1.5;margin:6px 0 0 2px;word-break:break-all;">
+      账号：—<br>待发：—
+    </div>
     <div class="xhs-h-actions">
-      <button class="xhs-h-start" id="xhs-h-start" type="button" disabled>无待发队列</button>
+      <button class="xhs-h-start" id="xhs-h-start" type="button">加载中…</button>
+      <button class="xhs-h-refresh" id="xhs-h-refresh" type="button" title="刷新队列">↻</button>
     </div>`;
   document.body.appendChild(box);
   // 侧栏「开始批量发布」按钮：等价于扩展弹窗的同一按钮（发 startPublish 给 background 调度器）
   const startBtn = box.querySelector('#xhs-h-start');
+  const refreshBtn = box.querySelector('#xhs-h-refresh');
   if (startBtn) {
     startBtn.addEventListener('click', () => {
-      console.log('[黑猫] 开始批量发布按钮被点击，disabled=', startBtn.disabled);
-      if (startBtn.disabled) return;
       const status = (window.__xhsHelper && window.__xhsHelper.status) || (() => {});
+      // 无待发队列时，点按钮给出明确提示（不再静默禁用）
+      if (!window.__xhsPublish.hasQueue && !window.__xhsPublish.publishing) {
+        status('当前无待发队列：请先在桌面端创建笔记任务，或检查扩展绑定账号是否匹配');
+        refreshQueue();
+        return;
+      }
+      console.log('[黑猫] 开始批量发布按钮被点击');
       window.__xhsPublish.batchActive = true;
       updateStartBtn();
       status('正在唤醒后台调度器…');
@@ -2153,6 +2179,13 @@ function buildPanel() {
       };
       doSend();
     });
+    if (refreshBtn) {
+      refreshBtn.addEventListener('click', () => {
+        const status = (window.__xhsHelper && window.__xhsHelper.status) || (() => {});
+        status('正在刷新队列…');
+        refreshQueue();
+      });
+    }
     updateStartBtn();
     refreshQueue();
     if (!window.__xhsQueueTimer) {

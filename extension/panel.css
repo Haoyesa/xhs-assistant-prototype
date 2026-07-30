@@ -199,9 +199,11 @@
 /* 侧栏底部「开始批量发布」按钮 */
 #xhs-creator-helper .xhs-h-actions {
   padding: 0 12px 12px !important;
+  display: flex !important;
+  gap: 8px !important;
 }
 #xhs-creator-helper .xhs-h-start {
-  width: 100% !important;
+  flex: 1 !important;
   padding: 10px 12px !important;
   border: 0 !important;
   border-radius: 10px !important;
@@ -227,6 +229,20 @@
   background: linear-gradient(90deg, rgba(0,240,255,.35), rgba(184,41,247,.35)) !important;
   color: #cfe9ef !important;
 }
+#xhs-creator-helper .xhs-h-refresh {
+  flex: 0 0 auto !important;
+  width: 36px !important;
+  padding: 0 !important;
+  border: 0 !important;
+  border-radius: 10px !important;
+  background: #232a33 !important;
+  color: #9ca3af !important;
+  font-size: 15px !important;
+  font-weight: 700 !important;
+  cursor: pointer !important;
+  transition: background .15s ease, color .15s ease !important;
+}
+#xhs-creator-helper .xhs-h-refresh:hover { background: #2d3744 !important; color: #e6e8eb !important; }
 
 /* =========================================================
    选品浮窗（#xhs-ark-helper）拖动手柄
