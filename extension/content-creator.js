@@ -1405,33 +1405,22 @@ function findPublishControl() {
 }
 
 // 由 xhs-publish-btn host 的矩形推算红「发布」按钮的多个候选屏幕坐标（真实输入点此坐标即可命中，穿透 closed shadow）。
-// 原策略只算一个固定偏移（栏中心 +72），在小红书底部栏实际尺寸/间距变化时容易 miss，导致点了但按钮还在、空等 60s。
-// 小红书发布页底部栏：红色「发布笔记」按钮在左侧，「暂存离开」在右侧；host 覆盖整栏。
-// 原策略取右半区导致全部 miss，现改为在 host 左侧/左中区域密集取点，覆盖红色按钮可能位置。
-function publishButtonPoints(host) {
+// 实测 host 的 getBoundingClientRect 会随页面每秒抖动 ±47px（viewport 高度在 880/927 间跳变），且红按钮很可能只占 host 内某一子区域，
+// 因此：①左右两侧都取点（红按钮可能在左也可能在右）；②竖向覆盖整高（0.18~0.92h），避免只打中心而 miss 子区域；
+// ③调用方【每次点击前都重新读一次 rect】再换算坐标，彻底规避抖动导致的坐标漂移。
+// 这里只返回「相对 host 矩形的比例模板」，真实坐标由 pointFromHost() 在点击瞬间按当前 rect 计算。
+function publishPointTemplates() {
+  const xsL = [0.04, 0.08, 0.12, 0.16, 0.20];
+  const xsR = [0.96, 0.92, 0.88, 0.84, 0.80];
+  const ys = [0.18, 0.34, 0.5, 0.66, 0.82, 0.92];
+  const tpl = [];
+  xsL.forEach((xf, i) => ys.forEach((yf) => tpl.push({ xf, yf, note: 'L' + Math.round(xsL[i] * 100) + '%,Y' + Math.round(yf * 100) + '%' })));
+  xsR.forEach((xf, i) => ys.forEach((yf) => tpl.push({ xf, yf, note: 'R' + Math.round((1 - xf) * 100) + '%,Y' + Math.round(yf * 100) + '%' })));
+  return tpl;
+}
+function pointFromHost(host, tpl) {
   const r = host.getBoundingClientRect();
-  const w = r.width || 0;
-  const h = r.height || 0;
-  const left = r.left;
-  const right = r.right;
-  const top = r.top;
-  const bottom = r.bottom;
-  const cy = top + h / 2;
-  // 小红书不同版本/账号底部栏布局不一：红「发布笔记」可能在左，也可能在右（常见为右侧）。
-  // 旧策略只覆盖左侧，若按钮在右则每个候选点都 miss、空等 60s。现同时覆盖左右两侧密集候选点。
-  return [
-    { x: left + 50, y: cy, note: '左缘~50' },
-    { x: left + 80, y: cy, note: '左缘~80' },
-    { x: left + Math.min(110, w * 0.18), y: cy, note: '左缘18%' },
-    { x: left + Math.min(140, w * 0.22), y: cy, note: '左缘22%' },
-    { x: left + Math.min(170, w * 0.26), y: cy, note: '左缘26%' },
-    { x: right - 50, y: cy, note: '右缘~50' },
-    { x: right - 80, y: cy, note: '右缘~80' },
-    { x: right - Math.min(110, w * 0.18), y: cy, note: '右缘18%' },
-    { x: right - Math.min(140, w * 0.22), y: cy, note: '右缘22%' },
-    { x: left + Math.min(110, w * 0.18), y: top + h * 0.62, note: '左下62%' },
-    { x: left + Math.min(140, w * 0.22), y: bottom - 18, note: '左下底-18' },
-  ];
+  return { x: Math.round(r.left + r.width * tpl.xf), y: Math.round(r.top + r.height * tpl.yf), note: tpl.note };
 }
 
 // 经 background service worker 用 chrome.debugger 发真实鼠标事件到 (x,y)（真实输入会穿透 closed shadow）。
@@ -1475,6 +1464,17 @@ function pageBodyText() {
 async function clickPublishControl(ctrl) {
   if (!ctrl) return false;
   const isHost = (ctrl.tagName || '').toLowerCase() === 'xhs-publish-btn';
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  // 诊断：返回 (x,y) 处最顶层元素（closed shadow 下 elementFromPoint 只返回 host 本身），用于确认坐标是否被遮挡 / 点错元素。
+  const diagAt = (x, y) => {
+    try {
+      const el = document.elementFromPoint(x, y);
+      if (!el) return 'none';
+      const cls = String(el.className || '').slice(0, 22);
+      const own = el.id === 'xhs-creator-helper' || (typeof el.className === 'string' && /(^|[\s])xhs-h-/.test(el.className)) ? '[OWN-PANEL]' : '';
+      return el.tagName + (el.id ? '#' + el.id : '') + '.' + cls + (isPublishHost(el) ? '[HOST]' : '') + own;
+    } catch (e) { return 'err:' + e.message; }
+  };
   if (isHost) {
     // 确保发布栏吸底在视口（sticky bottom:0）：把最近的可滚动祖先 / 整窗滚到底
     try {
@@ -1488,41 +1488,38 @@ async function clickPublishControl(ctrl) {
           sc = sc.parentElement;
         }
         try { window.scrollTo(0, document.documentElement.scrollHeight); } catch (e) {}
-        await new Promise((r) => setTimeout(r, 200));
+        await sleep(200);
       }
     } catch (e) {}
-    const points = publishButtonPoints(ctrl);
-    const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-    for (const pt of points) {
-      console.log('[黑猫] 尝试发布点击: x=' + Math.round(pt.x) + ' y=' + Math.round(pt.y) + ' (' + pt.note + ')');
-      const ok = await cdpClickPublish(pt.x, pt.y);
-      if (!ok) { console.log('[黑猫] CDP点击命令未成功'); continue; }
-      await sleep(1200);
-      const ctrlNow = findPublishControl();
-      const stillThere = !!ctrlNow;
-      const navigated = !/publish/i.test(location.href);
-      // 严禁用 document.body.innerText 判断「发布中/提交中」——会被插件面板自身的「发布中…」文案误判为命中。
-      // 发布按钮是否真被点中，只看宿主的 submit-loading 属性（closed shadow 外仍可读取），这是唯一可靠信号。
-      const bodyText = pageBodyText();
-      const hasSuccess = /发布成功|已发布/.test(bodyText);
-      const hasConfirm = !!findPrimaryConfirm();
-      const isLoadingHost = ctrlNow && isPublishHost(ctrlNow) && (ctrlNow.getAttribute('submit-loading') === 'true');
-      const submitDisabled = ctrlNow && isPublishHost(ctrlNow) && (ctrlNow.getAttribute('submit-disabled') === 'true');
-      console.log('[黑猫] 候选点验证 ' + pt.note + ': stillThere=' + stillThere + ' navigated=' + navigated + ' loading=' + isLoadingHost + ' disabled=' + submitDisabled + ' hasConfirm=' + hasConfirm + ' hasSuccess=' + hasSuccess);
-      const hit = !stillThere || navigated || hasSuccess || hasConfirm || isLoadingHost;
-      if (hit) {
-        const signal = !stillThere ? '控件消失' : navigated ? 'URL跳离' : hasSuccess ? '成功文案' : hasConfirm ? '确认弹窗' : 'loading(按钮已进入提交态)';
-        console.log('[黑猫] 发布点击命中 (' + pt.note + ') 信号=' + signal);
-        return true;
+    // host 每秒抖动 ±47px：最多扫 3 轮；每轮先打一次 elementFromPoint 诊断，确认中心坐标处到底是不是 host（被遮挡会显示 OWN-PANEL/其他元素）。
+    // 关键：每次点击前都按【当前】rect 重新换算坐标（pointFromHost），彻底规避抖动导致的坐标漂移。
+    const tpls = publishPointTemplates();
+    for (let round = 1; round <= 3; round++) {
+      const cr = ctrl.getBoundingClientRect();
+      const cx = cr.left + cr.width / 2, cyy = cr.top + cr.height / 2;
+      console.log('[黑猫] 第' + round + '轮候选点诊断 center(' + Math.round(cx) + ',' + Math.round(cyy) + ') vh=' + window.innerHeight + ' elementFromPoint=' + diagAt(cx, cyy));
+      for (const tpl of tpls) {
+        const pt = pointFromHost(ctrl, tpl);
+        const ok = await cdpClickPublish(pt.x, pt.y);
+        if (!ok) { console.log('[黑猫] CDP点击命令未成功 (' + pt.note + ')'); continue; }
+        await sleep(160);
+        const ctrlNow = findPublishControl();
+        const loading = ctrlNow && isPublishHost(ctrlNow) && (ctrlNow.getAttribute('submit-loading') === 'true');
+        const navigated = !/publish/i.test(location.href);
+        if (loading) { console.log('[黑猫] 发布点击命中 (' + pt.note + ') 信号=loading(按钮已进入提交态)'); return true; }
+        if (navigated) { console.log('[黑猫] 点击后页面跳离发布页 (' + pt.note + ') — 可能误点其他按钮或已发布'); return true; }
       }
-      // 错点可能打开预览等弹窗，清掉避免干扰后续候选点
-      try { dismissModal(status); } catch (e) {}
-      console.log('[黑猫] 点击未命中（' + pt.note + '），换候选点');
+      const ctrlEnd = findPublishControl();
+      if (ctrlEnd && isPublishHost(ctrlEnd) && ctrlEnd.getAttribute('submit-loading') === 'true') return true;
+      console.log('[黑猫] 第' + round + '轮扫描未命中，重读坐标进行下一轮');
+      await sleep(400);
     }
-    console.log('[黑猫] CDP 全部候选点未命中，fallback realClickDeep');
+    console.log('[黑猫] 三轮候选点均未命中，fallback: 直接 host.click() + realClickDeep');
+    try { ctrl.click(); } catch (e) {}
     realClickDeep(ctrl);
     return true;
   }
+  try { ctrl.click(); } catch (e) {}
   realClickDeep(ctrl);
   return true;
 }

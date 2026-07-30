@@ -129,6 +129,9 @@ async function realDebugClick(tabId, x, y) {
     // 已 attach 或失败都继续尝试，sendCommand 会报错再兜底
   }
   try {
+    // 关键：真实点击前先发一次 mouseMoved 把指针「移动」到目标坐标。
+    // 小红书（React + closed shadow）的按钮常把 onClick 绑在 pointer 命中态上，缺 mouseMoved 直接 mousePressed 会被当成「悬停未到位」而吞掉点击，导致 CDP 报 ok 但按钮毫无反应。
+    await sendDebug(tabId, 'Input.dispatchMouseEvent', { type: 'mouseMoved', x, y, button: 'none', clickCount: 0, modifiers: 0 });
     await sendDebug(tabId, 'Input.dispatchMouseEvent', { type: 'mousePressed', x, y, button: 'left', clickCount: 1, modifiers: 0 });
     await sendDebug(tabId, 'Input.dispatchMouseEvent', { type: 'mouseReleased', x, y, button: 'left', clickCount: 1, modifiers: 0 });
     return { ok: true, msg: 'clicked@' + Math.round(x) + ',' + Math.round(y) };
