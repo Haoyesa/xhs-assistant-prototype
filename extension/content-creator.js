@@ -2074,13 +2074,17 @@ function updateStartBtn() {
 }
 
 // 更新面板诊断信息区：账号、队列数、最近错误
-function updateMeta(account, queued, err) {
+function updateMeta(account, queued, err, others) {
   const el = document.getElementById('xhs-h-meta');
   if (!el) return;
   const a = account || '—';
   const q = typeof queued === 'number' ? queued : '—';
+  // 有任务但都指派给了其它账号 → 本窗口拉不到，明确提示原因（否则用户以为「待发>0 却不发」是 bug）
+  const o = (typeof others === 'number' && others > 0)
+    ? `<br><span style="color:#fbbf24;">另有 ${others} 条已指派给${account ? '其它' : ''}账号的任务${account ? '' : '（本窗口未绑定账号，只能发「未指派」任务）'}</span>`
+    : '';
   const e = err ? `<br><span style="color:#f87171;">错误：${err}</span>` : '';
-  el.innerHTML = `账号：${a}<br>待发：${q}${e}`;
+  el.innerHTML = `账号：${a}<br>待发：${q}${o}${e}`;
 }
 
 // 向 background 查询本账号待发队列数量，刷新 hasQueue / batchActive
@@ -2091,10 +2095,11 @@ async function refreshQueue() {
     const account = (identity && identity.extAccount) || '';
     const r = await new Promise((res) => chrome.runtime.sendMessage({ type: 'getQueue' }, (resp) => res(resp)));
     const queued = (r && r.ok && typeof r.queued === 'number') ? r.queued : 0;
+    const others = (r && typeof r.others === 'number') ? r.others : 0;
     const p = window.__xhsPublish;
     p.hasQueue = queued > 0;
     if (queued === 0) p.batchActive = false; // 队列空了，批次自然结束
-    updateMeta(account, queued, (r && !r.ok && r.msg) ? r.msg : '');
+    updateMeta(account, queued, (r && !r.ok && r.msg) ? r.msg : '', others);
     updateStartBtn();
   } catch (e) {
     updateMeta('', 0, e.message || '查询队列失败');

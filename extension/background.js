@@ -242,11 +242,14 @@ async function fillTab(tabId) {
     console.log('[黑猫][BG] pullNext result:', next ? { ok: next.ok, hasTask: !!next.task, taskId: next.task && next.task.id } : null);
     if (!next || !next.ok) { busy = false; return; }
     if (!next.task) {
-      // 队列已空：停掉调度并清除倒计时（storage + 后端），两侧不再显示读秒
+      // 队列已空（或所有待发任务都指派给了其它账号，本实例按 taskMatchesAccount 拉不到）：
+      // 停掉调度、清倒计时，并关掉刚为这一篇开的空白上传标签，避免用户误以为「卡住了」
       busy = false;
       schedulerActive = false;
       clearSchedule();
-      broadcast({ kind: 'idle', msg: '队列已空，没有待发任务了 ✓' });
+      try { await chrome.tabs.remove(tabId); } catch (e) {}
+      broadcast({ kind: 'idle', msg: '本账号无可拉取的待发任务（可能任务已指派给其它账号）' });
+      console.log('[黑猫][BG] pullNext 无任务：本实例账号拉不到任务。若面板此前显示待发>0，说明那些任务被指派给了其它 accountId');
       return;
     }
     lastDelayMs = computeDelay(next);
@@ -548,14 +551,21 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         sendResponse({ ok: true, serverUrl: s.serverUrl, extAccount: s.extAccount || '', extProfile: s.extProfile || '', instanceId: s.instanceId || '' });
       } else if (msg.type === 'getQueue') {
         try {
-          // 按本窗口绑定账号过滤（多账号并行：每个窗口只关心自己账号的队列）
-          const q = await accountQuery();
-          const r = await api('/api/batch/queue' + q, { method: 'GET' });
+          // 统计口径必须与服务端 /api/ext/next 的 taskMatchesAccount 完全一致：
+          //   - 绑定了账号 → 只算 task.accountId === extAccount 的任务
+          //   - 未绑定账号 → 只算「未指派账号」的任务（catch-all）
+          // 之前直接用 /api/batch/queue（未传 accountId 返回全量），会把已指派给其它账号的任务
+          // 也算进「待发」，导致面板显示待发>0、点开始发布后 pullNext 却拉不到任务（hasTask:false）。
+          const s = await storageGet();
+          const mine = (t) => (s.extAccount ? t.accountId === s.extAccount : (!t.accountId || t.accountId === ''));
+          const r = await api('/api/batch/queue', { method: 'GET' }); // 拉全量，本地分拣
           const tasks = (r.data && r.data.tasks) || [];
-          const queued = tasks.filter((t) => t.status === 'queued' || t.status === 'picked').length;
-          sendResponse({ ok: r.ok, queued, total: tasks.length });
+          const pending = tasks.filter((t) => t.status === 'queued' || t.status === 'picked');
+          const queued = pending.filter(mine).length;
+          const others = pending.length - queued; // 已指派给其它账号的待发任务数（本窗口拉不到）
+          sendResponse({ ok: r.ok, queued, others, total: tasks.length });
         } catch (e) {
-          sendResponse({ ok: false, queued: 0, total: 0, msg: e.message });
+          sendResponse({ ok: false, queued: 0, others: 0, total: 0, msg: e.message });
         }
       } else if (msg.type === 'tabReady') {
         // 创作者标签加载完成后主动上报「我好了」：即便此刻 SW 已被回收，这条消息也会唤醒 SW 执行填充，
