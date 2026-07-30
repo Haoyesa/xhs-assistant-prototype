@@ -2097,7 +2097,7 @@ function buildPanel() {
   box.innerHTML = `
     <div class="xhs-h-head">
       <img class="xhs-h-logo" src="${chrome.runtime.getURL('icons/icon48.png')}" alt="黑猫智记AI" />
-      <div class="xhs-h-title">黑猫智记AI</div>
+      <div class="xhs-h-title">黑猫智记AI <span style="font-size:10px;opacity:.65;font-weight:400;">v${(() => { try { return chrome.runtime.getManifest().version; } catch (e) { return '?'; } })()}</span></div>
       <div class="xhs-h-drag" title="拖动">⋮⋮</div>
     </div>
     <div class="xhs-h-body">
