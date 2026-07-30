@@ -231,10 +231,15 @@ function openNextTab() {
 
 // 把一条任务填充到指定标签（拉取前先上锁，杜绝并发重复拉取/双填）
 async function fillTab(tabId) {
-  if (busy || paused || !schedulerActive || current || awaitingTabId) return;
+  console.log('[黑猫][BG] fillTab called tabId=', tabId, 'state=', schedulerState());
+  if (busy || paused || !schedulerActive || current || awaitingTabId) {
+    console.log('[黑猫][BG] fillTab early return: busy=', busy, 'paused=', paused, 'schedulerActive=', schedulerActive, 'current=', !!current, 'awaitingTabId=', awaitingTabId);
+    return;
+  }
   busy = true; // 同步上锁，防止 pump/onUpdated 并发再拉一条
   try {
     const next = await pullNext();
+    console.log('[黑猫][BG] pullNext result:', next ? { ok: next.ok, hasTask: !!next.task, taskId: next.task && next.task.id } : null);
     if (!next || !next.ok) { busy = false; return; }
     if (!next.task) {
       // 队列已空：停掉调度并清除倒计时（storage + 后端），两侧不再显示读秒
@@ -559,11 +564,14 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         if (tabId != null && awaitingTabId === tabId) {
           console.log('[黑猫][BG] tabReady matched awaitingTabId=', tabId, '→ fillTab');
           awaitingTabId = null;
+          chrome.storage.local.remove('awaitingTabId').catch(() => {});
           fillTab(tabId);
+          sendResponse({ ok: true, matched: true });
         } else {
+          const reason = awaitingTabId == null ? '后台没有待填充标签（可能已填充/队列未启动）' : ('awaitingTabId=' + awaitingTabId + ' 与上报 tabId=' + tabId + ' 不匹配');
           console.log('[黑猫][BG] tabReady tabId=', tabId, 'awaitingTabId=', awaitingTabId, '(不匹配，跳过)');
+          sendResponse({ ok: true, matched: false, reason });
         }
-        sendResponse({ ok: true });
       } else if (msg.type === 'setAutoSubmit') {
         try {
           const r = await api('/api/settings', { method: 'POST', body: { autoSubmit: !!msg.value } });

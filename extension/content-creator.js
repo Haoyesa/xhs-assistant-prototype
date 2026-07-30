@@ -24,7 +24,11 @@ function notifyTabReady() {
       chrome.runtime.sendMessage({ type: 'tabReady' }, (resp) => {
         const err = chrome.runtime.lastError;
         if (!err && resp && resp.ok) {
-          console.log('[黑猫] tabReady ack 收到（第 ' + tries + ' 次尝试），后台将触发填充');
+          if (resp.matched) {
+            console.log('[黑猫] tabReady ack 收到（第 ' + tries + ' 次尝试），后台已匹配，将触发 fillTab');
+          } else {
+            console.warn('[黑猫] tabReady ack 收到（第 ' + tries + ' 次尝试），但后台未匹配：' + (resp.reason || '未知'));
+          }
           return;
         }
         // SW 未唤醒 / 消息被丢弃 / 后台未 ack：指数退避重试
