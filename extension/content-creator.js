@@ -1,7 +1,10 @@
 // content-creator.js — 在创作者发布台(creator.xiaohongshu.com)注入「发布助手」侧栏
 // 收到后端任务后：填标题/正文/话题、注入配图、关联商品，交人工点发布。
 // 合规：检测到验证挑战即停下并通知；绝不自动破解、不伪造。
-console.log('[黑猫] content-creator.js 已注入', new Date().toISOString());
+try {
+  const __mf = chrome.runtime.getManifest();
+  console.log('[黑猫] content-creator.js 已注入 v' + __mf.version + ' @ ' + location.href + ' ' + new Date().toISOString());
+} catch (e) { console.log('[黑猫] content-creator.js 已注入(无法读版本) ' + location.href); }
 // 保活 service worker（防止长耗时填表/回报期间 SW 被回收导致 Extension context invalidated）
 try { window.XhsCommon && window.XhsCommon.xhsKeepAlive(); } catch (e) {}
 
