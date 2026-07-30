@@ -23,6 +23,26 @@ function fmtBJ(v) {
   return `${bj.getUTCFullYear()}-${p(bj.getUTCMonth() + 1)}-${p(bj.getUTCDate())} ` +
     `${p(bj.getUTCHours())}:${p(bj.getUTCMinutes())}:${p(bj.getUTCSeconds())}`;
 }
+
+// 北京时间友好格式：今天/昨天的条目显示「今天 HH:mm:ss」/「昨天 HH:mm:ss」，更早显示完整日期
+function fmtBJRel(v) {
+  if (v == null || v === '') return '—';
+  let d;
+  if (typeof v === 'number') d = new Date(v);
+  else if (/^\d{10}$/.test(String(v).trim())) d = new Date(Number(v) * 1000); // 秒级 epoch
+  else d = new Date(v);
+  if (isNaN(d.getTime())) return String(v);
+  const p = (n) => String(n).padStart(2, '0');
+  const bj = new Date(d.getTime() + 8 * 3600 * 1000);
+  const nowBJ = new Date(Date.now() + 8 * 3600 * 1000);
+  const bj0 = Date.UTC(bj.getUTCFullYear(), bj.getUTCMonth(), bj.getUTCDate());
+  const now0 = Date.UTC(nowBJ.getUTCFullYear(), nowBJ.getUTCMonth(), nowBJ.getUTCDate());
+  const diff = Math.round((now0 - bj0) / 86400000);
+  const t = `${p(bj.getUTCHours())}:${p(bj.getUTCMinutes())}:${p(bj.getUTCSeconds())}`;
+  if (diff === 0) return `今天 ${t}`;
+  if (diff === 1) return `昨天 ${t}`;
+  return `${bj.getUTCFullYear()}-${p(bj.getUTCMonth() + 1)}-${p(bj.getUTCDate())} ${t}`;
+}
 // 经后端 /api/image 代理加载远程图（绕过防盗链），商品页/笔记缩略图统一走这里
 const imgUrl = (u) => (u ? '/api/image?url=' + encodeURIComponent(u) : '');
 // 本地图片文件夹的图片：经后端 /api/file 直接暴露（同源），文件夹缩略图用这个
@@ -318,7 +338,7 @@ async function loadHistory() {
       <span class="badge ${r.status}">${esc(r.status)}</span>
       <span class="qname">${esc(r.title || r.itemId || '')}</span>
       <span class="qdetail">${esc(r.detail || '')}</span>
-      <span class="qstep">${esc(fmtBJ(r.at))}</span>
+      <span class="qstep">${esc(fmtBJRel(r.at))}</span>
     </div>`).join('') : '<div class="empty"><span class="em">🕘</span>暂无发布历史。</div>';
 }
 
@@ -429,7 +449,7 @@ async function loadInstances() {
       <div class="inst-main">
         <div class="inst-id">${esc(it.instanceId)}</div>
         <div class="inst-meta">账号：${esc(acc)} ｜ 比特窗口 ID：${esc(it.profileName || '未填')} ｜ 扩展 v${esc(it.extVersion || '—')}</div>
-        <div class="inst-meta">最后心跳：${ago != null ? ago + ' 秒前' : '—'} ｜ 首次接入：${it.firstSeen ? fmtBJ(it.firstSeen) : '—'}</div>
+        <div class="inst-meta">最后心跳：${it.lastSeen ? fmtBJ(it.lastSeen) : '—'}${ago != null ? '（' + ago + ' 秒前）' : ''} ｜ 首次接入：${it.firstSeen ? fmtBJ(it.firstSeen) : '—'}</div>
       </div>
       <span class="inst-state">${it.online ? '● 在线' : '○ 离线'}</span>
     </div>`;
