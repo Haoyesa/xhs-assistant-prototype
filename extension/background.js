@@ -577,6 +577,21 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         schedulerActive = true; paused = false;
         chrome.alarms.clear('clearSchedule').catch(() => {}); // 撤销上次批次遗留的兜底清理，避免误清新批次倒计时
         chrome.alarms.clear('nextPublish').catch(() => {});  // 撤销上一批次遗留的「开下一篇」闹钟
+        // 关键修复：清理上一批次残留的 awaitingTabId / current。比特浏览器对 SW 回收极激进，
+        // 这些状态从 storage 恢复后，其对应的标签往往早已不存在；若不清理，openNextTab 会因
+        // `awaitingTabId != null` 直接 return，表现为「点了开始批量发布却无任何反应、也无日志」。
+        if (awaitingTabId != null) {
+          try {
+            const t = await new Promise((res) => chrome.tabs.get(awaitingTabId, (tab) => res(tab)));
+            if (!t) { awaitingTabId = null; chrome.storage.local.remove('awaitingTabId').catch(() => {}); console.log('[黑猫][BG] 清理失效 awaitingTabId', t); }
+          } catch { awaitingTabId = null; chrome.storage.local.remove('awaitingTabId').catch(() => {}); }
+        }
+        if (current && current.tabId != null) {
+          try {
+            const ct = await new Promise((res) => chrome.tabs.get(current.tabId, (tab) => res(tab)));
+            if (!ct) { current = null; currentTaskId = null; chrome.storage.local.remove('currentTaskId').catch(() => {}); console.log('[黑猫][BG] 清理失效 current'); }
+          } catch { current = null; currentTaskId = null; chrome.storage.local.remove('currentTaskId').catch(() => {}); }
+        }
         persistSched();
         registerInstance().catch(() => {}); // 开始发布时确保实例以当前绑定账号在线
         openNextTab();
