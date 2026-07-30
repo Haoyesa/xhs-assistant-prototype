@@ -8,8 +8,37 @@ try { window.XhsCommon && window.XhsCommon.xhsKeepAlive(); } catch (e) {}
 // 创作者页加载完成后，主动通知后台「本标签已就绪」请求填充。即便后台 SW 此刻被回收，
 // 这条消息也会唤醒 SW 去执行填充——不依赖 onUpdated 事件唤醒（比特浏览器对 SW 回收激进，
 // onUpdated 常丢导致新标签永不填充、队列卡死）。配合 background 的 tabReady 处理器。
+// 关键改进：原实现是「一次性 fire-and-forget」，若消息发出的瞬间 SW 正处于回收/未唤醒窗口期，
+// 消息被丢弃 → 标签永不填充 → 后台永远收不到 → 没有任何日志（即「倒计时结束也没日志」）。
+// 现改为「带退避重试，直到后台明确回 ack 才停」：后台收到即执行 fillTab，ack 收到即代表填充已触发。
+// 重试幂等：awaitingTabId 在后台处理 tabReady 时即置空，后续重试不会重复填充。
 function notifyTabReady() {
-  try { chrome.runtime.sendMessage({ type: 'tabReady' }).catch(() => {}); } catch (e) {}
+  let tries = 0;
+  const MAX = 10;
+  const attempt = () => {
+    tries++;
+    try {
+      chrome.runtime.sendMessage({ type: 'tabReady' }, (resp) => {
+        const err = chrome.runtime.lastError;
+        if (!err && resp && resp.ok) {
+          console.log('[黑猫] tabReady ack 收到（第 ' + tries + ' 次尝试），后台将触发填充');
+          return;
+        }
+        // SW 未唤醒 / 消息被丢弃 / 后台未 ack：指数退避重试
+        if (tries < MAX) {
+          const wait = Math.min(8000, 500 * Math.pow(1.7, tries));
+          console.warn('[黑猫] tabReady 未送达（第 ' + tries + ' 次，' + (err ? err.message : 'no ack') + '），' + Math.round(wait) + 'ms 后重试');
+          setTimeout(attempt, wait);
+        } else {
+          console.error('[黑猫] tabReady 重试耗尽，标签可能未填充；可手动刷新本页或重点「开始批量发布」');
+        }
+      });
+    } catch (e) {
+      if (tries < MAX) setTimeout(attempt, 1000);
+      else console.error('[黑猫] tabReady 重试耗尽', e && e.message);
+    }
+  };
+  attempt();
 }
 if (document.readyState === 'complete') setTimeout(notifyTabReady, 800);
 else window.addEventListener('load', () => setTimeout(notifyTabReady, 800));
