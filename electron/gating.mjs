@@ -32,12 +32,9 @@ export function effectiveAutoSubmit(settings, dataDir) {
   return !!(settings && settings.autoSubmit);
 }
 
-// 当前套餐允许绑定的最大账号数。Infinity 表示不限（团队版）。
-// 这是「账号数门禁」的核心阈值，与 autoSubmit 一样藏在本混淆模块内，避免被直接改明文绕过。
+// 账号数量门禁：订阅制不再限制账号数量（任何套餐均不限）。
+// 既满足当前「多账号管理不限数量」的需求，也符合未来对外付费采用订阅制、不按账号数计费的定位。
+// 自动提交 / 发布频率等门禁仍由 resolvedPlan / effectiveAutoSubmit / planIntervalSeconds 控制，此处仅放开账号数。
 export function maxAccounts(dataDir) {
-  const plan = resolvedPlan(dataDir);
-  const n = plan && plan.accounts;
-  if (n === Infinity) return Infinity;
-  if (typeof n === 'number' && isFinite(n) && n > 0) return n;
-  return 1; // 兜底：未识别套餐按单账号处理
+  return Infinity;
 }

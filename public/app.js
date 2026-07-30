@@ -8,6 +8,21 @@ const callApi = async (method, path, body) => {
   return r.json();
 };
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+// 把后端存储的 UTC 时间戳（ISO 字符串或 epoch 毫秒）格式化为北京时间（UTC+8）。
+// 固定偏移 +8h，不依赖运行机器所在时区，保证任何环境下显示都一致为北京时间。
+// 返回格式：YYYY-MM-DD HH:mm:ss（无毫秒、无时区后缀，符合国内阅读习惯）。
+function fmtBJ(v) {
+  if (v == null || v === '') return '';
+  let d;
+  if (typeof v === 'number') d = new Date(v);
+  else if (/^\d{10}$/.test(String(v).trim())) d = new Date(Number(v) * 1000); // 秒级 epoch
+  else d = new Date(v);
+  if (isNaN(d.getTime())) return String(v);
+  const bj = new Date(d.getTime() + 8 * 3600 * 1000); // 先整体 +8h，再用 UTC 取值避免本地时区干扰
+  const p = (n) => String(n).padStart(2, '0');
+  return `${bj.getUTCFullYear()}-${p(bj.getUTCMonth() + 1)}-${p(bj.getUTCDate())} ` +
+    `${p(bj.getUTCHours())}:${p(bj.getUTCMinutes())}:${p(bj.getUTCSeconds())}`;
+}
 // 经后端 /api/image 代理加载远程图（绕过防盗链），商品页/笔记缩略图统一走这里
 const imgUrl = (u) => (u ? '/api/image?url=' + encodeURIComponent(u) : '');
 // 本地图片文件夹的图片：经后端 /api/file 直接暴露（同源），文件夹缩略图用这个
@@ -303,7 +318,7 @@ async function loadHistory() {
       <span class="badge ${r.status}">${esc(r.status)}</span>
       <span class="qname">${esc(r.title || r.itemId || '')}</span>
       <span class="qdetail">${esc(r.detail || '')}</span>
-      <span class="qstep">${esc(r.at || '')}</span>
+      <span class="qstep">${esc(fmtBJ(r.at))}</span>
     </div>`).join('') : '<div class="empty"><span class="em">🕘</span>暂无发布历史。</div>';
 }
 
@@ -320,7 +335,7 @@ async function loadAccounts() {
   const q = $('#accountQuota');
   if (q) q.textContent = `当前套餐：${planLabel} ｜ 已绑定 ${quota} 个账号`;
   if (!used) {
-    box.innerHTML = '<div class="empty"><span class="em">👤</span>还没有绑定账号。<br/>添加你的账号（数量受套餐配额限制）。</div>';
+    box.innerHTML = '<div class="empty"><span class="em">👤</span>还没有绑定账号。<br/>添加你的账号（数量不限，按订阅套餐使用）。</div>';
     return;
   }
   box.innerHTML = (data.accounts || []).map((a) => `
@@ -414,7 +429,7 @@ async function loadInstances() {
       <div class="inst-main">
         <div class="inst-id">${esc(it.instanceId)}</div>
         <div class="inst-meta">账号：${esc(acc)} ｜ 比特窗口 ID：${esc(it.profileName || '未填')} ｜ 扩展 v${esc(it.extVersion || '—')}</div>
-        <div class="inst-meta">最后心跳：${ago != null ? ago + ' 秒前' : '—'} ｜ 首次接入：${it.firstSeen ? new Date(it.firstSeen).toLocaleString('zh-CN') : '—'}</div>
+        <div class="inst-meta">最后心跳：${ago != null ? ago + ' 秒前' : '—'} ｜ 首次接入：${it.firstSeen ? fmtBJ(it.firstSeen) : '—'}</div>
       </div>
       <span class="inst-state">${it.online ? '● 在线' : '○ 离线'}</span>
     </div>`;
