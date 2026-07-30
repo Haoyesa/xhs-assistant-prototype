@@ -1403,22 +1403,23 @@ function findPublishControl() {
 
 // 由 xhs-publish-btn host 的矩形推算红「发布」按钮的多个候选屏幕坐标（真实输入点此坐标即可命中，穿透 closed shadow）。
 // 原策略只算一个固定偏移（栏中心 +72），在小红书底部栏实际尺寸/间距变化时容易 miss，导致点了但按钮还在、空等 60s。
-// 现改为在 host 右半区取 5 个候选点，每点点击后 1.2s 验证按钮是否消失/跳转/出成功文案/出确认弹窗；命中即停，全部 miss 再 fallback JS 点击。
+// 小红书发布页底部栏：红色「发布笔记」按钮在左侧，「暂存离开」在右侧；host 覆盖整栏。
+// 原策略取右半区导致全部 miss，现改为在 host 左侧/左中区域密集取点，覆盖红色按钮可能位置。
 function publishButtonPoints(host) {
   const r = host.getBoundingClientRect();
   const w = r.width || 0;
   const h = r.height || 0;
   const left = r.left;
-  const right = r.right;
   const top = r.top;
   const bottom = r.bottom;
   const cy = top + h / 2;
   return [
-    { x: left + w * 0.75, y: cy, note: '右半区75%' },
-    { x: left + w * 0.80, y: cy, note: '右半区80%' },
-    { x: right - 50, y: cy, note: '右缘-50' },
-    { x: left + w * 0.70, y: top + h * 0.65, note: '右下65%' },
-    { x: left + w * 0.75, y: bottom - 20, note: '右下底-20' },
+    { x: left + Math.min(110, w * 0.18), y: cy, note: '左缘18%' },
+    { x: left + Math.min(140, w * 0.22), y: cy, note: '左缘22%' },
+    { x: left + Math.min(170, w * 0.26), y: cy, note: '左缘26%' },
+    { x: left + Math.min(110, w * 0.18), y: top + h * 0.62, note: '左下62%' },
+    { x: left + Math.min(140, w * 0.22), y: bottom - 18, note: '左下底-18' },
+    { x: left + Math.min(200, w * 0.30), y: cy, note: '左中30%' },
   ];
 }
 
@@ -1462,13 +1463,18 @@ async function clickPublishControl(ctrl) {
       const ok = await cdpClickPublish(pt.x, pt.y);
       if (!ok) { console.log('[黑猫] CDP点击命令未成功'); continue; }
       await sleep(1200);
-      const stillThere = !!findPublishControl();
+      const ctrlNow = findPublishControl();
+      const stillThere = !!ctrlNow;
       const navigated = !/publish/i.test(location.href);
       const bodyText = document.body.innerText || '';
       const hasSuccess = /发布成功|已发布/.test(bodyText);
       const hasConfirm = !!findPrimaryConfirm();
-      if (!stillThere || navigated || hasSuccess || hasConfirm) {
-        console.log('[黑猫] 发布点击命中 (' + pt.note + ')');
+      const isSubmitting = /发布中|提交中|请稍候|处理中|Loading/i.test(bodyText);
+      const isLoadingHost = ctrlNow && isPublishHost(ctrlNow) && (ctrlNow.getAttribute('submit-loading') === 'true');
+      const hit = !stillThere || navigated || hasSuccess || hasConfirm || isSubmitting || isLoadingHost;
+      if (hit) {
+        const signal = !stillThere ? '控件消失' : navigated ? 'URL跳离' : hasSuccess ? '成功文案' : hasConfirm ? '确认弹窗' : isSubmitting ? '发布中' : 'loading';
+        console.log('[黑猫] 发布点击命中 (' + pt.note + ') 信号=' + signal);
         return true;
       }
       console.log('[黑猫] 点击未命中，按钮仍在，换候选点');
