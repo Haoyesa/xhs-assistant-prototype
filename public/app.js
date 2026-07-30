@@ -286,13 +286,8 @@ function renderCountdown() {
 setInterval(renderCountdown, 1000); // 每秒走字，loadQueue 每 2s 刷新数据源
 
 $('#pumpBtn').addEventListener('click', async () => {
-  const mode = $('#setPublish').value;
-  if (mode === 'extension') {
-    $('#pumpMsg').textContent = 'ⓘ 插件模式下请到创作者页用浏览器插件「开始批量发布」一键自动发布';
-    toast('插件模式：请到创作者发布台用插件拉取发布', 'warn');
-    return;
-  }
-  await callApi('POST', '/api/batch/pump'); $('#pumpMsg').textContent = '▶ 执行中'; startPoll(); toast('已开始批量发布', 'ok');
+  $('#pumpMsg').textContent = 'ⓘ 浏览器插件模式下，请到创作者发布台页面用浏览器插件「开始批量发布」一键自动发布';
+  toast('请到创作者发布台用插件拉取发布', 'warn');
 });
 $('#pauseBtn').addEventListener('click', async () => { await callApi('POST', '/api/batch/pause'); $('#pumpMsg').textContent = '⏸ 已暂停'; });
 $('#resumeBtn').addEventListener('click', async () => { await callApi('POST', '/api/batch/resume'); $('#pumpMsg').textContent = '⏵ 继续'; });
@@ -533,10 +528,8 @@ async function loadSettings() {
   $('#setKey').value = s.aiApiKey || '';
   $('#setBaseUrl').value = s.aiBaseUrl || '';
   $('#setModel').value = s.aiModel || '';
-  $('#setPublish').value = s.publishMode || 'dry-run';
+  $('#setPublish').value = s.publishMode || 'extension';
   $('#setQianfanUrl').value = s.qianfanUrl || '';
-  $('#setBrowserUrl').value = s.cdpBrowserUrl || '';
-  $('#setChromePath').value = s.cdpChromePath || '';
   $('#setBitHost').value = s.bitApiHost || 'http://127.0.0.1:54345';
   $('#setBitKey').value = s.bitApiKey || '';
   $('#setImagesRoot').value = s.imagesRoot || '';
@@ -558,9 +551,7 @@ async function loadSettings() {
   updatePublishHint();
 }
 const PUBLISH_HINTS = {
-  'dry-run': '当前为「模拟发布」：不会真实发出，仅演示流程，便于先调通前后端与插件。',
-  'extension': '「浏览器插件」模式（推荐）：在创作者发布台页面点浏览器插件「开始批量发布」即可自动逐篇填表并发布（默认开启自动提交）。此模式下下方「开始批量发布」无效，由插件驱动。',
-  'cdp': '「CDP 真实浏览器」：需先在设置填 CDP 浏览器地址并登录创作者后台，再点「开始批量发布」由本机已登录 Chrome 驱动发布。',
+  'extension': '「浏览器插件」模式：在创作者发布台页面点浏览器插件「开始批量发布」即可自动逐篇填表并发布（默认开启自动提交），由插件驱动，桌面端不内置其它发布方式。',
 };
 function updatePublishHint() {
   const el = $('#publishModeHint');
@@ -570,7 +561,7 @@ $('#setPublish').addEventListener('change', updatePublishHint);
 $('#saveSetBtn').addEventListener('click', async () => {
   await callApi('POST', '/api/settings', {
     aiProvider: $('#setProvider').value, aiApiKey: $('#setKey').value, aiBaseUrl: $('#setBaseUrl').value, aiModel: $('#setModel').value,
-    publishMode: $('#setPublish').value, qianfanUrl: $('#setQianfanUrl').value, cdpBrowserUrl: $('#setBrowserUrl').value, cdpChromePath: $('#setChromePath').value,
+    publishMode: $('#setPublish').value, qianfanUrl: $('#setQianfanUrl').value,
     bitApiHost: $('#setBitHost').value, bitApiKey: $('#setBitKey').value,
     generateTitle: $('#setGenTitle').checked, generateContent: $('#setGenContent').checked, enableAiTopics: $('#setGenTopics').checked,
     topicsCount: +$('#setTopicsCount').value, randomEmoji: +$('#setEmoji').value, autoSubmit: $('#setAutoSubmit').checked, humanTyping: $('#setHumanTyping').checked,
@@ -604,14 +595,6 @@ $('#aiTestBtn').addEventListener('click', async () => {
     aiProvider: $('#setProvider').value, aiApiKey: $('#setKey').value, aiBaseUrl: $('#setBaseUrl').value, aiModel: $('#setModel').value,
   });
   $('#aiTestMsg').textContent = r.ok ? '✅ ' + (r.detail || '连通') : '❌ ' + (r.detail || '失败');
-});
-$('#cdpTestBtn').addEventListener('click', async () => {
-  const r = await callApi('POST', '/api/cdp/status', { cdpBrowserUrl: $('#setBrowserUrl').value });
-  $('#cdpMsg').textContent = r.ok ? '✅ ' + r.detail : '❌ ' + (r.detail || '未连接');
-});
-$('#cdpLaunchBtn').addEventListener('click', async () => {
-  const r = await callApi('POST', '/api/cdp/launch', { cdpChromePath: $('#setChromePath').value });
-  $('#cdpMsg').textContent = r.ok ? '✅ ' + r.detail : '❌ ' + (r.detail || '失败');
 });
 
 function switchTab(name) {

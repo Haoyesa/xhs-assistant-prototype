@@ -7,7 +7,6 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { scrapeQianfanProducts } from './qianfan-scraper.js';
-import { CdpPublisher, ChallengeDetectedError, StepFailedError } from './cdp-publisher.js';
 import { downloadOne, downloadToLocal, primeImages } from './image-util.js';
 // 门禁决策（autoSubmit / 频率 / 账号配额）抽到 electron/gating.mjs，单独混淆以提升逆向门槛
 import { resolvedPlan, planIntervalSeconds, effectiveAutoSubmit, maxAccounts } from './electron/gating.mjs';
@@ -179,9 +178,7 @@ const DEFAULT_SETTINGS = {
   imgAiCount: 1,
   imgAiExtra: '{"quality":"low","format":"jpeg"}',
   imgAiPromptTemplate: DEFAULT_IMG_PROMPT,
-  publishMode: 'dry-run',
-  cdpBrowserUrl: 'http://127.0.0.1:9222',
-  cdpChromePath: '',
+  publishMode: 'extension',
   // 比特浏览器本地 API（用于按指纹配置序号 seq 打开/关闭隔离窗口）
   bitApiHost: 'http://127.0.0.1:54345',
   bitApiKey: '',
@@ -204,16 +201,11 @@ const DEFAULT_SETTINGS = {
   csvExportDir: '', // 商品 CSV 导出目录；空则默认 数据目录/csv
 };
 
-// 下一篇发布时间由两条独立pipeline分别维护，避免 CDP 模式与浏览器插件互相覆盖/清零
-let cdpNextPublishAt = 0;  // runPump (CDP 模式) 设置
+// 下一篇发布时间由浏览器插件通过 /api/ext/schedule 上报维护
 let extNextPublishAt = 0;  // 插件通过 /api/ext/schedule 上报
 function getNextPublishAt() {
   const now = Date.now();
-  const cdp = cdpNextPublishAt > now ? cdpNextPublishAt : 0;
-  const ext = extNextPublishAt > now ? extNextPublishAt : 0;
-  // 两端都活跃时，显示最近（最小）的一次；只有一端活跃时显示那一端
-  if (cdp && ext) return Math.min(cdp, ext);
-  return cdp || ext || 0;
+  return extNextPublishAt > now ? extNextPublishAt : 0;
 }
 
 // 在线插件实例注册表（BitBrowser 多账号并行模型）：
@@ -431,96 +423,13 @@ function chooseBetter(a, b) {
 
 async function runPump(settings) {
   if (pump.running) return;
-  // 套餐约束：基础版(autoSubmit=false)强制人工复核；专业版以上才允许按用户设置自动
-  const effAuto = effectiveAutoSubmit(settings, DATA);
   pump.running = true; pump.stop = false; pump.paused = false;
   try {
-    const tasks = await readStore(stores.tasks, []);
-    const queued = tasks.filter((t) => t.status === 'queued');
-    const mode = settings.publishMode === 'cdp' ? 'cdp' : 'dry-run';
-    const publisher = mode === 'cdp' ? new CdpPublisher(settings) : null;
-
-    for (const task of queued) {
-      if (pump.stop) break;
-      while (pump.paused) { await new Promise((r) => setTimeout(r, 1000)); if (pump.stop) break; }
-      if (pump.stop) break;
-
-      task.status = 'running';
-      task.step = 'open_publish_page';
-      task.statusDetail = '开始执行';
-      task.updatedAt = nowISO();
-      await writeStore(stores.tasks, mergeTask(tasks, task));
-
-      try {
-        if (mode === 'cdp') {
-          // 发布前把远程商品图下载到本地（CDP 上传需要本地文件路径）
-          const localImgs = await downloadToLocal(task.images, UPLOADS);
-          const res = await publisher.publishNote({ ...task, images: localImgs }, {
-            autoSubmit: effAuto,
-            onStep: async (step, detail) => {
-              task.step = step; task.statusDetail = detail; task.updatedAt = nowISO();
-              await writeStore(stores.tasks, mergeTask(tasks, task));
-            },
-          });
-          task.status = res.status === 'success' ? 'success' : (res.status || 'submitted');
-          task.statusDetail = res.detail;
-          task.step = res.step || task.step;
-          if (res.status === 'success') { task.noteUrl = ''; }
-        } else {
-          // dry-run 模拟
-          const steps = ['open_publish_page', 'upload_images', 'select_product', 'fill_title', 'fill_content', 'waiting_submit', 'submitting', 'verify_result'];
-          for (const s of steps) {
-            if (pump.stop) break;
-            task.step = s;
-            task.statusDetail = `[模拟] ${s}`;
-            task.updatedAt = nowISO();
-            await writeStore(stores.tasks, mergeTask(tasks, task));
-            await new Promise((r) => setTimeout(r, 250));
-          }
-          task.status = effAuto ? 'success' : 'waiting_submit';
-          task.statusDetail = effAuto ? '[模拟] 发布成功' : '[模拟] 已填好，等待人工提交';
-        }
-        // 写入历史
-        const history = await readStore(stores.history, []);
-        history.unshift({
-          id: uid('h'), taskId: task.id, itemId: task.itemId, title: task.title,
-          status: task.status, detail: task.statusDetail, at: nowISO(),
-        });
-        await writeStore(stores.history, history.slice(0, 500));
-      } catch (e) {
-        task.status = 'manual_hold';
-        task.statusDetail = e.message || '执行失败';
-        task.step = e.step || task.step;
-        const history = await readStore(stores.history, []);
-        history.unshift({ id: uid('h'), taskId: task.id, itemId: task.itemId, title: task.title, status: 'failed', detail: task.statusDetail, at: nowISO() });
-        await writeStore(stores.history, history.slice(0, 500));
-      }
-      task.updatedAt = nowISO();
-      await writeStore(stores.tasks, mergeTask(tasks, task));
-
-      // 节奏控制（CDP 模式用配置间隔；dry-run 用短间隔便于演示）
-      if (mode === 'cdp') {
-        const eff = effectiveInterval(settings);
-        const base = eff.publishIntervalSeconds * 1000;
-        const extra = eff.publishIntervalRandomDelaySeconds * 1000 * Math.random();
-        cdpNextPublishAt = Date.now() + base + extra;
-        console.log('[runPump] CDP countdown set at=' + cdpNextPublishAt + ' delta=' + (base + extra) + 'ms');
-        const { interrupted } = await sleepInterruptible(base + extra);
-        // 被 stop/pause 中断或队列已结束时，清除 CDP 倒计时（避免前端一直读一个不会到来的时刻）
-        if (interrupted || pump.stop || pump.paused) {
-          console.log('[runPump] CDP countdown cleared (interrupted=' + interrupted + ' stop=' + pump.stop + ' paused=' + pump.paused + ')');
-          cdpNextPublishAt = 0;
-        }
-      } else {
-        await sleepInterruptible(1500 + Math.random() * 1500);
-      }
-    }
+    // 仅「浏览器插件」模式由插件驱动发布；桌面端不再内置 CDP / 模拟(dry-run)发布能力。
+    console.log('[runPump] 仅浏览器插件模式支持发布，桌面端不内置发布能力');
+    await new Promise((r) => setTimeout(r, 300));
   } finally {
     pump.running = false;
-    if (cdpNextPublishAt) {
-      console.log('[runPump] CDP countdown cleared in finally (queue ended/stopped)');
-      cdpNextPublishAt = 0; // CDP 批量发布结束，清除本端倒计时
-    }
   }
 }
 
@@ -1118,66 +1027,6 @@ const server = http.createServer(async (req, res) => {
       }
       await writeStore(stores.tasks, tasks);
       return sendJSON(res, 200, { ok: true, assigned: n, accountId });
-    }
-
-    // CDP 连接状态 / 启动
-    if (p === '/api/cdp/status' && method === 'POST') {
-      const body = await readBody(req);
-      const settings = { ...DEFAULT_SETTINGS, ...(await readStore(stores.settings, {})), ...body };
-      try {
-        const pub = new CdpPublisher(settings);
-        const out = await pub.testConnection();
-        return sendJSON(res, 200, out);
-      } catch (e) {
-        return sendJSON(res, 200, { ok: false, detail: e.message });
-      }
-    }
-    if (p === '/api/cdp/launch' && method === 'POST') {
-      const body = await readBody(req);
-      const settings = { ...DEFAULT_SETTINGS, ...(await readStore(stores.settings, {})), ...body };
-      let cfg = {};
-      try {
-        cfg = JSON.parse(fs.readFileSync(path.join(__dirname, 'cdp-config.json'), 'utf-8'));
-      } catch {
-        cfg = { launch: { args: [] } };
-      }
-      // 自动探测浏览器：设置路径 → 常见 Chrome 安装位 → Edge（本机常只有 Edge）
-      const pf = process.env.ProgramFiles || 'C:\Program Files';
-      const pf86 = process.env['ProgramFiles(x86)'] || 'C:\Program Files (x86)';
-      const candidates = [];
-      if (settings.cdpChromePath) candidates.push(settings.cdpChromePath);
-      candidates.push(
-        path.join(pf, 'Google/Chrome/Application/chrome.exe'),
-        path.join(pf86, 'Google/Chrome/Application/chrome.exe'),
-        path.join(process.env.LOCALAPPDATA || '', 'Google/Chrome/Application/chrome.exe'),
-        path.join(pf86, 'Microsoft/Edge/Application/msedge.exe'),
-        path.join(pf, 'Microsoft/Edge/Application/msedge.exe'),
-        'chrome', 'msedge',
-      );
-      let exe = null;
-      for (const c of candidates) { try { if (c && fs.existsSync(c)) { exe = c; break; } } catch {} }
-      if (!exe) return sendJSON(res, 200, { ok: false, detail: '未找到 Chrome/Edge，请在设置页「Chrome 路径」填写浏览器 exe 完整路径后重试。' });
-      // 专用调试 profile（登录态持久化，不抢占日常浏览器）
-      const _home = process.env.USERPROFILE || process.env.HOME || '.';
-      const profileDir = process.env.XHS_DATA_DIR ? path.join(process.env.XHS_DATA_DIR, 'cdp-profile') : path.join(_home, '.xhs-cdp-profile');
-      fs.mkdirSync(profileDir, { recursive: true });
-      // 必带参数：调试端口 + 允许 CDP 远程来源(Chrome>=111 默认拦截) + 专用 profile
-      const args = [
-        '--remote-debugging-port=9222',
-        '--remote-allow-origins=*',
-        '--user-data-dir=' + profileDir,
-        '--no-first-run', '--no-default-browser-check',
-        '--disable-blink-features=AutomationControlled',
-      ];
-      const { spawn } = await import('node:child_process');
-      let child;
-      try {
-        child = spawn(exe, args, { detached: true, stdio: 'ignore' });
-        child.unref();
-      } catch (e) {
-        return sendJSON(res, 200, { ok: false, detail: '启动浏览器失败：' + e.message });
-      }
-      return sendJSON(res, 200, { ok: true, detail: '已启动 ' + path.basename(exe) + '（调试端口 9222）。首次请在弹出的浏览器里登录发布平台，之后会保持登录。' });
     }
 
     // ===== 比特浏览器本地 API 代理（按指纹配置打开/关闭隔离窗口）=====

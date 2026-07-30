@@ -107,7 +107,7 @@ function syncFresh(srcDir, dstDir) {
     }
   }
 }
-for (const root of ['server.js', 'sensitive-words.mjs', 'qianfan-scraper.js', 'cdp-publisher.js', 'image-util.js', 'electron/qrcode.js']) {
+for (const root of ['server.js', 'sensitive-words.mjs', 'qianfan-scraper.js', 'image-util.js', 'electron/qrcode.js']) {
   const sp = path.join(ROOT, root);
   const dp = path.join(SRC, root);
   if (fs.existsSync(sp)) {

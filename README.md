@@ -30,10 +30,9 @@ xhs-assistant-prototype/
 ├── extension/                # 浏览器插件（MV3）：background / content-* / popup / panel.css
 ├── electron/
 │   └── main.mjs              # Electron 主进程入口
-├── cdp-publisher.js          # 发布逻辑
 ├── qianfan-scraper.js       # 商品抓取
 ├── image-util.js             # 图片工具
-├── cdp-config.json           # 选择器 / CDP 配置
+├── cdp-config.json           # 选择器配置（千帆商品抓取）
 ├── gen_releases.js           # 生成 releases 发布归档页
 ├── assets/                   # 图标等资源
 ├── data/                     # 运行时数据（git 忽略）
@@ -91,7 +90,7 @@ npm run dist               # electron-builder 输出到 dist/（含 setup.exe �
 ## 常见问题
 
 - **打开软件一直「连接中…」**：后端没起来。常见原因是端口 **5199** 被别的进程占用（旧版 exe、残留 `node server.js`）。用 `Get-NetTCPConnection -LocalPort 5199` 看占用 PID，`taskkill /F /PID <pid>` 结束；本版已支持同类后端占用时自动复用、非同类弹窗提示。
-- **`app.asar.unpacked` 缺依赖**：`server.js` 依赖同目录的 `qianfan-scraper.js` / `cdp-publisher.js` / `image-util.js`，若缺失会 `ERR_MODULE_NOT_FOUND` 导致后端崩溃。
+- **`app.asar.unpacked` 缺依赖**：`server.js` 依赖同目录的 `qianfan-scraper.js` / `image-util.js`，若缺失会 `ERR_MODULE_NOT_FOUND` 导致后端崩溃。
 
 ## 合规提醒
 

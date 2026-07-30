@@ -1,6 +1,6 @@
 {
   "name": "heimao-ai-note-assistant",
-  "version": "0.4.1",
+  "version": "0.5.0",
   "private": true,
   "author": "heimao-ai",
   "type": "module",
@@ -22,7 +22,6 @@
       "server.js",
       "sensitive-words.mjs",
       "qianfan-scraper.js",
-      "cdp-publisher.js",
       "image-util.js",
       "cdp-config.json",
       "public/**/*",

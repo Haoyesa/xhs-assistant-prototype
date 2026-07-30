@@ -18,8 +18,7 @@
 xhs-assistant-prototype/
 ├── server.js            # 本地服务内核：素材库 / 文案生成 / 批量队列 / 商品抓取 / 发布编排
 ├── qianfan-scraper.js   # 商品页抓取
-├── cdp-publisher.js     # 发布逻辑
-├── cdp-config.json      # 所有选择器与节奏参数
+├── cdp-config.json      # 选择器配置（千帆商品抓取）
 ├── public/              # 原生前端单页（素材库 / 文案优化 / 封面素材参考 / 历史 / 设置）
 ├── electron/main.mjs    # 桌面外壳（进程内启动服务 + 窗口）
 ├── data/                # 本地 JSON 存储（products / tasks / history / settings）
