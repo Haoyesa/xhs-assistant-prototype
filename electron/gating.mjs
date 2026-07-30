@@ -24,11 +24,11 @@ export function planIntervalSeconds(dataDir) {
   };
 }
 
-// 是否允许自动提交：仅专业版以上（autoSubmit=true）且用户在设置里开启自动提交才放行；
-// 免费 / 基础版强制 false（人工复核）。这是「发布自动化」的核心开关，也是最该藏住的决策。
+// 是否允许自动提交：订阅制下对所有套餐（含免费 / 自用）开放自动发布，
+// 仅由用户在「设置」里的「自动提交」开关决定（默认开启）。
+// 账号数量门禁此前已放开（见 maxAccounts）；频率档位仍由 planIntervalSeconds 按套餐区分，不受此影响。
+// 注：自动发布遇到验证挑战仍会转人工复核（content script 的 detectChallenge → manual_hold），合规红线不变。
 export function effectiveAutoSubmit(settings, dataDir) {
-  const plan = resolvedPlan(dataDir);
-  if (!plan.autoSubmit) return false;
   return !!(settings && settings.autoSubmit);
 }
 
