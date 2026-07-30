@@ -331,15 +331,64 @@ $('#assignUnassignBtn').addEventListener('click', async () => {
 });
 
 // ---- 历史 ----
+// 发布状态 → { 中文标签, 颜色类 }
+function statusMeta(st) {
+  switch (st) {
+    case 'published':
+    case 'success': return { label: '已发布', cls: 'ok' };
+    case 'manual_hold': return { label: '转人工', cls: 'warn' };
+    case 'waiting_submit': return { label: '待发布', cls: 'info' };
+    case 'failed':
+    case 'skipped': return { label: '失败', cls: 'err' };
+    default: return { label: String(st || '未知'), cls: 'muted' };
+  }
+}
+// 按北京时间把时间戳归类到 今天 / 昨天 / 更早
+function dayBucket(v) {
+  if (v == null || v === '') return 'earlier';
+  let d;
+  if (typeof v === 'number') d = new Date(v);
+  else if (/^\d{10}$/.test(String(v).trim())) d = new Date(Number(v) * 1000); // 秒级 epoch
+  else d = new Date(v);
+  if (isNaN(d.getTime())) return 'earlier';
+  const bj = new Date(d.getTime() + 8 * 3600 * 1000);
+  const nowBJ = new Date(Date.now() + 8 * 3600 * 1000);
+  const bj0 = Date.UTC(bj.getUTCFullYear(), bj.getUTCMonth(), bj.getUTCDate());
+  const now0 = Date.UTC(nowBJ.getUTCFullYear(), nowBJ.getUTCMonth(), nowBJ.getUTCDate());
+  const diff = Math.round((now0 - bj0) / 86400000);
+  if (diff === 0) return 'today';
+  if (diff === 1) return 'yesterday';
+  return 'earlier';
+}
+const HIST_GROUP_LABEL = { today: '今天', yesterday: '昨天', earlier: '更早' };
+const HIST_GROUP_ORDER = ['today', 'yesterday', 'earlier'];
+
+function renderHistoryItem(r) {
+  const s = statusMeta(r.status);
+  return `<div class="qitem">
+    <span class="h-badge ${s.cls}">${esc(s.label)}</span>
+    <span class="qname">${esc(r.title || r.itemId || '')}</span>
+    <span class="qdetail">${esc(r.detail || '')}</span>
+    <span class="qstep">${esc(fmtBJRel(r.at))}</span>
+  </div>`;
+}
+
 async function loadHistory() {
   const h = await callApi('GET', '/api/history');
-  $('#historyList').innerHTML = h.length ? h.map((r) => `
-    <div class="qitem">
-      <span class="badge ${r.status}">${esc(r.status)}</span>
-      <span class="qname">${esc(r.title || r.itemId || '')}</span>
-      <span class="qdetail">${esc(r.detail || '')}</span>
-      <span class="qstep">${esc(fmtBJRel(r.at))}</span>
-    </div>`).join('') : '<div class="empty"><span class="em">🕘</span>暂无发布历史。</div>';
+  if (!h || !h.length) {
+    $('#historyList').innerHTML = '<div class="empty"><span class="em">🕘</span>暂无发布历史。</div>';
+    return;
+  }
+  // 按时间降序（最新在上）
+  const arr = [...h].sort((a, b) => new Date(b.at || 0) - new Date(a.at || 0));
+  const groups = { today: [], yesterday: [], earlier: [] };
+  arr.forEach((r) => groups[dayBucket(r.at)].push(r));
+  const html = HIST_GROUP_ORDER.filter((g) => groups[g].length).map((g) =>
+    `<div class="hist-group">
+       <div class="hist-group-title">${HIST_GROUP_LABEL[g]}<span class="hist-group-count">${groups[g].length} 条</span></div>
+       ${groups[g].map((r) => renderHistoryItem(r)).join('')}
+     </div>`).join('');
+  $('#historyList').innerHTML = html;
 }
 
 // ---- 账号管理（套餐配额门禁）----

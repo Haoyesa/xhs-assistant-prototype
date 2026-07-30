@@ -336,3 +336,25 @@ button.ghost:hover { background: var(--panel2); }
 .agreement-check input { width: 16px; height: 16px; accent-color: var(--accent); }
 .agreement-actions { padding: 0 22px 20px; display: flex; justify-content: flex-end; }
 .agreement-actions .primary { min-width: 140px; }
+
+/* 历史按日期分组 */
+.hist-group { margin-bottom: 14px; }
+.hist-group:last-child { margin-bottom: 0; }
+.hist-group-title {
+  display: flex; align-items: center; gap: 8px;
+  font-size: 12px; font-weight: 700; color: var(--muted);
+  padding: 6px 2px; margin-bottom: 2px;
+  border-bottom: 1px dashed var(--border);
+}
+.hist-group-count { font-weight: 400; font-size: 11px; color: var(--muted); opacity: .8; }
+
+/* 历史发布状态彩色标签（替换旧的英文 badge） */
+.h-badge {
+  flex: none; padding: 3px 10px; border-radius: 999px; font-size: 12px;
+  border: 1px solid transparent; white-space: nowrap; font-weight: 600;
+}
+.h-badge.ok { color: var(--ok); background: color-mix(in srgb, var(--ok) 14%, transparent); border-color: color-mix(in srgb, var(--ok) 40%, transparent); }
+.h-badge.warn { color: var(--warn); background: color-mix(in srgb, var(--warn) 14%, transparent); border-color: color-mix(in srgb, var(--warn) 40%, transparent); }
+.h-badge.info { color: var(--accent2); background: color-mix(in srgb, var(--accent2) 14%, transparent); border-color: color-mix(in srgb, var(--accent2) 40%, transparent); }
+.h-badge.err { color: var(--bad); background: color-mix(in srgb, var(--bad) 14%, transparent); border-color: color-mix(in srgb, var(--bad) 40%, transparent); }
+.h-badge.muted { color: var(--muted); background: var(--panel2); border-color: var(--border); }
