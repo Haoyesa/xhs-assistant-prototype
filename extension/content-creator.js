@@ -5,6 +5,15 @@ console.log('[黑猫] content-creator.js 已注入', new Date().toISOString());
 // 保活 service worker（防止长耗时填表/回报期间 SW 被回收导致 Extension context invalidated）
 try { window.XhsCommon && window.XhsCommon.xhsKeepAlive(); } catch (e) {}
 
+// 创作者页加载完成后，主动通知后台「本标签已就绪」请求填充。即便后台 SW 此刻被回收，
+// 这条消息也会唤醒 SW 去执行填充——不依赖 onUpdated 事件唤醒（比特浏览器对 SW 回收激进，
+// onUpdated 常丢导致新标签永不填充、队列卡死）。配合 background 的 tabReady 处理器。
+function notifyTabReady() {
+  try { chrome.runtime.sendMessage({ type: 'tabReady' }).catch(() => {}); } catch (e) {}
+}
+if (document.readyState === 'complete') setTimeout(notifyTabReady, 800);
+else window.addEventListener('load', () => setTimeout(notifyTabReady, 800));
+
 // ---- 顶部居中悬浮 Toast：捕获 [黑猫] 日志 + 实时状态 ----
 // 安装 console.log 包装，把 [黑猫] 日志写入环形缓冲，供右上/顶部 Toast 渲染。
 window.__xhsToastLog = window.__xhsToastLog || [];

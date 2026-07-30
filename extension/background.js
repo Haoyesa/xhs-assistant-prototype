@@ -20,6 +20,8 @@ const DEFAULTS = {
   instanceId: '',
 };
 
+console.log('[黑猫][BG] service worker started', new Date().toISOString());
+
 // 创作者图文发布页（每篇都开一个全新的标签页，地址固定为此）
 const CREATOR_URL = 'https://creator.xiaohongshu.com/publish/publish?source=&published=true&from=tab_switch&target=image';
 
@@ -550,6 +552,18 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         } catch (e) {
           sendResponse({ ok: false, queued: 0, total: 0, msg: e.message });
         }
+      } else if (msg.type === 'tabReady') {
+        // 创作者标签加载完成后主动上报「我好了」：即便此刻 SW 已被回收，这条消息也会唤醒 SW 执行填充，
+        // 不再依赖 onUpdated 事件唤醒（比特浏览器对 SW 回收激进，onUpdated 常丢导致新标签永不填充、队列卡死）。
+        const tabId = sender.tab && sender.tab.id;
+        if (tabId != null && awaitingTabId === tabId) {
+          console.log('[黑猫][BG] tabReady matched awaitingTabId=', tabId, '→ fillTab');
+          awaitingTabId = null;
+          fillTab(tabId);
+        } else {
+          console.log('[黑猫][BG] tabReady tabId=', tabId, 'awaitingTabId=', awaitingTabId, '(不匹配，跳过)');
+        }
+        sendResponse({ ok: true });
       } else if (msg.type === 'setAutoSubmit') {
         try {
           const r = await api('/api/settings', { method: 'POST', body: { autoSubmit: !!msg.value } });
