@@ -1394,13 +1394,25 @@ function findPublishControl() {
   return pool[0].el;
 }
 
-// 由 xhs-publish-btn host 的矩形推算红「发布」按钮的屏幕坐标（真实输入点此坐标即可命中，穿透 closed shadow）。
-// 发布栏：两枚 120px 按钮居中、gap=24px，「发布」在右 → 中心 x = 栏中心 + (120+24)/2 = +72；栏高 90px，按钮 40px 居中 → y = 栏顶 + 45。
-function publishButtonPoint(host) {
+// 由 xhs-publish-btn host 的矩形推算红「发布」按钮的多个候选屏幕坐标（真实输入点此坐标即可命中，穿透 closed shadow）。
+// 原策略只算一个固定偏移（栏中心 +72），在小红书底部栏实际尺寸/间距变化时容易 miss，导致点了但按钮还在、空等 60s。
+// 现改为在 host 右半区取 5 个候选点，每点点击后 1.2s 验证按钮是否消失/跳转/出成功文案/出确认弹窗；命中即停，全部 miss 再 fallback JS 点击。
+function publishButtonPoints(host) {
   const r = host.getBoundingClientRect();
-  const cx = (r.left + r.right) / 2 + 72;
-  const cy = r.top + (r.bottom - r.top) / 2;
-  return { x: cx, y: cy };
+  const w = r.width || 0;
+  const h = r.height || 0;
+  const left = r.left;
+  const right = r.right;
+  const top = r.top;
+  const bottom = r.bottom;
+  const cy = top + h / 2;
+  return [
+    { x: left + w * 0.75, y: cy, note: '右半区75%' },
+    { x: left + w * 0.80, y: cy, note: '右半区80%' },
+    { x: right - 50, y: cy, note: '右缘-50' },
+    { x: left + w * 0.70, y: top + h * 0.65, note: '右下65%' },
+    { x: left + w * 0.75, y: bottom - 20, note: '右下底-20' },
+  ];
 }
 
 // 经 background service worker 用 chrome.debugger 发真实鼠标事件到 (x,y)（真实输入会穿透 closed shadow）。
@@ -1416,6 +1428,7 @@ async function cdpClickPublish(x, y) {
 }
 
 // 点击发布控件：真实按钮（shadow 可取到）→ 深度点击；xhs-publish-btn host（closed shadow）→ CDP 坐标真实点击。
+// v0.2.60 关键改进：CDP 单点坐标容易因底部栏实际尺寸/间距变化而 miss；现多候选点 + 命中验证，命中即停。
 async function clickPublishControl(ctrl) {
   if (!ctrl) return false;
   const isHost = (ctrl.tagName || '').toLowerCase() === 'xhs-publish-btn';
@@ -1435,10 +1448,26 @@ async function clickPublishControl(ctrl) {
         await new Promise((r) => setTimeout(r, 200));
       }
     } catch (e) {}
-    const pt = publishButtonPoint(ctrl);
-    console.log('[黑猫] 计算发布按钮坐标: x=' + Math.round(pt.x) + ' y=' + Math.round(pt.y));
-    const ok = await cdpClickPublish(pt.x, pt.y);
-    if (!ok) { realClickDeep(ctrl); return false; }
+    const points = publishButtonPoints(ctrl);
+    const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+    for (const pt of points) {
+      console.log('[黑猫] 尝试发布点击: x=' + Math.round(pt.x) + ' y=' + Math.round(pt.y) + ' (' + pt.note + ')');
+      const ok = await cdpClickPublish(pt.x, pt.y);
+      if (!ok) { console.log('[黑猫] CDP点击命令未成功'); continue; }
+      await sleep(1200);
+      const stillThere = !!findPublishControl();
+      const navigated = !/publish/i.test(location.href);
+      const bodyText = document.body.innerText || '';
+      const hasSuccess = /发布成功|已发布/.test(bodyText);
+      const hasConfirm = !!findPrimaryConfirm();
+      if (!stillThere || navigated || hasSuccess || hasConfirm) {
+        console.log('[黑猫] 发布点击命中 (' + pt.note + ')');
+        return true;
+      }
+      console.log('[黑猫] 点击未命中，按钮仍在，换候选点');
+    }
+    console.log('[黑猫] CDP 全部候选点未命中，fallback realClickDeep');
+    realClickDeep(ctrl);
     return true;
   }
   realClickDeep(ctrl);
