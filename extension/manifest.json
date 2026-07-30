@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "黑猫智记AI",
-  "version": "0.4.6",
+  "version": "0.4.7",
   "description": "配套本地助手后端（素材库 → 按商品生成笔记 → 创作者页批量发布）。仅用于你自己的商家账号，人工复核后发布，不做验证码破解。",
   "action": {
     "default_popup": "popup.html",

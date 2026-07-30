@@ -377,14 +377,15 @@ async function scheduleNext() {
     hasPending = !!(q && q.tasks && q.tasks.some((t) => t.status === 'queued' || t.status === 'picked'));
   } catch (e) { hasPending = true; } // 查不到时保守继续，最终由 fillTab 空路径兜底清除
   if (!hasPending) {
-    // 队列已空：停止自动链（不再开新标签），撤销刚挂的闹钟，但「下一篇倒计时」保留到当前间隔走完再清除，
-    // 用一次性闹钟兜底（SW 回收也能可靠触发），避免倒计时刚出现就被清掉。
-    chrome.alarms.clear('nextPublish').catch(() => {});
-    schedulerActive = false;
+    // 重要：这里「队列接口返回空」可能是误报——/api/batch/queue 用严格 accountId 过滤，而真正拉任务的
+    // pullNext 走 taskMatchesAccount（带空 accountId 兜底），二者口径不一致；多账号指派/时序下极易把「还有活」
+    // 误判成「空」，于是把刚挂好的 nextPublish 闹钟撤掉、schedulerActive 置 false，结果「倒计时走完却不再发下一篇」。
+    // 因此【不】在此停调度：保留闹钟与调度器，倒计时到点后由 openNextTab→fillTab→pullNext 做最终权威判定；
+    // 若 pullNext 真拉不到任务，fillTab 的 no-task 分支会干净地 schedulerActive=false + clearSchedule。
+    // 这里只给一条非致命提示，方便排查，但绝不阻断自动链。
+    console.warn('[黑猫][BG] scheduleNext 队列接口返回空（可能误报），保留自动链，交由 pullNext 最终判定');
+    broadcast({ kind: 'warn', msg: '队列接口暂时查不到待发任务，到点仍会尝试开下一篇；若确为空将自动结束' });
     persistSched();
-    broadcast({ kind: 'idle', msg: '队列已空，没有待发任务了 ✓' });
-    const remain = Math.max(1000, nextAllowedAt - Date.now());
-    chrome.alarms.create('clearSchedule', { delayInMinutes: (remain + 1500) / 60000 });
   }
 }
 // 清除「下一篇倒计时」：重置内存态、清 storage、上报后端 0（两侧都不再显示读秒）
