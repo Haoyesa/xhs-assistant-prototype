@@ -51,7 +51,7 @@ window.__xhsToastLog = window.__xhsToastLog || [];
   console.log = function (...args) {
     try {
       const s = args.map((a) => (typeof a === 'string' ? a : (a && a.message) ? a.message : (() => { try { return JSON.stringify(a); } catch { return String(a); } })())).join(' ');
-      if (/\[XHS\]/.test(s)) {
+      if (/\[黑猫\]|\[XHS\]/.test(s)) {
         window.__xhsToastLog.push(s);
         if (window.__xhsToastLog.length > 80) window.__xhsToastLog.shift();
         if (window.__renderXhsToast) window.__renderXhsToast();
@@ -2109,17 +2109,46 @@ function buildPanel() {
   const startBtn = box.querySelector('#xhs-h-start');
   if (startBtn) {
     startBtn.addEventListener('click', () => {
+      console.log('[黑猫] 开始批量发布按钮被点击，disabled=', startBtn.disabled);
       if (startBtn.disabled) return;
       const status = (window.__xhsHelper && window.__xhsHelper.status) || (() => {});
       window.__xhsPublish.batchActive = true;
       updateStartBtn();
-      chrome.runtime.sendMessage({ type: 'startPublish' }, (r) => {
-        const ok = !!(r && r.ok);
-        status(ok ? '已开始批量发布（每篇开新标签，自动发布）' : '开始失败：' + ((r && r.msg) || '未知'));
-        if (!ok) { window.__xhsPublish.batchActive = false; }
-        updateStartBtn();
-        refreshQueue();
-      });
+      status('正在唤醒后台调度器…');
+
+      // 向 background 发送 startPublish，带退避重试：比特浏览器对 SW 回收极激进，
+      // 单次 sendMessage 可能在 SW 回收窗口期丢失，导致点了没反应。
+      let tries = 0;
+      const MAX_START = 8;
+      const doSend = () => {
+        tries++;
+        console.log('[黑猫] 第 ' + tries + ' 次发送 startPublish...');
+        chrome.runtime.sendMessage({ type: 'startPublish' }, (r) => {
+          const err = chrome.runtime.lastError;
+          if (err) {
+            console.warn('[黑猫] startPublish 发送失败：' + err.message);
+            if (tries < MAX_START) {
+              const wait = Math.min(5000, 400 * Math.pow(1.6, tries));
+              status('后台未唤醒，' + Math.round(wait) + 'ms 后重试 (' + tries + '/' + MAX_START + ')');
+              setTimeout(doSend, wait);
+              return;
+            }
+            console.error('[黑猫] startPublish 重试耗尽，请 chrome://extensions 重载扩展后再试');
+            status('启动失败：后台未响应，请重载扩展');
+            window.__xhsPublish.batchActive = false;
+            updateStartBtn();
+            refreshQueue();
+            return;
+          }
+          const ok = !!(r && r.ok);
+          console.log('[黑猫] startPublish 响应：', r);
+          status(ok ? '已开始批量发布（每篇开新标签，自动发布）' : '开始失败：' + ((r && r.msg) || '未知'));
+          if (!ok) { window.__xhsPublish.batchActive = false; }
+          updateStartBtn();
+          refreshQueue();
+        });
+      };
+      doSend();
     });
     updateStartBtn();
     refreshQueue();
