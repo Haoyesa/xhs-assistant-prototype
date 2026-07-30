@@ -558,6 +558,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           sendResponse({ ok: false, msg: e.message });
         }
       } else if (msg.type === 'startPublish') {
+        console.log('[黑猫][BG] received startPublish, schedulerActive set to true');
         // 开启队列自动发布：始终直接打开图文上传页（CREATOR_URL）再填充，不依赖/不接管当前已打开的（可能非上传页的）创作者页
         schedulerActive = true; paused = false;
         chrome.alarms.clear('clearSchedule').catch(() => {}); // 撤销上次批次遗留的兜底清理，避免误清新批次倒计时
