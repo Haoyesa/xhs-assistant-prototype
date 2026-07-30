@@ -1438,6 +1438,10 @@ async function cdpClickPublish(x, y) {
   });
 }
 
+// 与 isVisibleEl/isRedBg 等并列的模块级助手：判断元素是否为 xhs-publish-btn 宿主（closed shadow，需 CDP 坐标点击）。
+// 必须定义在模块作用域，否则 clickPublishControl / autoPublish 各自作用域无法互相引用（曾因仅定义在 autoPublish 内导致 ReferenceError）。
+function isPublishHost(el) { return !!(el && (el.tagName || '').toLowerCase() === 'xhs-publish-btn'); }
+
 // 点击发布控件：真实按钮（shadow 可取到）→ 深度点击；xhs-publish-btn host（closed shadow）→ CDP 坐标真实点击。
 // v0.2.60 关键改进：CDP 单点坐标容易因底部栏实际尺寸/间距变化而 miss；现多候选点 + 命中验证，命中即停。
 async function clickPublishControl(ctrl) {
@@ -1519,7 +1523,6 @@ async function autoPublish(status, summary, task) {
       console.log('[黑猫] 可视点击元素(' + btns.length + '):', JSON.stringify(info));
     } catch (e) {}
   };
-  const isPublishHost = (el) => (el && (el.tagName || '').toLowerCase() === 'xhs-publish-btn');
   const ctrl = findPublishControl();
   console.log('[黑猫] 发布控件:', ctrl ? (ctrl.tagName + (isPublishHost(ctrl) ? '[xhs-publish-btn host]' : '.' + String(ctrl.className || '').slice(0, 18)) + ' "' + (ctrl.textContent || '').trim().slice(0, 12) + '" dis=' + (isDisabledEl(ctrl) ? 1 : 0)) : '未找到');
   if (ctrl) {
