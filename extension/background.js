@@ -339,8 +339,12 @@ function resolveCurrent(kind, detail, reportTabId, delayMs) {
     broadcast({ kind: 'warn', msg: '⚠ 遇到验证挑战，已暂停队列，请人工处理；解决后点「发布」将自动继续' });
     // 不关标签、不开下一篇
   } else { // failed 等
-    broadcast({ kind: 'error', msg: '✗ 任务结束（' + (detail || '失败') + '），继续下一篇' });
-    if (tabId != null) chrome.tabs.remove(tabId).catch(() => {});
+    broadcast({ kind: 'error', msg: '✗ 任务结束（' + (detail || '失败') + '），标签已保留供排查，继续下一篇' });
+    // 失败时**不再立即关标签**：此前直接 chrome.tabs.remove 会让页面「突然自己关闭」，
+    // 现场和内容脚本日志一并消失，无法排查（用户反馈「截不到日志」）。
+    // 改为保留该标签，交给 openNextTab 在开下一篇时统一清场，中间这段时间可自由查看页面与控制台。
+    lastPublishedTabId = tabId;
+    console.log('[黑猫][BG] 任务失败，保留标签 tabId=', tabId, '供排查（开下一篇时自动关闭）');
     scheduleNext();
   }
   persistSched(); // 持久化 paused 等状态变化，抗 SW 回收
@@ -567,6 +571,28 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         } catch (e) {
           sendResponse({ ok: false, queued: 0, others: 0, total: 0, msg: e.message });
         }
+      } else if (msg.type === 'csLog') {
+        // 内容脚本日志转发：标签被后台关闭后页面控制台日志即丢失，这里落到 SW 控制台 + storage 环形缓冲，
+        // 便于事后用面板「复制日志」或 getLogs 完整回看（尤其是发布失败自动关标签的场景）。
+        const tid = (sender.tab && sender.tab.id) != null ? sender.tab.id : '-';
+        console.log('[黑猫][CS#' + tid + ']', msg.line);
+        try {
+          const cur = (await chrome.storage.local.get('csLogBuf')).csLogBuf || [];
+          cur.push(new Date().toLocaleTimeString('zh-CN', { hour12: false }) + ' #' + tid + ' ' + msg.line);
+          while (cur.length > 500) cur.shift();
+          await chrome.storage.local.set({ csLogBuf: cur });
+        } catch (e) {}
+        sendResponse({ ok: true });
+      } else if (msg.type === 'getLogs') {
+        try {
+          const buf = (await chrome.storage.local.get('csLogBuf')).csLogBuf || [];
+          sendResponse({ ok: true, lines: buf });
+        } catch (e) {
+          sendResponse({ ok: false, lines: [], msg: e.message });
+        }
+      } else if (msg.type === 'clearLogs') {
+        try { await chrome.storage.local.remove('csLogBuf'); } catch (e) {}
+        sendResponse({ ok: true });
       } else if (msg.type === 'tabReady') {
         // 创作者标签加载完成后主动上报「我好了」：即便此刻 SW 已被回收，这条消息也会唤醒 SW 执行填充，
         // 不再依赖 onUpdated 事件唤醒（比特浏览器对 SW 回收激进，onUpdated 常丢导致新标签永不填充、队列卡死）。

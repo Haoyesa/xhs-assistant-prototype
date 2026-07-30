@@ -62,6 +62,9 @@ window.__xhsToastLog = window.__xhsToastLog || [];
         window.__xhsToastLog.push(s);
         if (window.__xhsToastLog.length > 80) window.__xhsToastLog.shift();
         if (window.__renderXhsToast) window.__renderXhsToast();
+        // 实时转发给后台：标签页会被后台在失败/开下一篇时主动关闭，页面控制台日志随之丢失，
+        // 转发后日志会打进 SW 控制台并持久化到 storage，事后仍可完整回看。
+        try { chrome.runtime.sendMessage({ type: 'csLog', line: s }, () => { void chrome.runtime.lastError; }); } catch (e) {}
       }
     } catch (e) {}
     return _log.apply(console, args);
@@ -2141,8 +2144,32 @@ function buildPanel() {
     <div class="xhs-h-actions">
       <button class="xhs-h-start" id="xhs-h-start" type="button">加载中…</button>
       <button class="xhs-h-refresh" id="xhs-h-refresh" type="button" title="刷新队列">↻</button>
+      <button class="xhs-h-refresh" id="xhs-h-copylog" type="button" title="复制最近日志（含已关闭标签的日志）">⎘</button>
     </div>`;
   document.body.appendChild(box);
+  // 「复制日志」：从后台 storage 环形缓冲取全量内容脚本日志（含已被关闭标签留下的），一键复制便于反馈
+  const copyLogBtn = box.querySelector('#xhs-h-copylog');
+  if (copyLogBtn) {
+    copyLogBtn.addEventListener('click', () => {
+      const status = (window.__xhsHelper && window.__xhsHelper.status) || (() => {});
+      chrome.runtime.sendMessage({ type: 'getLogs' }, (r) => {
+        if (chrome.runtime.lastError) { status('取日志失败：后台未唤醒，请重试'); return; }
+        const lines = (r && r.lines) || [];
+        if (!lines.length) { status('暂无日志记录'); return; }
+        const text = lines.join('\n');
+        const done = () => status('已复制 ' + lines.length + ' 条日志到剪贴板');
+        try {
+          navigator.clipboard.writeText(text).then(done).catch(() => {
+            const ta = document.createElement('textarea');
+            ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
+            document.body.appendChild(ta); ta.select();
+            try { document.execCommand('copy'); done(); } catch (e) { status('复制失败，请手动在 SW 控制台查看'); }
+            ta.remove();
+          });
+        } catch (e) { status('复制失败，请手动在 SW 控制台查看'); }
+      });
+    });
+  }
   // 侧栏「开始批量发布」按钮：等价于扩展弹窗的同一按钮（发 startPublish 给 background 调度器）
   const startBtn = box.querySelector('#xhs-h-start');
   const refreshBtn = box.querySelector('#xhs-h-refresh');
