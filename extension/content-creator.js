@@ -1413,16 +1413,24 @@ function publishButtonPoints(host) {
   const w = r.width || 0;
   const h = r.height || 0;
   const left = r.left;
+  const right = r.right;
   const top = r.top;
   const bottom = r.bottom;
   const cy = top + h / 2;
+  // 小红书不同版本/账号底部栏布局不一：红「发布笔记」可能在左，也可能在右（常见为右侧）。
+  // 旧策略只覆盖左侧，若按钮在右则每个候选点都 miss、空等 60s。现同时覆盖左右两侧密集候选点。
   return [
+    { x: left + 50, y: cy, note: '左缘~50' },
+    { x: left + 80, y: cy, note: '左缘~80' },
     { x: left + Math.min(110, w * 0.18), y: cy, note: '左缘18%' },
     { x: left + Math.min(140, w * 0.22), y: cy, note: '左缘22%' },
     { x: left + Math.min(170, w * 0.26), y: cy, note: '左缘26%' },
+    { x: right - 50, y: cy, note: '右缘~50' },
+    { x: right - 80, y: cy, note: '右缘~80' },
+    { x: right - Math.min(110, w * 0.18), y: cy, note: '右缘18%' },
+    { x: right - Math.min(140, w * 0.22), y: cy, note: '右缘22%' },
     { x: left + Math.min(110, w * 0.18), y: top + h * 0.62, note: '左下62%' },
     { x: left + Math.min(140, w * 0.22), y: bottom - 18, note: '左下底-18' },
-    { x: left + Math.min(200, w * 0.30), y: cy, note: '左中30%' },
   ];
 }
 
@@ -1441,6 +1449,26 @@ async function cdpClickPublish(x, y) {
 // 与 isVisibleEl/isRedBg 等并列的模块级助手：判断元素是否为 xhs-publish-btn 宿主（closed shadow，需 CDP 坐标点击）。
 // 必须定义在模块作用域，否则 clickPublishControl / autoPublish 各自作用域无法互相引用（曾因仅定义在 autoPublish 内导致 ReferenceError）。
 function isPublishHost(el) { return !!(el && (el.tagName || '').toLowerCase() === 'xhs-publish-btn'); }
+
+// 读取页面正文文本，但剔除我们自己的浮窗面板（id=xhs-creator-helper / xhs-toast 等 xhs- 前缀元素）。
+// 关键：面板按钮会显示「发布中…」等状态文案，若直接读 document.body.innerText 会把面板状态误判成「页面正在发布」，
+// 导致点击验证假命中（见 clickPublishControl 的 isSubmitting 误判）。发布按钮是否真被点中，只能看宿主的 submit-loading 属性。
+function pageBodyText() {
+  try {
+    const txt = [];
+    const walk = (node) => {
+      if (node.nodeType === 3) { txt.push(node.nodeValue); return; }
+      if (node.nodeType !== 1) return;
+      if (node.id === 'xhs-creator-helper') return;            // 跳过整个插件浮窗子树
+      if (node.id === 'xhs-toast' || node.id === 'xhs-toast-css' || node.id === 'xhs-helper-css') return;
+      const cl = typeof node.className === 'string' ? node.className : '';
+      if (/(^|[\s])xhs-h-/.test(cl)) return;                   // 跳过面板内 xhs-h-* 子元素
+      for (const ch of node.childNodes) walk(ch);
+    };
+    walk(document.body);
+    return txt.join(' ');
+  } catch (e) { return (document.body.innerText || ''); }
+}
 
 // 点击发布控件：真实按钮（shadow 可取到）→ 深度点击；xhs-publish-btn host（closed shadow）→ CDP 坐标真实点击。
 // v0.2.60 关键改进：CDP 单点坐标容易因底部栏实际尺寸/间距变化而 miss；现多候选点 + 命中验证，命中即停。
@@ -1473,18 +1501,23 @@ async function clickPublishControl(ctrl) {
       const ctrlNow = findPublishControl();
       const stillThere = !!ctrlNow;
       const navigated = !/publish/i.test(location.href);
-      const bodyText = document.body.innerText || '';
+      // 严禁用 document.body.innerText 判断「发布中/提交中」——会被插件面板自身的「发布中…」文案误判为命中。
+      // 发布按钮是否真被点中，只看宿主的 submit-loading 属性（closed shadow 外仍可读取），这是唯一可靠信号。
+      const bodyText = pageBodyText();
       const hasSuccess = /发布成功|已发布/.test(bodyText);
       const hasConfirm = !!findPrimaryConfirm();
-      const isSubmitting = /发布中|提交中|请稍候|处理中|Loading/i.test(bodyText);
       const isLoadingHost = ctrlNow && isPublishHost(ctrlNow) && (ctrlNow.getAttribute('submit-loading') === 'true');
-      const hit = !stillThere || navigated || hasSuccess || hasConfirm || isSubmitting || isLoadingHost;
+      const submitDisabled = ctrlNow && isPublishHost(ctrlNow) && (ctrlNow.getAttribute('submit-disabled') === 'true');
+      console.log('[黑猫] 候选点验证 ' + pt.note + ': stillThere=' + stillThere + ' navigated=' + navigated + ' loading=' + isLoadingHost + ' disabled=' + submitDisabled + ' hasConfirm=' + hasConfirm + ' hasSuccess=' + hasSuccess);
+      const hit = !stillThere || navigated || hasSuccess || hasConfirm || isLoadingHost;
       if (hit) {
-        const signal = !stillThere ? '控件消失' : navigated ? 'URL跳离' : hasSuccess ? '成功文案' : hasConfirm ? '确认弹窗' : isSubmitting ? '发布中' : 'loading';
+        const signal = !stillThere ? '控件消失' : navigated ? 'URL跳离' : hasSuccess ? '成功文案' : hasConfirm ? '确认弹窗' : 'loading(按钮已进入提交态)';
         console.log('[黑猫] 发布点击命中 (' + pt.note + ') 信号=' + signal);
         return true;
       }
-      console.log('[黑猫] 点击未命中，按钮仍在，换候选点');
+      // 错点可能打开预览等弹窗，清掉避免干扰后续候选点
+      try { dismissModal(status); } catch (e) {}
+      console.log('[黑猫] 点击未命中（' + pt.note + '），换候选点');
     }
     console.log('[黑猫] CDP 全部候选点未命中，fallback realClickDeep');
     realClickDeep(ctrl);
@@ -1582,11 +1615,25 @@ async function autoPublish(status, summary, task) {
   let reclickedCount = 0;
   const startUrl = location.href; // 记录发布前 URL，用于判定「是否跳离发布页」（跳离=已发布的最强信号）
   logDialog(); // 点发布后立即记录一次弹窗状态（确认框往往此时出现）
+  let sawLoading = false;
+  let lastDiagDump = 0;
   while (Date.now() < until2) {
     await sleep(500);
     logDialog(); // 每轮记录可见弹窗（确认框/成功提示都看得到），便于排查
     dismissModal(status); // 只关纯提示弹窗，绝不会点「取消」发布确认框
-    const bodyText = document.body.innerText || '';
+    const bodyText = pageBodyText(); // 已剔除插件面板自身文案，避免「发布中…」误判
+    // 诊断：每 ~5s 输出一次页面文本片段 + 按钮真实状态，捕捉小红书自身 toast/拦截提示
+    const elapsedDiag = Date.now() - clickTime;
+    if (elapsedDiag - lastDiagDump >= 5000) {
+      lastDiagDump = elapsedDiag;
+      const snippet = bodyText.replace(/\s+/g, ' ').trim().slice(0, 180);
+      const ctrlDiag = findPublishControl();
+      const loadingD = ctrlDiag && isPublishHost(ctrlDiag) && ctrlDiag.getAttribute('submit-loading') === 'true';
+      const disabledD = ctrlDiag && isPublishHost(ctrlDiag) && ctrlDiag.getAttribute('submit-disabled') === 'true';
+      console.log('[黑猫] 发布等待诊断 @' + Math.round(elapsedDiag / 1000) + 's: loading=' + loadingD + ' disabled=' + disabledD + ' 文本片段="' + snippet + '"');
+      const BLOCK = /图片审核中|审核中|发布失败|网络异常|网络错误|内容违规|违规|验证码|请完善|请添加|不能为空|超过|已达上限|限制|含敏感|请先|请等待|正在发布|发布中/;
+      if (BLOCK.test(bodyText)) console.log('[黑猫] 检测到可能的拦截/提示文案，请关注');
+    }
     // 信号①：成功文案（最直接）
     if (SUCCESS_RE.test(bodyText)) {
       published = true; console.log('[黑猫] 检测到发布成功文案'); status(summary + '｜✓ 已发布成功'); break;
@@ -1601,6 +1648,7 @@ async function autoPublish(status, summary, task) {
     // 信号③：发布控件从 DOM 消失且已过点按钮后缓冲期（编辑器被卸载=成功态），排除「发布中」瞬时隐藏误判
     const ctrlNow = findPublishControl();
     const elapsed = Date.now() - clickTime;
+    if (ctrlNow && isPublishHost(ctrlNow) && ctrlNow.getAttribute('submit-loading') === 'true') sawLoading = true;
     if (!ctrlNow && elapsed > 3000 && !DRAFT_RE.test(bodyText)) {
       published = true;
       console.log('[黑猫] 发布控件已从页面消失，判定发布成功（url=' + location.href.slice(0, 64) + '）');
@@ -1628,13 +1676,17 @@ async function autoPublish(status, summary, task) {
         console.log('[黑猫] 补点发布控件（第 ' + reclickedCount + ' 次，目标=' + (again.tagName + '.' + String(again.className || '').slice(0, 12)) + '）');
         if (reclickedCount === 1) logCandidates(); // 补点后再快照一次按钮，捕捉迟出现的确认弹窗
         await sleep(2000);
-        const t2 = document.body.innerText || '';
+        const t2 = pageBodyText();
         if (DRAFT_RE.test(t2)) { console.log('[黑猫] 补点后仍只是存草稿'); }
         else if (SUCCESS_RE.test(t2) || !/publish/i.test(location.href) || !findPublishControl()) { published = true; console.log('[黑猫] 补点后判定发布成功'); break; }
       }
     }
   }
-  console.log('[黑猫] 自动发布结束 published=', published, 'clicked=true ｜url=' + location.href.slice(0, 64) + ' ｜发布控件仍在=' + (!!findPublishControl()) + ' ｜含publish路径=' + (/publish/i.test(location.href)));
+  const finalCtrl = findPublishControl();
+  const finalLoading = finalCtrl && isPublishHost(finalCtrl) && finalCtrl.getAttribute('submit-loading') === 'true';
+  const finalDisabled = finalCtrl && isPublishHost(finalCtrl) && finalCtrl.getAttribute('submit-disabled') === 'true';
+  console.log('[黑猫] 自动发布结束 published=', published, 'clicked=true ｜url=' + location.href.slice(0, 64) + ' ｜发布控件仍在=' + (!!finalCtrl) + ' ｜含publish路径=' + (/publish/i.test(location.href)) + ' ｜按钮loading=' + finalLoading + ' ｜按钮disabled=' + finalDisabled + ' ｜曾进入loading=' + sawLoading);
+  if (!published && sawLoading) console.log('[黑猫] 提示：按钮曾进入 loading（点击已命中发布按钮），但 60s 内未发布完成，疑似「确认发布」弹窗（可能在 closed shadow 内，机器人无法读取/点击）或发布被平台拦截，请人工确认或反馈弹窗内容');
   return { clicked: true, published };
 }
 
