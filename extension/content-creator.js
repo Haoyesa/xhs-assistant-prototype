@@ -1410,12 +1410,12 @@ function findPublishControl() {
 // ③调用方【每次点击前都重新读一次 rect】再换算坐标，彻底规避抖动导致的坐标漂移。
 // 这里只返回「相对 host 矩形的比例模板」，真实坐标由 pointFromHost() 在点击瞬间按当前 rect 计算。
 function publishPointTemplates() {
-  const xsL = [0.04, 0.08, 0.12, 0.16, 0.20];
-  const xsR = [0.96, 0.92, 0.88, 0.84, 0.80];
-  const ys = [0.18, 0.34, 0.5, 0.66, 0.82, 0.92];
+  // v0.4.6：覆盖整宽（含中心），避免红按钮居中或偏右时 miss（旧版左右两带在 20%~80% 中心留空）。
+  // 7 列 × 5 行 = 35 点，足够密；坐标在点击瞬间按当前 rect 实时换算（见 pointFromHost）。
+  const xs = [0.06, 0.22, 0.38, 0.54, 0.70, 0.86, 0.96];
+  const ys = [0.18, 0.36, 0.54, 0.72, 0.90];
   const tpl = [];
-  xsL.forEach((xf, i) => ys.forEach((yf) => tpl.push({ xf, yf, note: 'L' + Math.round(xsL[i] * 100) + '%,Y' + Math.round(yf * 100) + '%' })));
-  xsR.forEach((xf, i) => ys.forEach((yf) => tpl.push({ xf, yf, note: 'R' + Math.round((1 - xf) * 100) + '%,Y' + Math.round(yf * 100) + '%' })));
+  xs.forEach((xf) => ys.forEach((yf) => tpl.push({ xf, yf })));
   return tpl;
 }
 function pointFromHost(host, tpl) {
@@ -1438,6 +1438,21 @@ async function cdpClickPublish(x, y) {
 // 与 isVisibleEl/isRedBg 等并列的模块级助手：判断元素是否为 xhs-publish-btn 宿主（closed shadow，需 CDP 坐标点击）。
 // 必须定义在模块作用域，否则 clickPublishControl / autoPublish 各自作用域无法互相引用（曾因仅定义在 autoPublish 内导致 ReferenceError）。
 function isPublishHost(el) { return !!(el && (el.tagName || '').toLowerCase() === 'xhs-publish-btn'); }
+
+// 发布按钮的「真实状态」只存在于宿主 xhs-publish-btn 上（submit-loading / submit-disabled 属性）。
+// 强制 shadow open 后，findPublishControl 会返回【内部红按钮】而非宿主，故所有「是否正在发布/禁用」的判定
+// 都必须回看宿主属性，不能看拿到的内部按钮。下面三个助手统一以宿主为准。
+function publishHostEl() {
+  try { return document.querySelector('xhs-publish-btn'); } catch (e) { return null; }
+}
+function hostSubmitting() {
+  const h = publishHostEl();
+  return !!(h && h.getAttribute('submit-loading') === 'true');
+}
+function hostDisabled() {
+  const h = publishHostEl();
+  return !!(h && (h.getAttribute('submit-disabled') === 'true' || h.getAttribute('submit-loading') === 'true'));
+}
 
 // 读取页面正文文本，但剔除我们自己的浮窗面板（id=xhs-creator-helper / xhs-toast 等 xhs- 前缀元素）。
 // 关键：面板按钮会显示「发布中…」等状态文案，若直接读 document.body.innerText 会把面板状态误判成「页面正在发布」，
@@ -1504,13 +1519,13 @@ async function clickPublishControl(ctrl) {
         if (!ok) { console.log('[黑猫] CDP点击命令未成功 (' + pt.note + ')'); continue; }
         await sleep(160);
         const ctrlNow = findPublishControl();
-        const loading = ctrlNow && isPublishHost(ctrlNow) && (ctrlNow.getAttribute('submit-loading') === 'true');
+        const loading = hostSubmitting();
         const navigated = !/publish/i.test(location.href);
         if (loading) { console.log('[黑猫] 发布点击命中 (' + pt.note + ') 信号=loading(按钮已进入提交态)'); return true; }
         if (navigated) { console.log('[黑猫] 点击后页面跳离发布页 (' + pt.note + ') — 可能误点其他按钮或已发布'); return true; }
       }
       const ctrlEnd = findPublishControl();
-      if (ctrlEnd && isPublishHost(ctrlEnd) && ctrlEnd.getAttribute('submit-loading') === 'true') return true;
+      if (hostSubmitting()) return true;
       console.log('[黑猫] 第' + round + '轮扫描未命中，重读坐标进行下一轮');
       await sleep(400);
     }
@@ -1519,6 +1534,21 @@ async function clickPublishControl(ctrl) {
     realClickDeep(ctrl);
     return true;
   }
+  // 非宿主：shadow 已被 patch 为 open，ctrl 即内部真实红按钮 —— 直接派发完整手势点击（后台标签也有效，不依赖 CDP）。
+  try {
+    realClickDeep(ctrl);
+    await sleep(220);
+    if (hostSubmitting()) { console.log('[黑猫] 发布点击命中 (内部按钮) 信号=loading'); return true; }
+    // 兜底：仍走 CDP 坐标点击宿主（覆盖 attachShadow 补丁未生效的极少数情况）
+    const host = publishHostEl() || ctrl;
+    const tpls = publishPointTemplates();
+    for (const tpl of tpls) {
+      const pt = pointFromHost(host, tpl);
+      await cdpClickPublish(pt.x, pt.y);
+      await sleep(150);
+      if (hostSubmitting()) { console.log('[黑猫] 发布点击命中 (CDP兜底) 信号=loading'); return true; }
+    }
+  } catch (e) {}
   try { ctrl.click(); } catch (e) {}
   realClickDeep(ctrl);
   return true;
@@ -1563,14 +1593,14 @@ async function autoPublish(status, summary, task) {
   }
   if (!ctrl) { logCandidates(); status(summary + '｜未找到「发布」按钮，请手动点发布'); return { clicked: false }; }
   // 发布控件禁用判定（host 用其 submit-disabled / submit-loading 属性判断内部按钮是否可点）
-  const ctrlDisabled = () => isDisabledEl(ctrl) || (isPublishHost(ctrl) && (ctrl.getAttribute('submit-disabled') === 'true' || ctrl.getAttribute('submit-loading') === 'true'));
+  const ctrlDisabled = () => isDisabledEl(ctrl) || hostDisabled();
   if (ctrlDisabled()) {
     status(summary + '｜发布按钮暂不可点（可能图片审核中），等待放开…');
     const until = Date.now() + 90000;
     while (Date.now() < until) {
       await sleep(1500);
       const c2 = findPublishControl();
-      const c2Disabled = c2 && (isDisabledEl(c2) || (isPublishHost(c2) && (c2.getAttribute('submit-disabled') === 'true' || c2.getAttribute('submit-loading') === 'true')));
+      const c2Disabled = c2 && (isDisabledEl(c2) || hostDisabled());
       if (c2 && !c2Disabled) { ctrl = c2; console.log('[黑猫] 发布按钮已放开'); break; }
       const hint = (document.body.innerText.match(/图片上传中[^\n]*|审核中[^\n]*|上传失败[^\n]*|请先上传[^\n]*/) || [''])[0];
       if (hint) console.log('[黑猫] 上传提示:', hint.slice(0, 30));
@@ -1625,8 +1655,8 @@ async function autoPublish(status, summary, task) {
       lastDiagDump = elapsedDiag;
       const snippet = bodyText.replace(/\s+/g, ' ').trim().slice(0, 180);
       const ctrlDiag = findPublishControl();
-      const loadingD = ctrlDiag && isPublishHost(ctrlDiag) && ctrlDiag.getAttribute('submit-loading') === 'true';
-      const disabledD = ctrlDiag && isPublishHost(ctrlDiag) && ctrlDiag.getAttribute('submit-disabled') === 'true';
+      const loadingD = hostSubmitting();
+      const disabledD = hostDisabled();
       console.log('[黑猫] 发布等待诊断 @' + Math.round(elapsedDiag / 1000) + 's: loading=' + loadingD + ' disabled=' + disabledD + ' 文本片段="' + snippet + '"');
       const BLOCK = /图片审核中|审核中|发布失败|网络异常|网络错误|内容违规|违规|验证码|请完善|请添加|不能为空|超过|已达上限|限制|含敏感|请先|请等待|正在发布|发布中/;
       if (BLOCK.test(bodyText)) console.log('[黑猫] 检测到可能的拦截/提示文案，请关注');
@@ -1645,7 +1675,7 @@ async function autoPublish(status, summary, task) {
     // 信号③：发布控件从 DOM 消失且已过点按钮后缓冲期（编辑器被卸载=成功态），排除「发布中」瞬时隐藏误判
     const ctrlNow = findPublishControl();
     const elapsed = Date.now() - clickTime;
-    if (ctrlNow && isPublishHost(ctrlNow) && ctrlNow.getAttribute('submit-loading') === 'true') sawLoading = true;
+    if (hostSubmitting()) sawLoading = true;
     if (!ctrlNow && elapsed > 3000 && !DRAFT_RE.test(bodyText)) {
       published = true;
       console.log('[黑猫] 发布控件已从页面消失，判定发布成功（url=' + location.href.slice(0, 64) + '）');
@@ -1680,8 +1710,8 @@ async function autoPublish(status, summary, task) {
     }
   }
   const finalCtrl = findPublishControl();
-  const finalLoading = finalCtrl && isPublishHost(finalCtrl) && finalCtrl.getAttribute('submit-loading') === 'true';
-  const finalDisabled = finalCtrl && isPublishHost(finalCtrl) && finalCtrl.getAttribute('submit-disabled') === 'true';
+  const finalLoading = hostSubmitting();
+  const finalDisabled = hostDisabled();
   console.log('[黑猫] 自动发布结束 published=', published, 'clicked=true ｜url=' + location.href.slice(0, 64) + ' ｜发布控件仍在=' + (!!finalCtrl) + ' ｜含publish路径=' + (/publish/i.test(location.href)) + ' ｜按钮loading=' + finalLoading + ' ｜按钮disabled=' + finalDisabled + ' ｜曾进入loading=' + sawLoading);
   if (!published && sawLoading) console.log('[黑猫] 提示：按钮曾进入 loading（点击已命中发布按钮），但 60s 内未发布完成，疑似「确认发布」弹窗（可能在 closed shadow 内，机器人无法读取/点击）或发布被平台拦截，请人工确认或反馈弹窗内容');
   return { clicked: true, published };

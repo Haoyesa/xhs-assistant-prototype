@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "黑猫智记AI",
-  "version": "0.4.5",
+  "version": "0.4.6",
   "description": "配套本地助手后端（素材库 → 按商品生成笔记 → 创作者页批量发布）。仅用于你自己的商家账号，人工复核后发布，不做验证码破解。",
   "action": {
     "default_popup": "popup.html",
@@ -35,6 +35,12 @@
     "http://127.0.0.1:5801/*"
   ],
   "content_scripts": [
+    {
+      "matches": ["https://ark.xiaohongshu.com/*", "https://channel.xiaohongshu.com/*", "https://pro.xiaohongshu.com/*", "https://creator.xiaohongshu.com/*"],
+      "js": ["shadow-patch.js"],
+      "run_at": "document_start",
+      "world": "MAIN"
+    },
     {
       "matches": ["https://ark.xiaohongshu.com/*", "https://channel.xiaohongshu.com/*", "https://pro.xiaohongshu.com/*"],
       "js": ["common.js", "content-ark.js"],
