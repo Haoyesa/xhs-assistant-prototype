@@ -492,7 +492,7 @@ async function readBody(req) {
   let total = 0;
   for await (const c of req) {
     total += c.length;
-    if (total > MAX_BODY_SIZE) throw new Error('请求体超过 2MB 限制');
+    if (total > MAX_BODY_SIZE) throw new Error('请求体超过 10MB 限制');
     chunks.push(c);
   }
   const s = Buffer.concat(chunks).toString('utf-8');
