@@ -291,14 +291,18 @@ async function generateImages(settings, prompt, count, size, extra) {
   const baseUrl = (settings.imgAiBaseUrl || '').trim().replace(/\/+$/, '');
   const apiKey = settings.imgAiApiKey || '';
   const model = settings.imgAiModel || '';
+  // 仅当下载 URL 与图像 API 同源时才附带 Authorization，避免把 API Key 泄漏给第三方 CDN/URL
+  const sameOriginAsApi = (u) => { try { return new URL(u).origin === new URL(baseUrl).origin; } catch { return false; } };
+  const authForUrl = (u) => (sameOriginAsApi(u) && apiKey ? { Authorization: `Bearer ${apiKey}` } : {});
   if (!apiKey || !baseUrl || !model) throw new Error('未配置 AI 生图（缺 Key / BaseURL / Model）');
   const body = {
     model,
     prompt,
     n: Math.max(1, Math.min(8, count || 1)),
-    size: size || '1024x1024',
     ...(extra || {}),
   };
+  // size='auto' 或不传时省略 size 字段，使用图像 API 的默认尺寸（避免部分接口不支持 'auto' 字面量而报错）
+  if (size && size !== 'auto') body.size = size;
   const resp = await fetch(`${baseUrl}/images/generations`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
@@ -321,11 +325,11 @@ async function generateImages(settings, prompt, count, size, extra) {
     if (item && item.b64_json) {
       bufs.push(Buffer.from(item.b64_json, 'base64'));
     } else if (item && item.url) {
-      const r2 = await fetch(item.url, { headers: apiKey ? { Authorization: `Bearer ${apiKey}` } : {} });
+      const r2 = await fetch(item.url, { headers: authForUrl(item.url) });
       if (!r2.ok) throw new Error(`下载图像失败 HTTP ${r2.status}`);
       bufs.push(Buffer.from(await r2.arrayBuffer()));
     } else if (typeof item === 'string') {
-      const r2 = await fetch(item, { headers: apiKey ? { Authorization: `Bearer ${apiKey}` } : {} });
+      const r2 = await fetch(item, { headers: authForUrl(item) });
       if (!r2.ok) throw new Error(`下载图像失败 HTTP ${r2.status}`);
       bufs.push(Buffer.from(await r2.arrayBuffer()));
     } else {
@@ -610,6 +614,8 @@ const server = http.createServer(async (req, res) => {
         const prompt = (body.prompt || '').toString();
         const title = (body.title || '').toString();
         const count = Math.max(1, Math.min(8, parseInt(body.count, 10) || settings.imgAiCount || 1));
+        // 尺寸优先取请求体（前端下拉框实时值），其次回退已保存配置
+        const size = (body.size && String(body.size).trim()) || settings.imgAiSize || '1024x1024';
         if (!folderName) return sendJSON(res, 400, { ok: false, error: '缺少 folderName' });
         if (!prompt) return sendJSON(res, 400, { ok: false, error: '缺少 prompt' });
         const root = resolveImagesRoot(settings);
@@ -621,7 +627,7 @@ const server = http.createServer(async (req, res) => {
           try { extra = JSON.parse(settings.imgAiExtra); }
           catch (e) { return sendJSON(res, 400, { ok: false, error: '附加参数不是合法 JSON：' + e.message }); }
         }
-        const bufs = await generateImages(settings, prompt, count, settings.imgAiSize, extra);
+        const bufs = await generateImages(settings, prompt, count, size, extra);
         const files = [];
         for (let i = 0; i < bufs.length; i++) {
           const ext = imageExt(bufs[i]);

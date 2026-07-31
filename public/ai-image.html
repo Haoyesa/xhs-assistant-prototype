@@ -246,7 +246,7 @@ $('#parseBtn').onclick = () => {
     const raw = parseCSV(text);
     if (raw.length < 2) { $('#parseMsg').textContent = 'CSV 内容过少（至少含表头+1 行）'; $('#parseMsg').className = 'msg bad'; return; }
     const header = raw[0];
-    const idIdx = pickCols(header, ['宝贝id', '宝贝ID', '商品id', 'id', 'itemid', '宝贝ID'.toLowerCase()]);
+    const idIdx = pickCols(header, ['宝贝id', '宝贝ID', '商品id', 'id', 'itemid']);
     const titleIdx = pickCols(header, ['标题', '宝贝标题', '商品标题', 'name', '商品名称']);
     const contentIdx = pickCols(header, ['内容', '详情', '描述', 'desc', 'description']);
     if (idIdx < 0 && titleIdx < 0) {
@@ -339,7 +339,7 @@ $('#genBtn').onclick = async () => {
     const prompt = buildPrompt(tpl, item);
     log(`[${i + 1}/${selected.length}] #${seq} ${item.productId || '(无id)'} → ${folder}`, 'info');
     try {
-      const r = await api('POST', '/api/ai-image/generate', { folderName: folder, prompt, title: item.title, count: $('#imgCount').value });
+      const r = await api('POST', '/api/ai-image/generate', { folderName: folder, prompt, title: item.title, count: $('#imgCount').value, size: $('#imgSize').value });
       if (r.ok) { okCount++; log('  ✓ 已保存 ' + (r.files || []).join(', '), 'ok'); }
       else { failCount++; log('  ✗ ' + (r.error || '生成失败'), 'bad'); }
     } catch (e) { failCount++; log('  ✗ 请求异常：' + e.message, 'bad'); }
