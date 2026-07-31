@@ -399,9 +399,7 @@ async function aiGenerateNote(settings, product) {
   return { title: genTitle, body, topics };
 }
 
-// ---- 批量发布编排 ----
-const pump = { running: false, paused: false, stop: false };
-
+// ---- 批量发布编排（发布由浏览器插件驱动，桌面端仅提供队列读取与倒计时）----
 function nowISO() { return new Date().toISOString(); }
 function uid(prefix) { return `${prefix}_${crypto.randomUUID().slice(0, 8)}`; }
 function normalizeId(v) { return String(v ?? '').toLowerCase().replace(/\s+/g, '').replace(/[\u200b\u200c\u200e\u200f]/g, ''); }
@@ -421,37 +419,11 @@ function chooseBetter(a, b) {
   return score(b) > score(a) ? b : a;
 }
 
-async function runPump(settings) {
-  if (pump.running) return;
-  pump.running = true; pump.stop = false; pump.paused = false;
-  try {
-    // 仅「浏览器插件」模式由插件驱动发布；桌面端不再内置 CDP / 模拟(dry-run)发布能力。
-    console.log('[runPump] 仅浏览器插件模式支持发布，桌面端不内置发布能力');
-    await new Promise((r) => setTimeout(r, 300));
-  } finally {
-    pump.running = false;
-  }
-}
-
 function mergeTask(tasks, task) {
   const idx = tasks.findIndex((t) => t.id === task.id);
   if (idx >= 0) tasks[idx] = task; else tasks.push(task);
   return tasks;
 }
-function sleepInterruptible(ms) {
-  return new Promise((resolve) => {
-    const start = Date.now();
-    const tick = () => {
-      if (pump.stop || Date.now() - start >= ms) {
-        // 返回是否被中断：stop 为 true 表示提前结束
-        return resolve({ interrupted: !!pump.stop });
-      }
-      setTimeout(tick, Math.min(500, ms - (Date.now() - start)));
-    };
-    tick(); // 立即检查，不等待
-  });
-}
-
 // ---- 本地图片文件夹（按 images/<id>/ 读取并发布）----
 // 图片根目录：设置里填了用填的（绝对路径），否则默认「软件根目录（exe 同级）下的 images/」
 function resolveImagesRoot(settings) {
@@ -961,23 +933,15 @@ const server = http.createServer(async (req, res) => {
       return sendJSON(res, 200, { created: created.length, tasks: created });
     }
 
-    // 队列 / 控制
+    // 队列（发布由浏览器插件驱动，桌面端只读取队列与倒计时，不内置发布能力）
     if (p === '/api/batch/queue' && method === 'GET') {
       let tasks = await readStore(stores.tasks, []);
       const qa = url.searchParams.get('accountId');
       // 多账号并行：按账号过滤队列（未传 accountId 仍返回全量，向后兼容）
       if (qa) tasks = tasks.filter((t) => t.accountId === qa);
       const nextPublishAt = getNextPublishAt();
-      return sendJSON(res, 200, { tasks, pump: { running: pump.running, paused: pump.paused, stop: pump.stop }, nextPublishAt });
+      return sendJSON(res, 200, { tasks, nextPublishAt });
     }
-    if (p === '/api/batch/pump' && method === 'POST') {
-      const settings = { ...DEFAULT_SETTINGS, ...(await readStore(stores.settings, {})) };
-      runPump(settings);
-      return sendJSON(res, 200, { ok: true, detail: '已开始执行批量发布' });
-    }
-    if (p === '/api/batch/pause' && method === 'POST') { pump.paused = true; return sendJSON(res, 200, { ok: true }); }
-    if (p === '/api/batch/resume' && method === 'POST') { pump.paused = false; return sendJSON(res, 200, { ok: true }); }
-    if (p === '/api/batch/stop' && method === 'POST') { pump.stop = true; pump.paused = false; return sendJSON(res, 200, { ok: true }); }
     // 重试失败/人工挂起的任务：把 manual_hold / failed 重置回 queued 重新排队
     if (p === '/api/batch/retry' && method === 'POST') {
       const body = await readBody(req);

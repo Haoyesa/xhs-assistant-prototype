@@ -285,13 +285,6 @@ function renderCountdown() {
 }
 setInterval(renderCountdown, 1000); // 每秒走字，loadQueue 每 2s 刷新数据源
 
-$('#pumpBtn').addEventListener('click', async () => {
-  $('#pumpMsg').textContent = 'ⓘ 浏览器插件模式下，请到创作者发布台页面用浏览器插件「开始批量发布」一键自动发布';
-  toast('请到创作者发布台用插件拉取发布', 'warn');
-});
-$('#pauseBtn').addEventListener('click', async () => { await callApi('POST', '/api/batch/pause'); $('#pumpMsg').textContent = '⏸ 已暂停'; });
-$('#resumeBtn').addEventListener('click', async () => { await callApi('POST', '/api/batch/resume'); $('#pumpMsg').textContent = '⏵ 继续'; });
-$('#stopBtn').addEventListener('click', async () => { await callApi('POST', '/api/batch/stop'); $('#pumpMsg').textContent = '⏹ 已停止'; });
 $('#retryBtn').addEventListener('click', async () => {
   const r = await callApi('POST', '/api/batch/retry', {});
   if (r.ok) {
