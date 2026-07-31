@@ -38,7 +38,7 @@ async function getQianfanPage(browser, cfg) {
 
 export async function scrapeQianfanProducts(settings = {}) {
   const cfg = loadConfig().qianfan || {};
-  const browserURL = settings.cdpBrowserUrl || loadConfig().browserURL || 'http://127.0.0.1:9222';
+  const browserURL = settings.qianfanChromeUrl || loadConfig().browserURL || 'http://127.0.0.1:9222';
   const puppeteer = await getPuppeteer();
   let browser;
   try {

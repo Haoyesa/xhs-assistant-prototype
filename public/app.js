@@ -523,6 +523,7 @@ async function loadSettings() {
   $('#setModel').value = s.aiModel || '';
   $('#setPublish').value = s.publishMode || 'extension';
   $('#setQianfanUrl').value = s.qianfanUrl || '';
+  $('#setQianfanChrome').value = s.qianfanChromeUrl || '';
   $('#setBitHost').value = s.bitApiHost || 'http://127.0.0.1:54345';
   $('#setBitKey').value = s.bitApiKey || '';
   $('#setImagesRoot').value = s.imagesRoot || '';
@@ -554,7 +555,7 @@ $('#setPublish').addEventListener('change', updatePublishHint);
 $('#saveSetBtn').addEventListener('click', async () => {
   await callApi('POST', '/api/settings', {
     aiProvider: $('#setProvider').value, aiApiKey: $('#setKey').value, aiBaseUrl: $('#setBaseUrl').value, aiModel: $('#setModel').value,
-    publishMode: $('#setPublish').value, qianfanUrl: $('#setQianfanUrl').value,
+    publishMode: $('#setPublish').value, qianfanUrl: $('#setQianfanUrl').value, qianfanChromeUrl: $('#setQianfanChrome').value,
     bitApiHost: $('#setBitHost').value, bitApiKey: $('#setBitKey').value,
     generateTitle: $('#setGenTitle').checked, generateContent: $('#setGenContent').checked, enableAiTopics: $('#setGenTopics').checked,
     topicsCount: +$('#setTopicsCount').value, randomEmoji: +$('#setEmoji').value, autoSubmit: $('#setAutoSubmit').checked, humanTyping: $('#setHumanTyping').checked,

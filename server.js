@@ -183,6 +183,8 @@ const DEFAULT_SETTINGS = {
   bitApiHost: 'http://127.0.0.1:54345',
   bitApiKey: '',
   qianfanUrl: 'https://channel.xiaohongshu.com/ark/product/list',
+  // 千帆爬虫连接已登录 Chrome 的 CDP 远程调试地址（留空则回退 cdp-config.json 的 browserURL，默认 127.0.0.1:9222）
+  qianfanChromeUrl: '',
   // 发布设置（对齐原软件）
   generateTitle: true,
   titlePrompt: DEFAULT_TITLE_PROMPT,
@@ -483,7 +485,7 @@ function sendJSON(res, code, obj) {
   res.writeHead(code, { 'Content-Type': 'application/json; charset=utf-8', ...CORS_HEADERS });
   res.end(b);
 }
-const MAX_BODY_SIZE = 2 * 1024 * 1024; // 2MB
+const MAX_BODY_SIZE = 10 * 1024 * 1024; // 10MB（批量作图 import-chunk 单请求上传整张图，PNG base64 可能 >2MB）
 
 async function readBody(req) {
   const chunks = [];
