@@ -56,6 +56,21 @@ async function writeStore(file, data) {
 
 // 把任意用户输入片段拼入 root，确保最终结果严格落在 root 之内（防 ../ 穿越、防写系统文件）。
 // 过滤所有路径分隔符与非法字符；若仍越界直接抛错。
+// 取图片根目录的规范路径（解析根本身可能的符号链接），用于二次校验落点不被符号链接引到目录外。
+function canonicalRoot(root) {
+  try { return fs.realpathSync(root); } catch { return path.resolve(root); }
+}
+
+// 二次校验：确认已落盘的目标（必须存在）经符号链接解析后仍在 root 之内，防符号链接逃逸。
+function assertInside(root, target) {
+  const base = canonicalRoot(root);
+  let real;
+  try { real = fs.realpathSync(target); } catch { return; } // 目标不存在等偶发情况，交给上层处理
+  if (real !== base && !real.startsWith(base + path.sep)) {
+    throw new Error('非法路径：文件经符号链接逃逸出图片根目录');
+  }
+}
+
 function safeChild(root, ...parts) {
   const safe = parts.map((p) =>
     String(p == null ? '' : p)
@@ -65,7 +80,7 @@ function safeChild(root, ...parts) {
       .replace(/[:*?"<>|]/g, '_')
   );
   const full = path.resolve(root, ...safe);
-  const base = path.resolve(root);
+  const base = canonicalRoot(root);
   if (full !== base && !full.startsWith(base + path.sep)) {
     throw new Error('非法路径：试图写入图片根目录之外');
   }
@@ -357,6 +372,17 @@ const PROVIDERS = {
   doubao: { baseUrl: 'https://ark.cn-beijing.volces.com/api/v3', model: 'doubao-seed-1-6-250615' },
 };
 
+// 出站请求统一超时（默认 30s），防第三方/本地 API 挂死长期占用事件循环。
+async function fetchWithTimeout(url, opts = {}, ms = 30000) {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), ms);
+  try {
+    return await fetch(url, { ...opts, signal: ctrl.signal });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 // ---- AI 适配器 ----
 async function callAI(settings, systemPrompt, userPrompt) {
   const providerKey = settings.aiProvider;
@@ -370,7 +396,7 @@ async function callAI(settings, systemPrompt, userPrompt) {
     model = settings.aiModel || p.model;
   }
   if (!settings.aiApiKey || !baseUrl) throw new Error('未配置 AI（缺 Key 或 BaseURL）');
-  const resp = await fetch(`${baseUrl}/chat/completions`, {
+  const resp = await fetchWithTimeout(`${baseUrl}/chat/completions`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${settings.aiApiKey}` },
     body: JSON.stringify({
@@ -408,11 +434,11 @@ async function generateImages(settings, prompt, count, size, extra) {
   };
   // size='auto' 或不传时省略 size 字段，使用图像 API 的默认尺寸（避免部分接口不支持 'auto' 字面量而报错）
   if (size && size !== 'auto') body.size = size;
-  const resp = await fetch(`${baseUrl}/images/generations`, {
+  const resp = await fetchWithTimeout(`${baseUrl}/images/generations`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
     body: JSON.stringify(body),
-  });
+  }, 60000);
   if (!resp.ok) {
     const t = await resp.text().catch(() => '');
     throw new Error(`图像 API HTTP ${resp.status}: ${t.slice(0, 300)}`);
@@ -430,11 +456,11 @@ async function generateImages(settings, prompt, count, size, extra) {
     if (item && item.b64_json) {
       bufs.push(Buffer.from(item.b64_json, 'base64'));
     } else if (item && item.url) {
-      const r2 = await fetch(item.url, { headers: authForUrl(item.url) });
+      const r2 = await fetchWithTimeout(item.url, { headers: authForUrl(item.url) }, 30000);
       if (!r2.ok) throw new Error(`下载图像失败 HTTP ${r2.status}`);
       bufs.push(Buffer.from(await r2.arrayBuffer()));
     } else if (typeof item === 'string') {
-      const r2 = await fetch(item, { headers: authForUrl(item) });
+      const r2 = await fetchWithTimeout(item, { headers: authForUrl(item) }, 30000);
       if (!r2.ok) throw new Error(`下载图像失败 HTTP ${r2.status}`);
       bufs.push(Buffer.from(await r2.arrayBuffer()));
     } else {
@@ -500,7 +526,8 @@ async function aiGenerateNote(settings, product) {
         : localFallback(title, 'topics');
     }
   } catch (e) {
-    // 单步失败则用兜底补齐，保证流程不中断
+    // 单步失败则用兜底补齐，保证流程不中断；但记录异常便于排查（此前被静默吞没）
+    console.error('[AI] 生成异常，已用本地兜底补齐：', e && (e.message || e));
     if (!genTitle || genTitle === title) genTitle = localFallback(title, 'title');
     if (!body) body = localFallback(title, 'content');
     if (!topics.length) topics = localFallback(title, 'topics');
@@ -691,9 +718,11 @@ const server = http.createServer((req, res) => reqScope.run(req, async () => {
         const finalName = `${base}.${ext}`; // 强制用 mime 推导的安全扩展名
         const dir = safeChild(root, fnIn);
         fs.mkdirSync(dir, { recursive: true });
+        assertInside(root, dir); // 二次校验：目录未被符号链接引到 root 外
         const file = safeChild(root, fnIn, finalName);
         const buf = Buffer.from(dataUrl, 'base64');
         await fsp.writeFile(file, buf);
+        assertInside(root, file); // 二次校验：落盘文件未被符号链接逃逸
 
         return sendJSON(res, 200, { ok: true, folderName: folder, fileName: finalName, saved: typeof index === 'number' ? index + 1 : undefined, total });
       } catch (err) {
@@ -721,6 +750,7 @@ const server = http.createServer((req, res) => reqScope.run(req, async () => {
         if (!root) return sendJSON(res, 400, { ok: false, error: '图片根目录未配置' });
         const dir = safeChild(root, folderName);
         fs.mkdirSync(dir, { recursive: true });
+        assertInside(root, dir); // 二次校验：目录未被符号链接引到 root 外
         let extra = {};
         if (settings.imgAiExtra && settings.imgAiExtra.trim()) {
           try { extra = JSON.parse(settings.imgAiExtra); }
@@ -732,6 +762,7 @@ const server = http.createServer((req, res) => reqScope.run(req, async () => {
           const ext = imageExt(bufs[i]);
           const file = path.join(dir, `${i + 1}.${ext}`);
           await fsp.writeFile(file, bufs[i]);
+          assertInside(root, file); // 二次校验：落盘文件未被符号链接逃逸
           files.push(path.relative(root, file));
         }
         if (title) {
@@ -1114,11 +1145,11 @@ const server = http.createServer((req, res) => reqScope.run(req, async () => {
       const apiKey = settings.bitApiKey || '';
       const headers = { 'Content-Type': 'application/json' };
       if (apiKey) headers['api-key'] = apiKey;
-      const r = await fetch(host + rel, {
+      const r = await fetchWithTimeout(host + rel, {
         method: method2,
         headers,
         body: bodyObj ? JSON.stringify(bodyObj) : undefined,
-      });
+      }, 15000);
       const text = await r.text();
       let data = null; try { data = JSON.parse(text); } catch { data = { raw: text }; }
       return { r, data };
@@ -1525,9 +1556,15 @@ const server = http.createServer((req, res) => reqScope.run(req, async () => {
       if (!fs.existsSync(abs) || !fs.statSync(abs).isFile()) return sendJSON(res, 404, { ok: false, detail: '文件不存在' });
       const mime = MIME[path.extname(abs).toLowerCase()] || 'application/octet-stream';
       try {
-        const data = fs.readFileSync(abs);
+        // 流式返回，避免大图 readFileSync 阻塞事件循环
+        const stream = fs.createReadStream(abs);
         res.writeHead(200, { 'Content-Type': mime, 'Cache-Control': 'public, max-age=86400', ...corsHeaders() });
-        return res.end(data);
+        stream.on('error', (e) => {
+          if (!res.headersSent) res.writeHead(500, { 'Content-Type': 'application/json; charset=utf-8', ...corsHeaders() });
+          res.end(JSON.stringify({ ok: false, detail: e.message }));
+        });
+        stream.pipe(res);
+        return;
       } catch (e) {
         return sendJSON(res, 500, { ok: false, detail: e.message });
       }

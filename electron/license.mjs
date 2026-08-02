@@ -56,12 +56,37 @@ export function verifyToken(token) {
   return { ok: true, payload };
 }
 
+// ---- 时钟回拨防护 ----
+// 记录「历史见过的最大本地时间」，校验过期时以 max(当前时间, 历史最大值) 为有效 now 下界。
+// 这样本地时钟被人为回拨时，已过期令牌不会被错误地当作未过期（防回拨续期）。
+const STATE_FILE = 'licstate.json';
+function readGuard(userDataDir) {
+  try {
+    const s = JSON.parse(fs.readFileSync(path.join(userDataDir, STATE_FILE), 'utf8'));
+    return { lastVerifiedAt: Number(s && s.lastVerifiedAt) || 0 };
+  } catch { return { lastVerifiedAt: 0 }; }
+}
+function writeGuard(userDataDir, lastVerifiedAt) {
+  try { fs.writeFileSync(path.join(userDataDir, STATE_FILE), JSON.stringify({ lastVerifiedAt }), 'utf8'); } catch {}
+}
+
+export function verifyLicense(userDataDir, token) {
+  const r = verifyToken(token);
+  if (!r.ok) return r;
+  const now = Date.now();
+  const guard = readGuard(userDataDir);
+  const effNow = Math.max(now, guard.lastVerifiedAt);
+  if (r.payload.expireAt && r.payload.expireAt < effNow) return { ok: false, reason: 'expired' };
+  writeGuard(userDataDir, Math.max(guard.lastVerifiedAt, now));
+  return r;
+}
+
 export function loadLicense(userDataDir) {
   const file = path.join(userDataDir, 'license.json');
   if (!fs.existsSync(file)) return null;
   try {
     const token = fs.readFileSync(file, 'utf8').trim();
-    const r = verifyToken(token);
+    const r = verifyLicense(userDataDir, token);
     return r.ok ? { token, payload: r.payload } : null;
   } catch {
     return null;
@@ -69,7 +94,7 @@ export function loadLicense(userDataDir) {
 }
 
 export function saveLicense(userDataDir, token) {
-  const r = verifyToken(token);
+  const r = verifyLicense(userDataDir, token);
   if (!r.ok) return r;
   fs.writeFileSync(path.join(userDataDir, 'license.json'), token, 'utf8');
   return r;

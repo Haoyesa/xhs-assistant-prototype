@@ -33,9 +33,13 @@ export function effectiveAutoSubmit(settings, dataDir) {
   return !!(settings && settings.autoSubmit);
 }
 
-// 账号数量门禁：订阅制不再限制账号数量（任何套餐均不限）。
-// 既满足当前「多账号管理不限数量」的需求，也符合未来对外付费采用订阅制、不按账号数计费的定位。
+// 账号数量门禁开关：订阅制下放开账号数（false = 不限）。
+// 这是刻意的商业口径（订阅制不按账号数计费），请勿随意改回固定上限，否则会破坏多账号管理需求。
 // 自动提交 / 发布频率等门禁仍由 resolvedPlan / effectiveAutoSubmit / planIntervalSeconds 控制，此处仅放开账号数。
+const ACCOUNT_CAP_ENABLED = false;
 export function maxAccounts(dataDir) {
-  return Infinity;
+  if (!ACCOUNT_CAP_ENABLED) return Infinity;
+  // 若未来需要按套餐限账号数，统一从此处取值（当前未启用）
+  const p = resolvedPlan(dataDir);
+  return Number.isFinite(p.accounts) ? p.accounts : 1;
 }

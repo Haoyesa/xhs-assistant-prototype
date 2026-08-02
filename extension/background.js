@@ -392,6 +392,7 @@ async function scheduleNext() {
 function clearSchedule() {
   nextAllowedAt = 0;
   chrome.alarms.clear('nextPublish').catch(() => {}); // 撤销待发的「开下一篇」闹钟
+  chrome.alarms.clear('clearSchedule').catch(() => {}); // 撤销可能遗留的兜底清理闹钟，避免死 alarm
   awaitingTabId = null; currentTaskId = null;
   chrome.storage.local.set({ nextPublishAt: 0, awaitingTabId: null, currentTaskId: null }).catch(() => {});
   notifyServerSchedule(0);

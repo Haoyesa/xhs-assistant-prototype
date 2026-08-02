@@ -13,6 +13,12 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.PORT || 5199);
 const isDev = !app.isPackaged;
 
+// 统一 userData 目录名：开发态 app.name=heimao-ai-note-assistant 与打包态 productName=黑猫智记AI 不一致，
+// 会导致 license.json 等授权数据在两种模式下存到不同目录、互相找不到。强制统一为产品名目录。
+try {
+  app.setPath('userData', path.join(app.getPath('appData'), '黑猫智记AI'));
+} catch {}
+
 const userDataDir = app.getPath('userData');
 // 打包后 asar 内不可写，把数据目录迁到系统用户目录
 process.env.XHS_DATA_DIR = userDataDir;
