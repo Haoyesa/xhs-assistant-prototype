@@ -412,9 +412,10 @@ async function notifyServerSchedule(at) {
 function armNextTimer() {
   if (!schedulerActive || paused) return;
   const delayMs = Math.max(1500, nextAllowedAt - Date.now());
-  const delayMinutes = delayMs / 60000;
   console.log('[黑猫][BG] armNextTimer delayMs=', Math.round(delayMs), 'nextAllowedAt=', nextAllowedAt, 'state=', schedulerState());
-  chrome.alarms.create('nextPublish', { delayInMinutes: delayMinutes });
+  // 用绝对时间戳 when（毫秒精度），避免 Chrome 把 <1 分钟的 delayInMinutes 强制钳制到 1 分钟，
+  // 否则短间隔（如 1.5s）会被错误延后约 60s 才开下一篇。
+  chrome.alarms.create('nextPublish', { when: Date.now() + delayMs });
 }
 // 推进到下一篇：满足所有安全条件才真正 openNextTab（倒计时到点后由 pump/定时器调用）
 function tryAdvance(source = 'unknown') {
@@ -467,6 +468,8 @@ async function schedulerStep() {
 chrome.alarms.create('pump', { periodInMinutes: 1 });
 chrome.alarms.onAlarm.addListener((a) => {
   if (a.name === 'pump') schedulerStep();
+  // 多账号并行心跳：SW 回收会丢弃 setInterval，用持久闹钟续命实例在线状态
+  else if (a.name === 'heartbeat') registerInstance().catch(() => {});
   // 队列已空后的兜底清理：间隔走完再清除倒计时（仅当没重新开始新批次时）
   else if (a.name === 'clearSchedule') { if (!schedulerActive) clearSchedule(); }
   // 到点开下一篇：由可靠闹钟唤醒（抗 SW 回收）。临近即触发，真正校验在 tryAdvance 内做。
@@ -701,7 +704,8 @@ chrome.runtime.onInstalled.addListener(() => {
 // 比特多账号并行：SW 启动即注册一次实例（身份已随 storage 持久化），并每 30s 续命心跳。
 // MV3 的 Service Worker 空闲会被回收，回收后下次事件会重新执行本段顶层代码，重新注册+续命，在线状态不丢。
 registerInstance().catch(() => {});
-setInterval(() => { registerInstance().catch(() => {}); }, 30000);
+// MV3 Service Worker 约 30s 后被回收，setInterval 不可靠；改用持久闹钟续命心跳（每 30s 唤醒一次）
+chrome.alarms.create('heartbeat', { periodInMinutes: 0.5 });
 
 // 保活心跳：内容脚本持常驻端口时，service worker 不会被回收
 chrome.runtime.onConnect.addListener((port) => {

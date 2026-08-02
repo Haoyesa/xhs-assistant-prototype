@@ -1903,7 +1903,7 @@ function armManualSuccessWatch(taskId) {
     if (has && (Date.now() - started > 4000) && !sawSuccess) {
       clearInterval(__manualWatch); __manualWatch = null;
       status('检测到已发布 ✓，正在续下一篇…');
-      chrome.runtime.sendMessage({ type: 'reportDone', taskId, status: 'published', detail: '人工点击发布成功', delayMs: window.__xhsLastDelayMs || 0 });
+      chrome.runtime.sendMessage({ type: 'reportDone', taskId, status: 'published', detail: '人工点击发布成功', delayMs: window.__xhsLastDelayMs || 0 }).catch(() => {});
     }
     sawSuccess = has;
   }, 1500);

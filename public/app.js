@@ -288,8 +288,8 @@ setInterval(renderCountdown, 1000); // 每秒走字，loadQueue 每 2s 刷新数
 $('#retryBtn').addEventListener('click', async () => {
   const r = await callApi('POST', '/api/batch/retry', {});
   if (r.ok) {
-    $('#pumpMsg').textContent = `🔁 已重置 ${r.requed || 0} 条失败任务`;
-    toast(`已重置 ${r.requed || 0} 条到待发布`, 'ok');
+    $('#pumpMsg').textContent = `🔁 已重置 ${r.requeued || 0} 条失败任务`;
+    toast(`已重置 ${r.requeued || 0} 条到待发布`, 'ok');
     loadQueue(); loadStats();
   } else toast('重置失败', 'err');
 });

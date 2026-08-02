@@ -5,6 +5,8 @@ import fs from 'node:fs';
 import fsp from 'node:fs/promises';
 import path from 'node:path';
 import crypto from 'node:crypto';
+import dns from 'node:dns/promises';
+import { AsyncLocalStorage } from 'node:async_hooks';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { scrapeQianfanProducts } from './qianfan-scraper.js';
 import { downloadOne, downloadToLocal, primeImages } from './image-util.js';
@@ -44,7 +46,108 @@ async function readStore(file, fallback) {
   try { return JSON.parse(await fsp.readFile(file, 'utf-8')); } catch { return fallback; }
 }
 async function writeStore(file, data) {
-  await fsp.writeFile(file, JSON.stringify(data, null, 2), 'utf-8');
+  // 原子写：先写临时文件再 rename，避免进程被杀/断电导致 JSON 文件损坏（损坏会使 readStore 静默回退、数据归零）
+  const tmp = file + '.tmp';
+  await fsp.writeFile(tmp, JSON.stringify(data, null, 2), 'utf-8');
+  await fsp.rename(tmp, file);
+}
+
+// ---- 安全辅助：路径穿越防护 / SSRF 防护 / 图片类型嗅探 / CORS 收敛 ----
+
+// 把任意用户输入片段拼入 root，确保最终结果严格落在 root 之内（防 ../ 穿越、防写系统文件）。
+// 过滤所有路径分隔符与非法字符；若仍越界直接抛错。
+function safeChild(root, ...parts) {
+  const safe = parts.map((p) =>
+    String(p == null ? '' : p)
+      .trim()
+      .replace(/[\/\\]+/g, '_')
+      .replace(/\.{2,}/g, '_')
+      .replace(/[:*?"<>|]/g, '_')
+  );
+  const full = path.resolve(root, ...safe);
+  const base = path.resolve(root);
+  if (full !== base && !full.startsWith(base + path.sep)) {
+    throw new Error('非法路径：试图写入图片根目录之外');
+  }
+  return full;
+}
+
+// 仅允许的图片扩展名（杜绝 .bat/.ps1/.exe 等可执行落地）
+const IMG_EXT_WHITELIST = ['png', 'jpg', 'jpeg', 'webp', 'gif', 'avif', 'bmp'];
+
+function isPrivateIp(ip) {
+  if (!ip) return true;
+  if (ip === '::1' || ip === 'localhost') return true;
+  if (ip.startsWith('fe80:') || ip.startsWith('fc') || ip.startsWith('fd')) return true; // IPv6 链路/唯一本地
+  const m = ip.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
+  if (!m) return false;
+  const a = +m[1], b = +m[2];
+  if (a === 10) return true;
+  if (a === 127) return true;
+  if (a === 169 && b === 254) return true; // 链路本地 / 云元数据
+  if (a === 172 && b >= 16 && b <= 31) return true;
+  if (a === 192 && b === 168) return true;
+  return false;
+}
+
+// 阻止图片代理访问私网/内网（防 SSRF 探测与云元数据泄露）
+async function assertPublicUrl(target) {
+  let u;
+  try { u = new URL(target); } catch { throw new Error('非法 URL'); }
+  if (u.protocol !== 'http:' && u.protocol !== 'https:') throw new Error('仅支持 http/https');
+  const host = u.hostname;
+  if (/^\d{1,3}(\.\d{1,3}){3}$/.test(host) && isPrivateIp(host)) throw new Error('禁止访问私网地址');
+  if (host === 'localhost') throw new Error('禁止访问私网地址');
+  try {
+    const { address } = await dns.lookup(host);
+    if (isPrivateIp(address)) throw new Error('禁止访问私网地址'); // DNS 重绑定防护
+  } catch (e) {
+    if (e && /禁止访问/.test(e.message)) throw e;
+    // 解析失败（离线/域名不存在）放行，由后续 fetch 失败兜底
+  }
+}
+
+// 按文件头嗅探位图类型（防 SVG/HTML 等被伪装成图片回显执行）
+function sniffRaster(buf) {
+  if (!buf || buf.length < 12) return null;
+  if (buf[0] === 0x89 && buf[1] === 0x50 && buf[2] === 0x4e && buf[3] === 0x47) return 'image/png';
+  if (buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff) return 'image/jpeg';
+  if (buf[0] === 0x47 && buf[1] === 0x49 && buf[2] === 0x46) return 'image/gif';
+  if (buf[0] === 0x42 && buf[1] === 0x4d) return 'image/bmp';
+  if (buf[0] === 0x52 && buf[1] === 0x49 && buf[2] === 0x46 && buf[3] === 0x46) {
+    const four = buf.slice(8, 12).toString('ascii');
+    if (four === 'WEBP') return 'image/webp';
+    if (four === 'avif' || four === 'mif1') return 'image/avif';
+  }
+  return null;
+}
+
+// CORS 收敛：仅允许本机回环、浏览器插件源（chrome/moz-extension）、以及小红书域名；
+// 其他来源（如用户访问的恶意网页）一律回退到回环，禁止跨源读取本地密钥/数据。
+const reqScope = new AsyncLocalStorage();
+function corsHeaders() {
+  const req = reqScope.getStore();
+  const origin = req && req.headers && req.headers.origin;
+  const ALLOW = [
+    /^chrome-extension:\/\//i,
+    /^moz-extension:\/\//i,
+    /^https?:\/\/127\.0\.0\.1(:\d+)?$/i,
+    /^https?:\/\/localhost(:\d+)?$/i,
+    /^https:\/\/[\w-]+\.xiaohongshu\.com$/i,
+    /^https:\/\/xiaohongshu\.com$/i,
+  ];
+  if (origin && (ALLOW.some((re) => re.test(origin)) || origin === 'null')) {
+    return {
+      'Access-Control-Allow-Origin': origin,
+      'Access-Control-Allow-Methods': 'GET,POST,OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type',
+    };
+  }
+  return {
+    'Access-Control-Allow-Origin': `http://127.0.0.1:${PORT}`,
+    'Access-Control-Allow-Methods': 'GET,POST,OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type',
+  };
 }
 
 // ---- 本地敏感词 / 合规自检（词库见 sensitive-words.mjs，纯本地、不依赖平台接口）----
@@ -473,16 +576,11 @@ function scanImageFolders(root) {
 }
 
 // ---- HTTP ----
-const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.json': 'application/json; charset=utf-8', '.png': 'image/png', '.jpg': 'image/jpeg', '.svg': 'image/svg+xml' };
+const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.json': 'application/json; charset=utf-8', '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp', '.gif': 'image/gif', '.bmp': 'image/bmp', '.avif': 'image/avif', '.svg': 'image/svg+xml' };
 
-const CORS_HEADERS = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Methods': 'GET,POST,OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type',
-};
 function sendJSON(res, code, obj) {
   const b = JSON.stringify(obj);
-  res.writeHead(code, { 'Content-Type': 'application/json; charset=utf-8', ...CORS_HEADERS });
+  res.writeHead(code, { 'Content-Type': 'application/json; charset=utf-8', ...corsHeaders() });
   res.end(b);
 }
 const MAX_BODY_SIZE = 10 * 1024 * 1024; // 10MB（批量作图 import-chunk 单请求上传整张图，PNG base64 可能 >2MB）
@@ -542,14 +640,14 @@ function resolveCsvExportDir(settings) {
   return path.join(DATA, 'csv');
 }
 
-const server = http.createServer(async (req, res) => {
+const server = http.createServer((req, res) => reqScope.run(req, async () => {
   const url = new URL(req.url, `http://127.0.0.1:${PORT}`);
   const p = url.pathname;
   const method = req.method;
 
   // 预检 / 跨域（供浏览器插件从 ark/creator 页面 fetch 本地服务）
   if (method === 'OPTIONS') {
-    res.writeHead(204, { ...CORS_HEADERS });
+    res.writeHead(204, { ...corsHeaders() });
     return res.end();
   }
 
@@ -584,17 +682,16 @@ const server = http.createServer(async (req, res) => {
         }
 
         // 文件夹名支持 <商品ID>_<序号> 格式（如 686673d41ea4cb001553c6da_1），文件名取前端传入
-        const folder = String(fnIn).trim().replace(/[\\/:*?"<>|]/g, '_');
-        const fileBase = String(fIn).trim().replace(/[\\/:*?"<>|]/g, '_');
-        const dir = path.join(root, folder);
-        fs.mkdirSync(dir, { recursive: true });
-
+        // 安全：safeChild 过滤 ../ 与分隔符并校验落点在 root 内；扩展名强制走白名单，杜绝 .bat/.ps1 落地
         const mimeMap = {
           'image/png': 'png', 'image/jpeg': 'jpg', 'image/jpg': 'jpg', 'image/webp': 'webp', 'image/gif': 'gif', 'image/avif': 'avif', 'image/bmp': 'bmp'
         };
         const ext = mimeMap[(mime || 'image/png').toLowerCase()] || 'png';
-        const finalName = /\.[a-z0-9]+$/i.test(fileBase) ? fileBase : `${fileBase}.${ext}`;
-        const file = path.join(dir, finalName);
+        const base = String(fIn).trim().replace(/\.[^.]+$/i, ''); // 去掉用户给的扩展名
+        const finalName = `${base}.${ext}`; // 强制用 mime 推导的安全扩展名
+        const dir = safeChild(root, fnIn);
+        fs.mkdirSync(dir, { recursive: true });
+        const file = safeChild(root, fnIn, finalName);
         const buf = Buffer.from(dataUrl, 'base64');
         await fsp.writeFile(file, buf);
 
@@ -622,7 +719,7 @@ const server = http.createServer(async (req, res) => {
         if (!prompt) return sendJSON(res, 400, { ok: false, error: '缺少 prompt' });
         const root = resolveImagesRoot(settings);
         if (!root) return sendJSON(res, 400, { ok: false, error: '图片根目录未配置' });
-        const dir = path.join(root, folderName);
+        const dir = safeChild(root, folderName);
         fs.mkdirSync(dir, { recursive: true });
         let extra = {};
         if (settings.imgAiExtra && settings.imgAiExtra.trim()) {
@@ -733,6 +830,12 @@ const server = http.createServer(async (req, res) => {
       const list = Array.isArray(reg.accounts) ? reg.accounts : [];
       const next = list.filter((x) => x.id !== id);
       await writeStore(stores.account, { accounts: next });
+      // 解绑账号时，把指向该账号的待发任务 accountId 置空，避免任务因找不到账号而永久卡死在队列
+      const tasks = await readStore(stores.tasks, []);
+      if (Array.isArray(tasks) && tasks.some((t) => t.accountId === id)) {
+        const patched = tasks.map((t) => (t.accountId === id ? { ...t, accountId: null } : t));
+        await writeStore(stores.tasks, patched);
+      }
       return sendJSON(res, 200, { ok: true, accounts: next, max: maxAccounts(DATA) });
     }
     // 更新单个账号（比特配置名 bitProfile、备注名等）。多账号并行时，扩展在 options 页绑定账号即PATCH bitProfile。
@@ -1099,6 +1202,7 @@ const server = http.createServer(async (req, res) => {
       if (!rows.length) return sendJSON(res, 400, { ok: false, msg: '没有可导出的商品' });
       const settings = { ...DEFAULT_SETTINGS, ...(await readStore(stores.settings, {})) };
       const dir = resolveCsvExportDir(settings);
+      fs.mkdirSync(dir, { recursive: true }); // 首次导出时目录可能不存在，避免 ENOENT
       let base = sanitizeFileName(body.name);
       let file = path.join(dir, base + '.csv');
       if (fs.existsSync(file)) {
@@ -1270,15 +1374,23 @@ const server = http.createServer(async (req, res) => {
     // 图片代理：把远程商品图下载到本地并返回（带 CORS），供浏览器插件在发布平台页面注入图片时绕过防盗链
     if (p === '/api/image' && method === 'GET') {
       const target = url.searchParams.get('url');
-      if (!target || !/^https?:\/\//i.test(target)) return sendJSON(res, 400, { ok: false, detail: 'invalid url' });
+      if (!target) return sendJSON(res, 400, { ok: false, detail: 'missing url' });
+      try {
+        await assertPublicUrl(target); // SSRF 防护：拒绝私网/内网/云元数据地址
+      } catch (e) {
+        return sendJSON(res, 400, { ok: false, detail: 'url 不被允许：' + e.message });
+      }
       try {
         const file = await downloadOne(target, UPLOADS);
         if (!file) return sendJSON(res, 502, { ok: false, detail: '图片下载失败（网络/防盗链）' });
         const data = await fsp.readFile(file);
+        const ct = sniffRaster(data); // 仅允许位图，杜绝 SVG/HTML 伪装成图片回显执行
+        if (!ct) return sendJSON(res, 415, { ok: false, detail: '仅支持位图图片' });
         res.writeHead(200, {
-          'Content-Type': MIME[path.extname(file)] || 'image/jpeg',
+          'Content-Type': ct,
           'Cache-Control': 'public, max-age=86400',
-          ...CORS_HEADERS,
+          'X-Content-Type-Options': 'nosniff',
+          ...corsHeaders(),
         });
         return res.end(data);
       } catch (e) {
@@ -1414,7 +1526,7 @@ const server = http.createServer(async (req, res) => {
       const mime = MIME[path.extname(abs).toLowerCase()] || 'application/octet-stream';
       try {
         const data = fs.readFileSync(abs);
-        res.writeHead(200, { 'Content-Type': mime, 'Cache-Control': 'public, max-age=86400', ...CORS_HEADERS });
+        res.writeHead(200, { 'Content-Type': mime, 'Cache-Control': 'public, max-age=86400', ...corsHeaders() });
         return res.end(data);
       } catch (e) {
         return sendJSON(res, 500, { ok: false, detail: e.message });
@@ -1425,7 +1537,7 @@ const server = http.createServer(async (req, res) => {
   } catch (e) {
     return sendJSON(res, 500, { ok: false, detail: e.message });
   }
-});
+}));
 
 // 探测端口上是否已是「同类后端」在运行（用于端口冲突时安全复用，而非崩溃）
 async function probeExistingBackend(port) {
@@ -1471,7 +1583,7 @@ export function startServer(port = PORT) {
       console.error('[server] 启动错误:', err);
     }
   });
-  server.listen(port, '0.0.0.0', () => {
+  server.listen(port, '127.0.0.1', () => {
     console.log(`黑猫智记AI已启动: http://127.0.0.1:${port}`);
   });
   return server;

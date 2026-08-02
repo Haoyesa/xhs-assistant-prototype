@@ -3258,11 +3258,21 @@ function renderStickerList() {
   stickers.forEach(st => {
     const div = document.createElement('div');
     div.className = 'deco-item' + (selectedDecoType === 'sticker' && selectedDecoId === st.id ? ' selected' : '');
-    div.innerHTML = `
-      <div class="deco-preview"><img src="${st.src}" alt="贴图"></div>
-      <div class="deco-name">${st.name}</div>
-      <button class="deco-remove" title="删除">&times;</button>
-    `;
+    div.innerHTML = '';
+    const preview = document.createElement('div');
+    preview.className = 'deco-preview';
+    const img = document.createElement('img');
+    img.alt = '贴图';
+    if (typeof st.src === 'string') img.src = st.src; // 仅 data URL / 同源图片
+    preview.appendChild(img);
+    const name = document.createElement('div');
+    name.className = 'deco-name';
+    name.textContent = st.name; // 防 XSS：贴图名来自用户上传文件名，存于 localStorage，绝不用 innerHTML 拼接
+    const removeBtn = document.createElement('button');
+    removeBtn.className = 'deco-remove';
+    removeBtn.title = '删除';
+    removeBtn.textContent = '×';
+    div.append(preview, name, removeBtn);
     div.addEventListener('click', (e) => {
       if (e.target.classList.contains('deco-remove')) return;
       selectDeco('sticker', st.id);

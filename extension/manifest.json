@@ -22,8 +22,7 @@
     "storage",
     "alarms",
     "tabs",
-    "clipboardRead",
-    "notifications",
+    "clipboardWrite",
     "debugger"
   ],
   "host_permissions": [

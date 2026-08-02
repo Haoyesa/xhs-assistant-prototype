@@ -46,7 +46,9 @@ export function verifyToken(token) {
     return { ok: false, reason: 'bad-payload' };
   }
 
-  if (payload.machineCode && payload.machineCode !== getMachineCode())
+  // 必须携带 machineCode 且与本机一致（fail-closed）：缺字段或不符均判失败，
+  // 杜绝「签名有效但 machineCode 为空」的令牌在任意机器上通行、或绕过机器码黑名单。
+  if (!payload.machineCode || payload.machineCode !== getMachineCode())
     return { ok: false, reason: 'machine-mismatch' };
   const now = Date.now();
   if (payload.expireAt && payload.expireAt < now) return { ok: false, reason: 'expired' };

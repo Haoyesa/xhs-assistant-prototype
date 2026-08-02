@@ -18,6 +18,12 @@ const needApi = () => {
 };
 
 async function init() {
+  // 开发测试入口（直接激活免支付）仅开发模式可见，避免生产安装包被白嫖付费套餐
+  let dev = false;
+  try { dev = !!(window.api && (await window.api.isDev())); } catch { dev = false; }
+  const devSection = document.getElementById('dev-section');
+  if (devSection) devSection.style.display = dev ? 'block' : 'none';
+
   if (!needApi()) {
     $('mc').textContent = '未就绪';
     return;

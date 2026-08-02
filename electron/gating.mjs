@@ -3,14 +3,15 @@
 // server.js 通过 effectiveAutoSubmit / planIntervalSeconds / resolvedPlan 调用本模块，
 // 自身不保留门禁决策明文，提升逆向门槛。
 import { currentPlan } from './license.mjs';
-import { FREQ_DELAY } from './plans.mjs';
+import { FREQ_DELAY, resolvePlan } from './plans.mjs';
 
 // 解析当前生效套餐；任何异常都回退免费试用（强制人工复核、标准频率）。
 export function resolvedPlan(dataDir) {
   try {
     return currentPlan(dataDir);
   } catch {
-    return { key: 'free', autoSubmit: false, freqTier: 'standard' };
+    // 回退到完整结构的 free 套餐对象（含 accounts/maxNotes/label），避免缺字段导致配额判断失效
+    return resolvePlan('free');
   }
 }
 

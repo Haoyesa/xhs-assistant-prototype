@@ -156,7 +156,7 @@
 
 <script>
 const $ = (s) => document.querySelector(s);
-const api = (m, u, b) => fetch(u, { method: m, headers: { 'Content-Type': 'application/json' }, body: b ? JSON.stringify(b) : undefined }).then(r => r.json());
+const apiFetch = (m, u, b) => fetch(u, { method: m, headers: { 'Content-Type': 'application/json' }, body: b ? JSON.stringify(b) : undefined }).then(r => r.json());
 
 let rows = [];          // 解析出的 [{productId, title, content, selected}]
 let running = false;
@@ -165,7 +165,7 @@ let stopFlag = false;
 // 读取配置回填
 async function loadCfg() {
   try {
-    const r = await api('GET', '/api/settings');
+    const r = await apiFetch('GET', '/api/settings');
     const s = r || {};
     $('#imgBaseUrl').value = s.imgAiBaseUrl || '';
     $('#imgApiKey').value = s.imgAiApiKey || '';
@@ -190,7 +190,7 @@ $('#saveCfgBtn').onclick = async () => {
     imgAiExtra: $('#imgExtra').value.trim(),
     imgAiPromptTemplate: $('#imgPrompt').value,
   };
-  const r = await api('POST', '/api/settings', cfg);
+  const r = await apiFetch('POST', '/api/settings', cfg);
   $('#cfgMsg').textContent = r.ok ? '已保存 ✓' : ('失败：' + (r.error || ''));
   $('#cfgMsg').className = 'msg ' + (r.ok ? 'ok' : 'bad');
   if (r.ok) loadCfg();
@@ -339,7 +339,7 @@ $('#genBtn').onclick = async () => {
     const prompt = buildPrompt(tpl, item);
     log(`[${i + 1}/${selected.length}] #${seq} ${item.productId || '(无id)'} → ${folder}`, 'info');
     try {
-      const r = await api('POST', '/api/ai-image/generate', { folderName: folder, prompt, title: item.title, count: $('#imgCount').value, size: $('#imgSize').value });
+      const r = await apiFetch('POST', '/api/ai-image/generate', { folderName: folder, prompt, title: item.title, count: $('#imgCount').value, size: $('#imgSize').value });
       if (r.ok) { okCount++; log('  ✓ 已保存 ' + (r.files || []).join(', '), 'ok'); }
       else { failCount++; log('  ✗ ' + (r.error || '生成失败'), 'bad'); }
     } catch (e) { failCount++; log('  ✗ 请求异常：' + e.message, 'bad'); }

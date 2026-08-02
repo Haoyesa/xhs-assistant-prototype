@@ -57,6 +57,8 @@ ipcMain.handle('lic:clearLicense', () => {
   clearLicense(userDataDir);
   return { ok: true };
 });
+// 是否开发模式（打包后为 false）：用于隐藏激活页的「直接激活（免支付）」测试入口，避免生产环境被白嫖付费套餐
+ipcMain.handle('lic:isDev', () => !!isDev);
 
 function switchToMain() {
   if (!mainWin || mainWin.isDestroyed()) return;
