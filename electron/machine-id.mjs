@@ -17,7 +17,8 @@ function getRawIds() {
     });
     out.split(/\r?\n/).forEach((line) => {
       const s = line.trim();
-      if (s && s.toUpperCase() !== 'DEFAULT' && s.toUpperCase() !== 'TOBE' + 'FILLED') ids.push(s);
+      // 过滤占位序列号：DEFAULT / TOBEFILLED / To Be Filled By O.E.M. 等（常见于未烧录序列号的主板）
+      if (s && !/^(default|to be filled|tobefilled|o\.?e\.?m\.?|none|unknown|0+)$/i.test(s)) ids.push(s);
     });
   } catch {
     // 忽略，走兜底

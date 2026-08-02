@@ -8,7 +8,6 @@ const { contextBridge, ipcRenderer } = require('electron');
 contextBridge.exposeInMainWorld('api', {
   getMachineCode: () => ipcRenderer.invoke('lic:getMachineCode'),
   activate: (token) => ipcRenderer.invoke('lic:activate', token),
-  getPlan: () => ipcRenderer.invoke('lic:getPlan'),
   getServerUrl: () => ipcRenderer.invoke('lic:getServerUrl'),
   getRawToken: () => ipcRenderer.invoke('lic:getRawToken'),
   clearLicense: () => ipcRenderer.invoke('lic:clearLicense'),

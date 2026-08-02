@@ -39,12 +39,11 @@
 
 <header>
   <h1>黑猫智记AI · 使用说明</h1>
-  <p>适用版本 v0.2.17 · 自动填表 + 自动发布 + 自动连发</p>
+  <p>适用版本 v0.5.0 · 自动填表 + 自动发布 + 自动连发</p>
   <div style="margin-top:10px">
     <span class="tag">本地图片文件夹</span>
     <span class="tag">AI 生成笔记</span>
     <span class="tag">浏览器插件发布</span>
-    <span class="tag">CDP 真实发布</span>
   </div>
 </header>
 
@@ -52,10 +51,10 @@
 <section>
   <h2><span class="n">1</span>安装与启动</h2>
   <ol>
-    <li>运行安装包 <code>黑猫智记AI-0.2.17-setup.exe</code>，一路下一步完成安装。</li>
+    <li>运行安装包 <code>黑猫智记AI0.5.0-setup.exe</code>，一路下一步完成安装。</li>
     <li>默认安装目录：<span class="path">C:\Users\25147\AppData\Local\Programs\黑猫智记AI\</span>若你自定义了路径，请记住它，第 4 步加载插件要用。</li>
-    <li>从开始菜单或桌面快捷方式打开「黑猫智记AI」，会自动弹出主窗口（含选品 / 笔记生成 / 批量发布 / 历史 / 设置 ��标签页）。</li>
-    <li>首次启动会在 <code>AppData\Roaming\xhs-assistant-prototype\data</code> 生成数据目录（图片、笔记、设置都存这）。</li>
+    <li>从开始菜单或桌面快捷方式打开「黑猫智记AI」，会自动弹出主窗口（含素材库 / 批量作图 / 批量发布 / 历史 / 设置等标签页）。</li>
+    <li>首次启动会在 <code>%APPDATA%\黑猫智记AI</code> 生成数据目录（图片、笔记、设置都存这）。</li>
   </ol>
   <div class="note">若打开后主窗口空白，先确认端口 5199 没被其它程序占用；关闭重开即可。</div>
 </section>
@@ -67,8 +66,8 @@
   <h3>方式 A：本地图片文件夹（按 id 读图发布，推荐）</h3>
   <div class="step">
     <b>①</b> 在软件数据目录的 <code>images/</code> 下，给每篇笔记建一个<b>文件夹</b>，文件夹名就是这篇笔记的 id：
-    <span class="path">…\xhs-assistant-prototype\data\images\我的穿搭01\   ← 里面放这组笔记的图片
-…\xhs-assistant-prototype\data\images\美食探店02\   ← 里面放图片</span>
+    <span class="path">…\黑猫智记AI\images\我的穿搭01\   ← 里面放这组笔记的图片
+…\黑猫智记AI\images\美食探店02\   ← 里面放图片</span>
     <b>②</b> 每个文件夹里放图片（jpg / png / webp 均可）。可选放 <code>name.txt</code> 作为文案灵感（标题/正文参考）。
     <div class="note">图片根目录可在「设置 → 发布方式 → 图片根目录」改成任意本地图库路径（如 <code>D:\我的图库</code>），软件只读取不移动。</div>
     <b>③</b> 回到软件「选品」页，点 <b>📁 扫描图片文件夹</b>，会列出所有待发组（显示张数、缩略图、文案种子）。
@@ -118,7 +117,7 @@
   </div>
 
   <div class="note ok">
-    <b>自动提交已默认开启</b>（v0.2.17 起）。若你想每篇自己核对再发：在插件 popup 把「自动提交」关掉——此时插件会<b>填好停住等你点发布</b>，你点完「发布」成功后会<b>自动连发下一篇</b>。
+    <b>自动提交已默认开启</b>。若你想每篇自己核对再发：在插件 popup 把「自动提交」关掉——此时插件会<b>填好停住等你点发布</b>，你点完「发布」成功后会<b>自动连发下一篇</b>。
   </div>
 </section>
 
@@ -139,7 +138,7 @@
   <div class="grid">
     <div>
       <h3>停在「请人工复核」没反应</h3>
-      <p style="font-size:13.5px;color:var(--sub);margin:4px 0">确认插件 popup 里「自动提交」是<b>开</b>；或关掉它后手动点「发布」。升级到 v0.2.17 后默认即自动发布。</p>
+      <p style="font-size:13.5px;color:var(--sub);margin:4px 0">确认插件 popup 里「自动提交」是<b>开</b>；或关掉它后手动点「发布」。当前版本默认即自动发布。</p>
     </div>
     <div>
       <h3>点了「开始批量发布」没反应</h3>
@@ -157,7 +156,7 @@
   <div class="note">任何环节卡住，把「🚀 发布助手」侧栏里的提示文字发给我，我就能定位具体卡点在哪。</div>
 </section>
 
-<footer>黑猫智记AI v0.2.17 · 本说明随版本更新，操作时以软件实际界面为准</footer>
+<footer>黑猫智记AI v0.5.0 · 本说明随版本更新，操作时以软件实际界面为准</footer>
 </div>
 </body>
 </html>

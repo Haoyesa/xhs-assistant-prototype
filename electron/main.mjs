@@ -49,7 +49,6 @@ const APP_ICON = resolveAppIcon();
 
 // ---- 授权相关 IPC ----
 ipcMain.handle('lic:getMachineCode', () => getMachineCode());
-ipcMain.handle('lic:getPlan', () => currentPlan(userDataDir));
 ipcMain.handle('lic:getServerUrl', () => LICENSE_SERVER_URL);
 ipcMain.handle('lic:activate', (_e, token) => {
   const r = saveLicense(userDataDir, token);
@@ -85,6 +84,24 @@ function createWindow() {
       nodeIntegration: false,
       preload: PRELOAD,
     },
+  });
+
+  // 导航防护：只允许加载本地主界面/激活页，杜绝页面内任意链接/JS 把窗口导航到外部站点
+  // （否则 contextBridge 暴露的 window.api 会泄露给外部页面，可窃取授权 token）。
+  const isAllowedNav = (url) => {
+    try {
+      const u = new URL(url);
+      return (u.protocol === 'http:' || u.protocol === 'https:') && /^127\.0\.0\.1$/.test(u.hostname)
+        || (u.protocol === 'file:' && u.pathname.includes('activation.html'));
+    } catch { return false; }
+  };
+  mainWin.webContents.on('will-navigate', (e, url) => {
+    if (!isAllowedNav(url)) e.preventDefault();
+  });
+  mainWin.webContents.setWindowOpenHandler(({ url }) => {
+    // 新窗口一律交给系统默认浏览器（外部链接场景），不在应用内开窗
+    if (isAllowedNav(url)) return { action: 'allow' };
+    return { action: 'deny' };
   });
 
   const licensed = loadLicense(userDataDir);

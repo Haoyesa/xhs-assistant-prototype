@@ -10,14 +10,17 @@ import path from 'node:path';
 import asar from '@electron/asar';
 
 const require = createRequire(import.meta.url);
-// 优先用项目本地 node_modules 的 javascript-obfuscator；沙箱环境回退到受管路径。
-// 你本机重跑前若没有，执行：npm i -D javascript-obfuscator
+// 优先用项目本地 node_modules 的 javascript-obfuscator（正确包名，非 @ 前缀）；
+// 老沙箱回退到受管路径仅为兼容历史产物。你本机重跑前若没有，执行：npm i -D javascript-obfuscator
 const OBF_PATH = 'C:/Users/25147/.workbuddy/binaries/node/workspace/node_modules/javascript-obfuscator';
 let obf;
 try {
-  obf = require('@javascript-obfuscator');
+  obf = require('javascript-obfuscator');
 } catch {
-  obf = require(OBF_PATH);
+  try { obf = require(OBF_PATH); } catch {
+    console.error('[harden] 未找到 javascript-obfuscator，请先执行 npm i -D javascript-obfuscator 再重跑');
+    process.exit(1);
+  }
 }
 
 const __filename = fileURLToPath(import.meta.url);

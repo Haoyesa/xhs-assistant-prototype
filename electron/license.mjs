@@ -96,7 +96,16 @@ export function loadLicense(userDataDir) {
 export function saveLicense(userDataDir, token) {
   const r = verifyLicense(userDataDir, token);
   if (!r.ok) return r;
-  fs.writeFileSync(path.join(userDataDir, 'license.json'), token, 'utf8');
+  // 原子写：先写 .tmp 再 rename，避免崩溃/断电写坏 license.json 导致下次需重新激活
+  const file = path.join(userDataDir, 'license.json');
+  const tmp = file + '.tmp';
+  fs.mkdirSync(userDataDir, { recursive: true });
+  fs.writeFileSync(tmp, token, 'utf8');
+  try { fs.renameSync(tmp, file); } catch {
+    // rename 失败（如杀软占用）则退回直写，尽力而为
+    fs.writeFileSync(file, token, 'utf8');
+    try { fs.unlinkSync(tmp); } catch {}
+  }
   return r;
 }
 

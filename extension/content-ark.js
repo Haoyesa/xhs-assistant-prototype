@@ -373,7 +373,7 @@ function buildPanel() {
       return `
       <label class="xh-item">
         <input type="checkbox" data-i="${i}" checked/>
-        ${it.image ? `<img src="${it.image}" onerror="this.style.display='none'"/>` : '<span class="xh-noimg">无图</span>'}
+        ${it.image ? `<img src="${escapeHtml(it.image)}" onerror="this.style.display='none'"/>` : '<span class="xh-noimg">无图</span>'}
         <span class="xh-meta">
           <span class="xh-name">${escapeHtml(it.productName || it.itemId || '未命名')}</span>
           <span class="xh-sub">${it.price ? '¥' + escapeHtml(it.price) : ''} ${it.itemId ? '· ' + escapeHtml(it.itemId) : ''}</span>

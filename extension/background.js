@@ -39,11 +39,18 @@ async function api(path, opts = {}) {
   const url = serverUrl.replace(/\/+$/, '') + path;
   const init = { method: opts.method || 'GET', headers: { 'Content-Type': 'application/json' } };
   if (opts.body) init.body = JSON.stringify(opts.body);
-  const r = await fetch(url, init);
-  const text = await r.text();
-  let j = null;
-  try { j = text ? JSON.parse(text) : null; } catch { j = { _raw: text }; }
-  return { ok: r.ok, status: r.status, data: j };
+  // 15s 超时：本地后端挂起时不至于 busy 永久卡死（fillTab 等依赖 api 的地方会一直 await）
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), opts.timeout || 15000);
+  try {
+    const r = await fetch(url, { ...init, signal: ctrl.signal });
+    const text = await r.text();
+    let j = null;
+    try { j = text ? JSON.parse(text) : null; } catch { j = { _raw: text }; }
+    return { ok: r.ok, status: r.status, data: j };
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 // 推商品到后端（选品 content script 采到后调用）
@@ -144,6 +151,7 @@ async function realDebugClick(tabId, x, y) {
 
 // ---------------- 调度器状态 ----------------
 let schedulerActive = false;     // 是否开启「队列自动发布」（由 popup「开始批量发布」控制）
+let userPaused = false;          // 用户手动点「暂停」：当前篇发完不再自动续下一篇（与验证挑战 paused 区分）
 let busy = false;                // 当前是否有一篇笔记正在发布中（并发=1 的保护）
 let paused = false;              // 遇到验证挑战等需人工，暂停队列（解决后由 content script 回报 published 恢复）
 let current = null;              // { tabId, taskId, resolved } 当前正在发布的任务
@@ -157,11 +165,12 @@ let pollTimer = null;
 // ---- 调度状态持久化：MV3 的 Service Worker 会随时被回收，内存里的 schedulerActive / paused /
 // nextAllowedAt 都会重置，导致「发布完一篇后队列停住、不再自动发下一篇」。把这些状态落盘到
 // chrome.storage.local，SW 重启时恢复，并用 pump 闹钟(每分钟)持续推进，保证自动发布不中断。
-const SCHED_KEYS = { sched_running: false, sched_paused: false, nextPublishAt: 0, lastDelayMs: 500 * 1000 + 200 * 1000, awaitingTabId: null, currentTaskId: null };
+const SCHED_KEYS = { sched_running: false, sched_paused: false, sched_user_paused: false, nextPublishAt: 0, lastDelayMs: 500 * 1000 + 200 * 1000, awaitingTabId: null, currentTaskId: null };
 function persistSched() {
   chrome.storage.local.set({
     sched_running: schedulerActive,
     sched_paused: paused,
+    sched_user_paused: userPaused,
     nextPublishAt: nextAllowedAt,
     lastDelayMs: lastDelayMs,
     awaitingTabId: awaitingTabId || null,
@@ -173,6 +182,7 @@ function persistSched() {
     const s = await new Promise((res) => chrome.storage.local.get(SCHED_KEYS, (r) => res(r || SCHED_KEYS)));
     schedulerActive = !!s.sched_running;
     paused = !!s.sched_paused;
+    userPaused = !!s.sched_user_paused;
     nextAllowedAt = s.nextPublishAt || 0;
     lastDelayMs = Number(s.lastDelayMs) || lastDelayMs;
     awaitingTabId = (s.awaitingTabId != null) ? s.awaitingTabId : null;
@@ -211,11 +221,14 @@ function computeDelay(next) {
 }
 
 // 开一个全新的图文发布标签（每篇一个），标记 awaitingTabId，等 onUpdated 加载完再填充
+let opening = false; // 同步防重：tabs.query 异步窗口期内阻止第二个并发 openNextTab（pump 闹钟与 nextPublish 闹钟可能同时触发）
 function openNextTab() {
+  if (opening) { console.log('[黑猫][BG] openNextTab skipped: already opening'); return; }
   if (busy || paused || !schedulerActive || current || awaitingTabId) {
     console.log('[黑猫][BG] openNextTab skipped: state=', schedulerState());
     return;
   }
+  opening = true; // 先同步占位，再进异步 query/create
   console.log('[黑猫][BG] openNextTab opening new tab...');
   // 关掉所有残留的创作者标签（含刚发布完保留的倒计时标签 / SW 回收遗留的标签），每篇都开新标签，
   // 避免标签堆积，也让「下一篇倒计时」自然转移到新标签上继续读秒。
@@ -223,6 +236,7 @@ function openNextTab() {
     for (const t of (tabs || [])) { if (t.id != null) chrome.tabs.remove(t.id).catch(() => {}); }
     lastPublishedTabId = null;
     chrome.tabs.create({ url: CREATOR_URL, active: true }, (tab) => {
+      opening = false; // 无论成败都释放锁
       if (!tab || tab.id == null) { console.error('[黑猫][BG] chrome.tabs.create returned no tab'); return; }
       awaitingTabId = tab.id;
       chrome.storage.local.set({ awaitingTabId: tab.id }).catch(() => {}); // 持久化，抗 SW 回收后 onUpdated 丢失
@@ -332,7 +346,8 @@ function resolveCurrent(kind, detail, reportTabId, delayMs) {
 
   if (kind === 'published') {
     paused = false; // 若之前因人工恢复，解除暂停
-    if (!schedulerActive) schedulerActive = true; // 手动拉取也启动自动链（倒计时+自动下一篇）
+    // 手动拉取也启动自动链——但用户手动点过「暂停」则不复活（当前篇发完即停，符合「暂停」预期）
+    if (!schedulerActive && !userPaused) schedulerActive = true;
     broadcast({ kind: 'ok', msg: '✓ 已发布：' + (detail || '') });
     // 保留刚发布的标签页用于显示「下一篇倒计时」，开下一篇时（openNextTab）再关闭，避免标签堆积
     lastPublishedTabId = tabId;
@@ -626,7 +641,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       } else if (msg.type === 'startPublish') {
         console.log('[黑猫][BG] received startPublish, schedulerActive set to true');
         // 开启队列自动发布：始终直接打开图文上传页（CREATOR_URL）再填充，不依赖/不接管当前已打开的（可能非上传页的）创作者页
-        schedulerActive = true; paused = false;
+        schedulerActive = true; paused = false; userPaused = false;
         chrome.alarms.clear('clearSchedule').catch(() => {}); // 撤销上次批次遗留的兜底清理，避免误清新批次倒计时
         chrome.alarms.clear('nextPublish').catch(() => {});  // 撤销上一批次遗留的「开下一篇」闹钟
         // 关键修复：清理上一批次残留的 awaitingTabId / current。比特浏览器对 SW 回收极激进，
@@ -651,11 +666,12 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       } else if (msg.type === 'pausePublish') {
         // 暂停：不再开新标签（当前正在发的那篇会发完，但不会自动续下一篇）
         schedulerActive = false;
+        userPaused = true;
         persistSched();
         sendResponse({ ok: true, ...schedulerState(), msg: '已暂停批量发布' });
       } else if (msg.type === 'resumePublish') {
         // 继续（从「暂停」恢复；若因验证挑战暂停，需先在标签页解决验证并发布）：同样直接打开图文上传页
-        schedulerActive = true; paused = false;
+        schedulerActive = true; paused = false; userPaused = false;
         chrome.alarms.clear('clearSchedule').catch(() => {}); // 撤销上次批次遗留的兜底清理，避免误清新批次倒计时
         chrome.alarms.clear('nextPublish').catch(() => {});  // 撤销上一批次遗留的「开下一篇」闹钟
         persistSched();
@@ -667,7 +683,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         const _curTab = current && current.tabId != null ? current.tabId : null;
         const _aw = awaitingTabId != null ? awaitingTabId : null;
         const _lp = lastPublishedTabId != null ? lastPublishedTabId : null;
-        schedulerActive = false; paused = false; nextAllowedAt = 0;
+        schedulerActive = false; paused = false; userPaused = false; nextAllowedAt = 0;
         chrome.alarms.clear('nextPublish').catch(() => {}); // 立即停止待发的「开下一篇」闹钟
         current = null; awaitingTabId = null; lastPublishedTabId = null; currentTaskId = null; busy = false;
         chrome.storage.local.set({ nextPublishAt: 0, awaitingTabId: null, currentTaskId: null }).catch(() => {});

@@ -2,10 +2,15 @@
 const $ = (s) => document.querySelector(s);
 const $$ = (s) => Array.from(document.querySelectorAll(s));
 const callApi = async (method, path, body) => {
-  const opt = { method, headers: {} };
-  if (body !== undefined) { opt.headers['Content-Type'] = 'application/json'; opt.body = JSON.stringify(body); }
-  const r = await fetch(path, opt);
-  return r.json();
+  try {
+    const opt = { method, headers: {} };
+    if (body !== undefined) { opt.headers['Content-Type'] = 'application/json'; opt.body = JSON.stringify(body); }
+    const r = await fetch(path, opt);
+    return r.json();
+  } catch (e) {
+    // 网络失败统一兜底为 {ok:false,error}，避免调用方在 r.ok/r.id 上空访问抛 TypeError
+    return { ok: false, error: e && e.message ? e.message : String(e) };
+  }
 };
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 // 把后端存储的 UTC 时间戳（ISO 字符串或 epoch 毫秒）格式化为北京时间（UTC+8）。
@@ -127,7 +132,7 @@ function toast(text, kind = '') {
 }
 
 // ---- 选品 ----
-const SRC_LABEL = { extension: '插件', qianfan: '选品', manual: '手动', import: '导入' };
+const SRC_LABEL = { extension: '插件', qianfan: '选品', manual: '手动', import: '导入', 'images-folder': '本地图' };
 async function loadProducts() {
   const list = await callApi('GET', '/api/products');
   $('#prodCount').textContent = list.length;
@@ -152,11 +157,24 @@ async function loadProducts() {
 }
 
 $('#fetchQianfanBtn').addEventListener('click', async () => {
+  const btn = $('#fetchQianfanBtn');
+  if (btn.disabled) return; // 防重
+  btn.disabled = true;
+  const old = btn.textContent;
+  btn.textContent = '抓取中…';
   $('#fetchMsg').textContent = '抓取中…';
-  const r = await callApi('POST', '/api/qianfan/fetch', {});
-  $('#fetchMsg').textContent = r.ok ? `✅ 抓到 ${r.count} 个商品` : '❌ ' + (r.detail || '失败');
-  if (r.ok) { loadProducts(); toast(`已抓取 ${r.count} 个商品`, 'ok'); }
-  else toast('商品页抓取失败：' + (r.detail || ''), 'err');
+  try {
+    const r = await callApi('POST', '/api/qianfan/fetch', {});
+    $('#fetchMsg').textContent = r.ok ? `✅ 抓到 ${r.count} 个商品` : '❌ ' + (r.detail || r.error || '失败');
+    if (r.ok) { loadProducts(); toast(`已抓取 ${r.count} 个商品`, 'ok'); }
+    else toast('商品页抓取失败：' + (r.detail || r.error || ''), 'err');
+  } catch (e) {
+    $('#fetchMsg').textContent = '❌ 抓取失败：' + (e && e.message ? e.message : e);
+    toast('抓取失败', 'err');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = old;
+  }
 });
 
 $('#addProductBtn').addEventListener('click', async () => {
@@ -214,30 +232,50 @@ async function loadImageFolders() {
     </div>`).join('');
 }
 $('#scanAndImportBtn').addEventListener('click', async () => {
+  const btn = $('#scanAndImportBtn');
+  if (btn.disabled) return; // 防重
+  btn.disabled = true;
+  const old = btn.textContent;
+  btn.textContent = '扫描并导入中…';
   $('#imgFolderMsg').textContent = '扫描并导入中…';
-  await loadImageFolders();
-  const r = await callApi('POST', '/api/images-folders/import', { matchedOnly: true });
-  if (r.ok) {
-    $('#imgFolderMsg').textContent = `✅ 已导入 ${r.created} 组（仅「有图片且匹配商品库」）并生成笔记入队`;
-    toast(`已导入 ${r.created} 组图片笔记`, 'ok');
-    loadImageFolders(); loadStats();
-  } else {
-    $('#imgFolderMsg').textContent = '❌ ' + (r.detail || '失败');
+  try {
+    await loadImageFolders();
+    const r = await callApi('POST', '/api/images-folders/import', { matchedOnly: true });
+    if (r.ok) {
+      $('#imgFolderMsg').textContent = `✅ 已导入 ${r.created} 组（仅「有图片且匹配商品库」）并生成笔记入队`;
+      toast(`已导入 ${r.created} 组图片笔记`, 'ok');
+      loadImageFolders(); loadStats();
+    } else {
+      $('#imgFolderMsg').textContent = '❌ ' + (r.detail || r.error || '失败');
+    }
+  } catch (e) {
+    $('#imgFolderMsg').textContent = '❌ 扫描导入失败：' + (e && e.message ? e.message : e);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = old;
   }
 });
 
 
 // ---- 批量发布 ----
 async function loadQueue() {
-  const [data, accData] = await Promise.all([
-    callApi('GET', '/api/batch/queue'),
-    callApi('GET', '/api/accounts').catch(() => ({ accounts: [] })),
-  ]);
-  const tasks = data.tasks;
+  let data, accData;
+  try {
+    [data, accData] = await Promise.all([
+      callApi('GET', '/api/batch/queue'),
+      callApi('GET', '/api/accounts').catch(() => ({ accounts: [] })),
+    ]);
+  } catch {
+    // 网络异常：显示错误空态，避免每 2s 轮询抛未捕获异常
+    const el = $('#queueList');
+    if (el) el.innerHTML = '<div class="empty"><span class="em">⚠️</span>无法连接后端，队列加载失败。<br/>请确认「黑猫智记AI」服务已启动。</div>';
+    return;
+  }
+  const tasks = data && data.tasks ? data.tasks : [];
   const accMap = {};
-  (accData.accounts || []).forEach((a) => { accMap[a.id] = a.name; });
-  queueHasPending = !!(tasks && tasks.some((t) => t.status === 'queued' || t.status === 'picked'));
-  nextPublishAtAt = data.nextPublishAt || 0;
+  ((accData && accData.accounts) || []).forEach((a) => { accMap[a.id] = a.name; });
+  queueHasPending = !!(tasks.some((t) => t.status === 'queued' || t.status === 'picked'));
+  nextPublishAtAt = (data && data.nextPublishAt) || 0;
   renderCountdown();
   $('#queueList').innerHTML = tasks.length ? tasks.map((t) => `
     <div class="qitem">
@@ -516,6 +554,11 @@ $('#addAccountBtn').addEventListener('click', async () => {
 // ---- 设置 ----
 async function loadSettings() {
   const s = await callApi('GET', '/api/settings');
+  if (!s || s.ok === false) {
+    // 后端不可达：静默占位，避免启动时 unhandled rejection
+    SETTINGS = null;
+    return;
+  }
   SETTINGS = s;
   $('#setProvider').value = s.aiProvider || 'deepseek';
   $('#setKey').value = s.aiApiKey || '';
@@ -553,7 +596,7 @@ function updatePublishHint() {
 }
 $('#setPublish').addEventListener('change', updatePublishHint);
 $('#saveSetBtn').addEventListener('click', async () => {
-  await callApi('POST', '/api/settings', {
+  const r = await callApi('POST', '/api/settings', {
     aiProvider: $('#setProvider').value, aiApiKey: $('#setKey').value, aiBaseUrl: $('#setBaseUrl').value, aiModel: $('#setModel').value,
     publishMode: $('#setPublish').value, qianfanUrl: $('#setQianfanUrl').value, qianfanChromeUrl: $('#setQianfanChrome').value,
     bitApiHost: $('#setBitHost').value, bitApiKey: $('#setBitKey').value,
@@ -563,8 +606,8 @@ $('#saveSetBtn').addEventListener('click', async () => {
     titlePrompt: $('#setTitlePrompt').value, contentPrompt: $('#setContentPrompt').value, topicsPrompt: $('#setTopicsPrompt').value,
     imagesRoot: $('#setImagesRoot').value, csvExportDir: $('#setCsvExportDir').value,
   });
-  $('#setMsg').textContent = '✅ 已保存';
-  setTimeout(() => ($('#setMsg').textContent = ''), 2000);
+  $('#setMsg').textContent = r && r.ok ? '✅ 已保存' : '❌ 保存失败：' + ((r && (r.detail || r.error)) || '后端未连接');
+  setTimeout(() => ($('#setMsg').textContent = ''), 3000);
 });
 
 $('#clearDataBtn').addEventListener('click', async () => {
@@ -588,7 +631,7 @@ $('#aiTestBtn').addEventListener('click', async () => {
   const r = await callApi('POST', '/api/ai/test', {
     aiProvider: $('#setProvider').value, aiApiKey: $('#setKey').value, aiBaseUrl: $('#setBaseUrl').value, aiModel: $('#setModel').value,
   });
-  $('#aiTestMsg').textContent = r.ok ? '✅ ' + (r.detail || '连通') : '❌ ' + (r.detail || '失败');
+  $('#aiTestMsg').textContent = r && r.ok ? '✅ ' + (r.detail || '连通') : '❌ ' + ((r && (r.detail || r.error)) || '失败');
 });
 
 function switchTab(name) {
@@ -711,33 +754,65 @@ async function ensureAgreement() {
   const modal = document.getElementById('agreementModal');
   if (!modal) return;
   let agreed = false;
+  let reachable = true;
   try {
     const r = await fetch('/api/agreement');
     const j = await r.json().catch(() => ({}));
     agreed = !!(j && j.agreed);
-  } catch { agreed = false; }
+  } catch { agreed = false; reachable = false; }
   if (agreed) { modal.hidden = true; return; }
   modal.hidden = false; // 未同意 → 全屏拦截，无法进入主界面
   const chk = document.getElementById('agreeChk');
   const btn = document.getElementById('agreeEnterBtn');
-  if (chk && btn) {
+  const skipBtn = document.getElementById('agreeSkipBtn');
+  const errHint = document.getElementById('agreeErrHint');
+  // 后端不可达时给出逃生通道：临时进入本次会话，避免界面锁死
+  if (!reachable) {
+    if (chk) chk.disabled = true;
+    if (btn) { btn.disabled = false; btn.textContent = '重试连接'; }
+    if (skipBtn) { skipBtn.hidden = false; skipBtn.textContent = '稍后再说（临时进入）'; }
+    if (errHint) errHint.hidden = false;
+  }
+  const enter = async () => {
+    btn.disabled = true;
+    try {
+      const r = await fetch('/api/agreement', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ agreed: true }),
+      });
+      const j = await r.json().catch(() => ({}));
+      if (j && j.ok) { modal.hidden = true; }
+      else { btn.disabled = false; alert('提交失败，请重试'); }
+    } catch {
+      if (reachable) {
+        btn.disabled = false;
+        alert('网络错误，请重试');
+      } else {
+        // 仍不可达 → 提示用户检查后端，但不死锁
+        modal.hidden = true;
+        alert('后端未连接，已临时进入（本次会话不再弹出协议）。请检查「黑猫智记AI」服务是否已启动。');
+      }
+    }
+  };
+  if (chk && btn && reachable) {
     chk.addEventListener('change', () => { btn.disabled = !chk.checked; });
+    btn.addEventListener('click', enter);
+  } else if (btn) {
+    // 不可达路径：点击「重试连接」或「同意」都走重试/临时进入
     btn.addEventListener('click', async () => {
       btn.disabled = true;
       try {
-        const r = await fetch('/api/agreement', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ agreed: true }),
-        });
+        const r = await fetch('/api/agreement');
         const j = await r.json().catch(() => ({}));
-        if (j && j.ok) { modal.hidden = true; }
-        else { btn.disabled = false; alert('提交失败，请重试'); }
-      } catch {
-        btn.disabled = false;
-        alert('网络错误，请重试');
-      }
+        if (j && j.agreed) { modal.hidden = true; return; }
+      } catch {}
+      modal.hidden = true; // 仍不可达 → 临时进入本次会话
+      alert('后端仍不可达，已临时进入（本次会话不再弹出协议）。请检查「黑猫智记AI」服务是否已启动。');
     });
+  }
+  if (skipBtn && !reachable) {
+    skipBtn.addEventListener('click', () => { modal.hidden = true; });
   }
 }
 ensureAgreement();

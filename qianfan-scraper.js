@@ -41,10 +41,20 @@ export async function scrapeQianfanProducts(settings = {}) {
   const browserURL = settings.qianfanChromeUrl || loadConfig().browserURL || 'http://127.0.0.1:9222';
   const puppeteer = await getPuppeteer();
   let browser;
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 10000);
   try {
-    browser = await puppeteer.connect({ browserURL, defaultViewport: null });
+    // connect 加 10s 超时：Chrome 未启动/端口不可达时快速失败，避免接口永久挂起
+    browser = await Promise.race([
+      puppeteer.connect({ browserURL, defaultViewport: null }),
+      new Promise((_, reject) => {
+        ctrl.signal.addEventListener('abort', () => reject(new Error('连接超时(10s)，请确认浏览器已启动且远程调试端口可访问')));
+      }),
+    ]);
   } catch (e) {
     throw new Error(`无法连接 Chrome（${browserURL}）：请先在设置里启动/连接已登录的浏览器。原始错误：${e.message}`);
+  } finally {
+    clearTimeout(timer);
   }
   try {
     const page = await getQianfanPage(browser, cfg);

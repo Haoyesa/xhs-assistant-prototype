@@ -1,6 +1,6 @@
 import http from 'node:http';
 import { signToken, verifyToken, issue, revoke, isRevoked, revokeToken, isTokenRevoked } from './lib.mjs';
-import { resolvePlan } from '../electron/plans.mjs';
+import { PLANS, resolvePlan } from '../electron/plans.mjs';
 import {
   PRICE_TABLE,
   planPrice,
@@ -19,7 +19,11 @@ import { wechatConfig, alipayConfig } from './pay-config.mjs';
 import { createTeam, teamInfo, activateSeat, revokeSeat } from './teams.mjs';
 
 const PORT = Number(process.env.LICENSE_PORT || 8787);
+const HOST = process.env.LICENSE_HOST || '127.0.0.1'; // 默认仅回环；生产公网部署时显式设 LICENSE_HOST=0.0.0.0
 const ADMIN_KEY = process.env.LICENSE_ADMIN_KEY || 'changeme-admin-key';
+if (!process.env.LICENSE_ADMIN_KEY) {
+  console.warn('[license-server] ⚠️ LICENSE_ADMIN_KEY 未设置，正在使用默认值（仅限开发/内网，切勿在生产公网暴露此服务）');
+}
 
 const server = http.createServer((req, res) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -51,10 +55,15 @@ const server = http.createServer((req, res) => {
     // 非 JSON（如支付宝 webhook 的 form-urlencoded）保留原始 body，由各路由自行解析
 
     // 在线激活：客户端提交机器码 + 套餐 + 计费周期 → 服务器签发凭证
+    // 安全边界：无 adminKey 时仅允许签发 free（免费试用）；付费套餐必须走支付（/api/checkout → 回调/查询自动发卡）。
+    // 携带正确 adminKey（开发/内部测试）可签发任意套餐。
     if (req.url === '/api/activate' && req.method === 'POST') {
       const { machineCode, plan, billing } = json;
       if (!machineCode || !plan) return r404res(res, 400, { error: 'missing-fields' });
-      if (!resolvePlan(plan)) return r404res(res, 400, { error: 'bad-plan' });
+      if (!PLANS[plan]) return r404res(res, 400, { error: 'bad-plan' });
+      if (plan !== 'free' && json.adminKey !== ADMIN_KEY) {
+        return r404res(res, 402, { error: 'paid-plan-requires-payment', hint: '付费套餐请通过 /api/checkout 下单并完成支付后自动发卡' });
+      }
       try {
         const token = issue(plan, billing, machineCode);
         res.setHeader('Content-Type', 'application/json');
@@ -166,8 +175,9 @@ const server = http.createServer((req, res) => {
       return send(res, { ok: true, order: { ...rest, token } });
     }
 
-    // 补机器码完成发卡（paid -> fulfilled）
+    // 补机器码完成发卡（paid -> fulfilled）。人工发卡是管理员操作，必须携带 adminKey，防止未支付订单白嫖 token。
     if (req.url.startsWith('/api/order/') && req.url.endsWith('/fulfill') && req.method === 'POST') {
+      if (json.adminKey !== ADMIN_KEY) return r404res(res, 401, { error: 'unauthorized' });
       const id = req.url.slice('/api/order/'.length).replace(/\/fulfill$/, '').split('?')[0];
       try {
         const o = fulfillOrder(id, json.machineCode);
@@ -310,6 +320,6 @@ function r404res(res, code, obj) {
   send(res, obj);
 }
 
-server.listen(PORT, () => {
-  console.log(`[license-server] listening on http://127.0.0.1:${PORT}`);
+server.listen(PORT, HOST, () => {
+  console.log(`[license-server] listening on http://${HOST}:${PORT}`);
 });

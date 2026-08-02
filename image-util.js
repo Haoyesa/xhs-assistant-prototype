@@ -39,15 +39,14 @@ export async function downloadOne(url, dir) {
   // 并发去重：同一 URL 只下载一次
   if (inflight.has(url)) return inflight.get(url);
   const job = (async () => {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 30000); // 30s 超时
     try {
-      const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), 30000); // 30s 超时
       const r = await fetch(url, {
         headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },
         redirect: 'follow',
         signal: controller.signal,
       });
-      clearTimeout(timer);
       if (!r.ok) return null;
       const buf = Buffer.from(await r.arrayBuffer());
       if (!buf.length || buf.length > MAX_BYTES) return null; // 空图或超大图直接丢弃
@@ -55,6 +54,8 @@ export async function downloadOne(url, dir) {
       return file;
     } catch {
       return null;
+    } finally {
+      clearTimeout(timer); // 无论成功/失败/超时都清理定时器，避免残留句柄
     }
   })();
   inflight.set(url, job);

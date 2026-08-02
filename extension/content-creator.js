@@ -52,8 +52,11 @@ else window.addEventListener('load', () => setTimeout(notifyTabReady, 800));
 
 // ---- 顶部居中悬浮 Toast：捕获 [黑猫] 日志 + 实时状态 ----
 // 安装 console.log 包装，把 [黑猫] 日志写入环形缓冲，供右上/顶部 Toast 渲染。
+// 幂等守卫：后台发送失败时会重注入本文件（background.js），若重复执行会把 console.log 再包一层 → 双层日志。
 window.__xhsToastLog = window.__xhsToastLog || [];
 (function installXhsLogCapture() {
+  if (window.__xhsLogWrapped) return; // 已包装过则直接跳过，防止重注入后双层转发
+  window.__xhsLogWrapped = true;
   const _log = console.log.bind(console);
   console.log = function (...args) {
     try {
@@ -2168,13 +2171,15 @@ function updateStartBtn() {
 function updateMeta(account, queued, err, others) {
   const el = document.getElementById('xhs-h-meta');
   if (!el) return;
-  const a = account || '—';
+  // 账号/错误文本可能来自用户配置的后端（serverUrl 可被 options 改成任意地址），必须转义防注入页面脚本
+  const esc = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  const a = esc(account) || '—';
   const q = typeof queued === 'number' ? queued : '—';
   // 有任务但都指派给了其它账号 → 本窗口拉不到，明确提示原因（否则用户以为「待发>0 却不发」是 bug）
   const o = (typeof others === 'number' && others > 0)
     ? `<br><span style="color:#fbbf24;">另有 ${others} 条已指派给${account ? '其它' : ''}账号的任务${account ? '' : '（本窗口未绑定账号，只能发「未指派」任务）'}</span>`
     : '';
-  const e = err ? `<br><span style="color:#f87171;">错误：${err}</span>` : '';
+  const e = err ? `<br><span style="color:#f87171;">错误：${esc(err)}</span>` : '';
   el.innerHTML = `账号：${a}<br>待发：${q}${o}${e}`;
 }
 

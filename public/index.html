@@ -30,7 +30,7 @@
           <span class="conn-dot" id="connDot"></span>
           <span id="connText">连接中…</span>
         </div>
-        <div class="side-hint">本地创作 · 内容辅助 <span class="app-ver" id="appVer">v0.4.0</span></div>
+        <div class="side-hint">本地创作 · 内容辅助 <span class="app-ver" id="appVer">—</span></div>
       </div>
     </aside>
 
@@ -229,12 +229,12 @@
               </label>
               <div class="hint" id="publishModeHint" style="grid-column:1/-1"></div>
               <label>商品页 URL<input id="setQianfanUrl" placeholder="https://..." /></label>
-              <label>千帆 Chrome 地址(CDP)<input id="setQianfanChrome" placeholder="http://127.0.0.1:9222" /></label>
+              <label>千帆抓取用 Chrome 调试地址<input id="setQianfanChrome" placeholder="http://127.0.0.1:9222" /></label>
               <label>图片根目录(本地图库,可选)<input id="setImagesRoot" placeholder="留空=数据目录/images" /></label>
               <label>CSV 导出目录(可选)<input id="setCsvExportDir" placeholder="留空=数据目录/csv" /></label>
             </div>
             <div class="row">
-              <span class="hint">当前仅支持「浏览器插件」一种发布方式：在创作者发布台页面点浏览器插件「开始批量发布」即可自动逐篇填写并发布。已移除 CDP 真实浏览器 / 模拟发布两种内置方式。</span>
+              <span class="hint">发布方式仅支持「浏览器插件」：在创作者发布台页面点浏览器插件「开始批量发布」即可自动逐篇填写并发布。上方「千帆抓取用 Chrome 调试地址」仅用于选品页商品抓取（连接已登录 Chrome 的调试端口），与发布无关。</span>
             </div>
           </div>
 
@@ -355,7 +355,9 @@
       <label class="agreement-check">
         <input type="checkbox" id="agreeChk" /> 我已阅读并充分理解、同意上述全部条款
       </label>
+      <p id="agreeErrHint" class="agreement-err" hidden>后端未连接（可能是服务未启动），暂时无法保存同意状态。可先「稍后再说」临时进入，本次会话内不再弹出。</p>
       <div class="agreement-actions">
+        <button id="agreeSkipBtn" class="ghost" hidden>稍后再说</button>
         <button id="agreeEnterBtn" class="primary" disabled>同意并进入</button>
       </div>
     </div>

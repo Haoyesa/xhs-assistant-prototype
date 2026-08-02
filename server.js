@@ -165,6 +165,22 @@ function corsHeaders() {
   };
 }
 
+// 敏感配置字段：仅在受信来源（回环页面/本机扩展）返回明文；跨域来源（小红书页面/隐私上下文 null）返回掩码。
+const SECRET_SETTING_KEYS = ['aiApiKey', 'imgAiApiKey', 'bitApiKey'];
+const MASK = '******';
+function isTrustedSettingOrigin(req) {
+  const origin = req && req.headers && req.headers.origin;
+  if (!origin) return true; // 同源（桌面页面 http://127.0.0.1:PORT 不带/带同源 Origin 均视为受信）
+  if (origin === 'null') return false; // 贴图 data URL / 其他隐私上下文 → 脱敏
+  return /^(chrome-extension|moz-extension):\/\//i.test(origin)
+    || /^https?:\/\/(127\.0\.0\.1|localhost)(:\d+)?$/i.test(origin);
+}
+function maskSecretSettings(obj) {
+  const out = { ...obj };
+  for (const k of SECRET_SETTING_KEYS) out[k] = out[k] ? MASK : '';
+  return out;
+}
+
 // ---- 本地敏感词 / 合规自检（词库见 sensitive-words.mjs，纯本地、不依赖平台接口）----
 // 扁平化并按词长降序，优先匹配长词；命中仅提示不拦截。
 const SENSITIVE_WORDS = [];
@@ -612,16 +628,22 @@ function sendJSON(res, code, obj) {
 }
 const MAX_BODY_SIZE = 10 * 1024 * 1024; // 10MB（批量作图 import-chunk 单请求上传整张图，PNG base64 可能 >2MB）
 
+// 带 HTTP 状态码的业务错误：外层 catch 据此返回对应状态，而非一律 500
+class HttpError extends Error {
+  constructor(code, message) { super(message); this.statusCode = code; }
+}
+
 async function readBody(req) {
   const chunks = [];
   let total = 0;
   for await (const c of req) {
     total += c.length;
-    if (total > MAX_BODY_SIZE) throw new Error('请求体超过 10MB 限制');
+    if (total > MAX_BODY_SIZE) throw new HttpError(413, '请求体超过 10MB 限制');
     chunks.push(c);
   }
   const s = Buffer.concat(chunks).toString('utf-8');
-  try { return s ? JSON.parse(s) : {}; } catch { return {}; }
+  if (!s) return {};
+  try { return JSON.parse(s); } catch { throw new HttpError(400, '请求体不是合法 JSON'); }
 }
 function sendFile(res, file) {
   fs.stat(file, (err, stat) => {
@@ -724,7 +746,7 @@ const server = http.createServer((req, res) => reqScope.run(req, async () => {
         await fsp.writeFile(file, buf);
         assertInside(root, file); // 二次校验：落盘文件未被符号链接逃逸
 
-        return sendJSON(res, 200, { ok: true, folderName: folder, fileName: finalName, saved: typeof index === 'number' ? index + 1 : undefined, total });
+        return sendJSON(res, 200, { ok: true, folderName: fnIn, fileName: finalName, saved: typeof index === 'number' ? index + 1 : undefined, total });
       } catch (err) {
         console.error('[generator/import-chunk]', err);
         return sendJSON(res, 500, { ok: false, error: err.message || '保存失败' });
@@ -783,9 +805,9 @@ const server = http.createServer((req, res) => reqScope.run(req, async () => {
       const plan = resolvedPlan(DATA);
       // 套餐只规定最短间隔下限；用户设置更大则取用户值（尊重设置），更小才用套餐下限兜底
       const eff = effectiveInterval(merged);
-      return sendJSON(res, 200, {
+      const out = {
         appVersion: APP_VERSION,
-        ...merged,
+        ...(isTrustedSettingOrigin(req) ? merged : maskSecretSettings(merged)),
         // 把用户自己设置的间隔原值保留下来，供设置页回显
         userPublishIntervalSeconds: merged.publishIntervalSeconds,
         userPublishIntervalRandomDelaySeconds: merged.publishIntervalRandomDelaySeconds,
@@ -793,12 +815,18 @@ const server = http.createServer((req, res) => reqScope.run(req, async () => {
         publishIntervalRandomDelaySeconds: eff.publishIntervalRandomDelaySeconds,
         plan: { key: plan.key, label: plan.label, autoSubmit: plan.autoSubmit, freqTier: plan.freqTier },
         maxAccounts: maxAccounts(DATA),
-      });
+      };
+      return sendJSON(res, 200, out);
     }
     if (p === '/api/settings' && method === 'POST') {
       const body = await readBody(req);
       const cur = await readStore(stores.settings, {});
-      await writeStore(stores.settings, { ...DEFAULT_SETTINGS, ...cur, ...body });
+      // 掩码占位（'******'）视为「未修改」：保留原值，防止跨域来源把明文 Key 覆盖成掩码
+      const next = { ...body };
+      for (const k of SECRET_SETTING_KEYS) {
+        if (body && body[k] === MASK) next[k] = cur[k] !== undefined ? cur[k] : DEFAULT_SETTINGS[k];
+      }
+      await writeStore(stores.settings, { ...DEFAULT_SETTINGS, ...cur, ...next });
       return sendJSON(res, 200, { ok: true });
     }
 
@@ -1200,8 +1228,9 @@ const server = http.createServer((req, res) => reqScope.run(req, async () => {
         const itemId = String(b.itemId || '').trim();
         // 去重：相同 itemId，或「之前导入/采集的空 id 记录且商品名相同」都视为同一商品，更新而非新增。
         // 这样修复「先导入本地图片（建了空 id 商品）后采集到真实 id」导致的重复与匹配失效。
+        // 统一走 normalizeId 归一化（去空白/小写），避免大小写/空白差异造成重复入库。
         let dup = null;
-        if (itemId) dup = products.find((m) => m.itemId === itemId);
+        if (itemId) dup = products.find((m) => m.itemId && normalizeId(m.itemId) === normalizeId(itemId));
         if (!dup && !itemId && b.productName) dup = products.find((m) => m.productName && normalizeId(m.productName) === normalizeId(b.productName) && !m.itemId);
         if (dup) {
           if (!dup.itemId && itemId) dup.itemId = itemId;
@@ -1350,7 +1379,9 @@ const server = http.createServer((req, res) => reqScope.run(req, async () => {
       const tasks = await readStore(stores.tasks, []);
       const t = tasks.find((x) => x.id === body.taskId);
       if (!t) return sendJSON(res, 404, { ok: false, detail: '任务不存在' });
-      const status = body.status || 'published';
+      // 状态白名单：只接受插件能真实回报的终态，防止任意字符串污染任务状态
+      const ALLOWED_STATUS = ['published', 'failed', 'manual_hold', 'waiting_submit', 'verify_result'];
+      const status = ALLOWED_STATUS.includes(body.status) ? body.status : 'published';
       t.status = status; t.step = 'verify_result'; t.statusDetail = body.detail || status; t.updatedAt = nowISO();
       await writeStore(stores.tasks, mergeTask(tasks, t));
       const history = await readStore(stores.history, []);
@@ -1553,6 +1584,10 @@ const server = http.createServer((req, res) => reqScope.run(req, async () => {
       if (relative.startsWith('..') || path.isAbsolute(relative)) {
         return sendJSON(res, 403, { ok: false, detail: '禁止访问目录外文件' });
       }
+      // 符号链接防护：realpath 校验落点仍在 root 内（防止 root 下子目录被软链引到 root 外）
+      try { assertInside(root, abs); } catch (e) {
+        return sendJSON(res, 403, { ok: false, detail: e.message || '非法路径' });
+      }
       if (!fs.existsSync(abs) || !fs.statSync(abs).isFile()) return sendJSON(res, 404, { ok: false, detail: '文件不存在' });
       const mime = MIME[path.extname(abs).toLowerCase()] || 'application/octet-stream';
       try {
@@ -1572,7 +1607,8 @@ const server = http.createServer((req, res) => reqScope.run(req, async () => {
 
     return sendJSON(res, 404, { ok: false, detail: '未知接口' });
   } catch (e) {
-    return sendJSON(res, 500, { ok: false, detail: e.message });
+    const code = (e instanceof HttpError && e.statusCode) ? e.statusCode : 500;
+    return sendJSON(res, code, { ok: false, detail: e.message });
   }
 }));
 

@@ -1290,6 +1290,7 @@ let activeBgId = null;   // 当前激活的背景 ID
 let activePresetId = null; // 当前激活的预设模板 ID
 let currentIndex = 0;    // 当前预览索引
 let generatedImages = []; // {id, dataUrl}[]
+let generating = false;   // 生成运行锁：防止连点「生成全部」并发竞态
 let isDragging = false;   // 是否正在拖拽文字
 let dragStartX = 0, dragStartY = 0;  // 拖拽起始鼠标位置
 let dragStartPosX = 0, dragStartPosY = 0; // 拖拽起始文字位置
@@ -2289,48 +2290,62 @@ $('saveCsvBtn').addEventListener('click', () => {
   showToast(`已保存修改到 ${outFileName}`, 'success');
 });
 
-// 生成全部 — 分批异步渲染 + IndexedDB 存储
+// 生成全部 — 分批异步渲染 + IndexedDB 存储（运行锁防止连点并发竞态）
 $('generateBtn').addEventListener('click', async () => {
+  if (generating) return; // 运行锁
   if (!csvData.length) { showToast('请先导入 CSV 文件', 'warning'); return; }
   if (!bgImage) { showToast('请先选择背景图片', 'warning'); return; }
 
-  // 清空旧数据
-  generatedImages = [];
-  await idbClear();
-  thumbCache = {}; // 清空缩略图缓存
+  generating = true;
+  const btn = $('generateBtn');
+  const btnLabel = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = '生成中…';
+  try {
+    // 清空旧数据
+    generatedImages = [];
+    await idbClear();
+    thumbCache = {}; // 清空缩略图缓存
 
-  const total = csvData.length;
-  $('progressWrap').classList.add('show');
-  $('thumbList').style.display = 'grid';
-  $('thumbList').innerHTML = '';
+    const total = csvData.length;
+    $('progressWrap').classList.add('show');
+    $('thumbList').style.display = 'grid';
+    $('thumbList').innerHTML = '';
 
-  // 分批渲染，每批 10 张，用 requestAnimationFrame 让 UI 呼吸
-  const BATCH = 10;
-  for (let batchStart = 0; batchStart < total; batchStart += BATCH) {
-    const batchEnd = Math.min(batchStart + BATCH, total);
+    // 分批渲染，每批 10 张，用 requestAnimationFrame 让 UI 呼吸
+    const BATCH = 10;
+    for (let batchStart = 0; batchStart < total; batchStart += BATCH) {
+      const batchEnd = Math.min(batchStart + BATCH, total);
 
-    for (let i = batchStart; i < batchEnd; i++) {
-      const c = document.createElement('canvas');
-      const dataUrl = renderCanvas(csvData[i], c);
-      const item = { id: csvData[i].id, dataUrl };
-      generatedImages.push(item);
-      // 存入 IndexedDB
-      await idbPut(i, item);
+      for (let i = batchStart; i < batchEnd; i++) {
+        const c = document.createElement('canvas');
+        const dataUrl = renderCanvas(csvData[i], c);
+        const item = { id: csvData[i].id, dataUrl };
+        generatedImages.push(item);
+        // 存入 IndexedDB
+        await idbPut(i, item);
+      }
+
+      // 更新进度
+      const pct = (batchEnd / total * 100).toFixed(0);
+      $('progressFill').style.width = pct + '%';
+      $('progressText').textContent = `${batchEnd} / ${total}`;
+
+      // 让 UI 有呼吸时间
+      await new Promise(r => requestAnimationFrame(r));
     }
 
-    // 更新进度
-    const pct = (batchEnd / total * 100).toFixed(0);
-    $('progressFill').style.width = pct + '%';
-    $('progressText').textContent = `${batchEnd} / ${total}`;
+    // 初始化虚拟滚动缩略图
+    initVirtualScroll();
 
-    // 让 UI 有呼吸时间
-    await new Promise(r => requestAnimationFrame(r));
+    showToast(`已生成 ${total} 张图片`, 'success');
+  } catch (e) {
+    showToast('生成失败：' + (e && e.message ? e.message : e), 'error');
+  } finally {
+    generating = false;
+    btn.disabled = false;
+    btn.textContent = btnLabel;
   }
-
-  // 初始化虚拟滚动缩略图
-  initVirtualScroll();
-
-  showToast(`已生成 ${total} 张图片`, 'success');
 });
 
 // 下载单张
@@ -2576,7 +2591,8 @@ function initVirtualScroll() {
     });
   };
 
-  container.addEventListener('scroll', renderVisible);
+  // 滚动事件：只渲染可视区域的缩略图（用 onscroll 覆盖式绑定，避免每次生成后重复 addEventListener 堆积）
+  container.onscroll = renderVisible;
   // 初始渲染
   renderVisible();
 }
@@ -2976,7 +2992,8 @@ function renderFullscreen() {
 $('fullscreenClose').addEventListener('click', closeFullscreen);
 $('fullscreenOverlay').addEventListener('click', (e) => {
   if (e.target === $('fullscreenOverlay') || e.target === $('fullscreenCanvas')) {
-    // 点击画布不关闭，只关闭按钮和空白区域关闭
+    // 点击画布不关闭；点击空白区域（overlay 本体）关闭
+    if (e.target === $('fullscreenOverlay')) closeFullscreen();
   }
 });
 
