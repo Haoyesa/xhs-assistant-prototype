@@ -73,8 +73,9 @@ function itemIdIn(root) {
   return '';
 }
 
-// 从容器抽取「商品详情链接」：优先 href 含 itemId 的详情链；兜底首个商品型链接 / 卡片内首个链接；绝对化。
-// 用于「一键复制链接」功能；若页面未暴露详情链接则返回空串（复制时提示用户手动复制）。
+// 兜底链接抽取：仅在无法用 itemId 构造小红书前台 goods-detail 链接时使用。
+// 优先 href 含 itemId 的详情链；兜底首个商品型链接 / 卡片内首个链接；绝对化。
+// 若页面未暴露详情链接则返回空串。
 function linkIn(root, itemId) {
   const anchors = [];
   // 自身就是 <a> 时（策略2 兜底扫描的 root 即 anchor）也要纳入
@@ -141,12 +142,15 @@ function readProductFrom(el, bestImg) {
   }
   if (!image) image = imgIn(el, SEL.image);
   const itemId = itemIdIn(el);
+  // 复制链接统一输出小红书前台公开商品链接（goods-detail 格式）；
+  // 仅在无 itemId（无法构造前台链接）时，兜底抽取页面内详情链接。
+  const link = itemId ? `https://www.xiaohongshu.com/goods-detail/${itemId}` : linkIn(el, itemId);
   return {
     itemId,
     productName: pickName(el),
     price: pickPrice(el),
     image: (image || '').trim(),
-    link: linkIn(el, itemId), // 商品详情链接，供「一键复制」使用（未暴露则为空串）
+    link, // 商品前台链接，供「一键复制」使用；无 itemId 时退化为页面内链接或空串
   };
 }
 
