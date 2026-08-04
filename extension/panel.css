@@ -67,6 +67,12 @@
 .xh-empty { font-size: 12px !important; color: #9aa3b2 !important; line-height: 1.5 !important; }
 .xh-ignore { flex: 0 0 auto !important; align-self: center !important; margin-left: auto !important; padding: 2px 8px !important; font-size: 11px !important; line-height: 1.4 !important; color: #9aa3b2 !important; background: #1b1f27 !important; border: 1px solid #2a2f37 !important; border-radius: 6px !important; cursor: pointer !important; }
 .xh-ignore:hover { color: #e6e8eb !important; border-color: #3a4150 !important; }
+/* 单条「复制」按钮：蓝色调，与忽略并列 */
+.xh-copy { flex: 0 0 auto !important; align-self: center !important; padding: 2px 8px !important; font-size: 11px !important; line-height: 1.4 !important; color: #4f8cff !important; background: #1b1f27 !important; border: 1px solid #2a3a55 !important; border-radius: 6px !important; cursor: pointer !important; }
+.xh-copy:hover { color: #8fb6ff !important; border-color: #3a5a85 !important; }
+/* 批量「复制选中商品链接」按钮：整行宽度的次级按钮 */
+.xh-btn.xh-copyall { background: #1f2733 !important; color: #cdd5e0 !important; font-weight: 500 !important; border: 1px solid #2a2f37 !important; margin-top: 0 !important; }
+.xh-btn.xh-copyall:hover { filter: brightness(1.12) !important; background: #29313d !important; }
 .xh-clear { display: inline-block !important; margin: 2px 0 6px !important; font-size: 11px !important; color: #4f8cff !important; cursor: pointer !important; text-decoration: none !important; }
 
 .xh-manual { font-size: 12px !important; color: #9aa3b2 !important; }

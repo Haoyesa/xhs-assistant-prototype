@@ -73,6 +73,36 @@ function itemIdIn(root) {
   return '';
 }
 
+// 从容器抽取「商品详情链接」：优先 href 含 itemId 的详情链；兜底首个商品型链接 / 卡片内首个链接；绝对化。
+// 用于「一键复制链接」功能；若页面未暴露详情链接则返回空串（复制时提示用户手动复制）。
+function linkIn(root, itemId) {
+  const anchors = [];
+  // 自身就是 <a> 时（策略2 兜底扫描的 root 即 anchor）也要纳入
+  if (root && root.tagName && root.tagName.toLowerCase() === 'a' && root.getAttribute('href')) {
+    anchors.push(root);
+  }
+  try { root.querySelectorAll('a[href]').forEach((a) => anchors.push(a)); } catch (e) {}
+  const abs = (href) => { try { return new URL(href, location.href).href; } catch (e) { return href; } };
+  // 1) href 内含 itemId → 基本就是该商品详情页
+  if (itemId) {
+    for (const a of anchors) {
+      const href = a.getAttribute('href') || '';
+      if (href && href.includes(itemId)) return abs(href);
+    }
+  }
+  // 2) 兜底：首个商品型链接（含 item/spu/product/goods/detail 之一）
+  for (const a of anchors) {
+    const href = a.getAttribute('href') || '';
+    if (href && /item|spu|product|goods|detail/i.test(href)) return abs(href);
+  }
+  // 3) 再兜底：卡片内首个任意链接（绝对化）
+  if (anchors[0]) {
+    const href = anchors[0].getAttribute('href') || '';
+    if (href) return abs(href);
+  }
+  return '';
+}
+
 // 从容器抽取「名称」：优先已知标题选择器，兜底取最长文本节点（适配改版后的 class 名）
 function pickName(root) {
   const t = txtIn(root, SEL.title);
@@ -110,11 +140,13 @@ function readProductFrom(el, bestImg) {
     if (/^data:image\/(gif|png);base64,(R0lGOD|iVBOR)/.test(image)) image = (bestImg.getAttribute('data-src') || '');
   }
   if (!image) image = imgIn(el, SEL.image);
+  const itemId = itemIdIn(el);
   return {
-    itemId: itemIdIn(el),
+    itemId,
     productName: pickName(el),
     price: pickPrice(el),
     image: (image || '').trim(),
+    link: linkIn(el, itemId), // 商品详情链接，供「一键复制」使用（未暴露则为空串）
   };
 }
 
@@ -284,6 +316,7 @@ function buildPanel() {
           <button class="xh-btn" id="xhCollect">采集选中</button>
           <button class="xh-btn xh-export" id="xhExport">导出CSV</button>
         </div>
+        <button class="xh-btn xh-copyall" id="xhCopyLinks">复制选中商品链接</button>
       </div>
       <details class="xh-manual">
         <summary>手动添加 / 批量粘贴</summary>
@@ -378,6 +411,7 @@ function buildPanel() {
           <span class="xh-name">${escapeHtml(it.productName || it.itemId || '未命名')}</span>
           <span class="xh-sub">${it.price ? '¥' + escapeHtml(it.price) : ''} ${it.itemId ? '· ' + escapeHtml(it.itemId) : ''}</span>
         </span>
+        <button class="xh-copy" data-i="${i}" title="复制该商品链接">复制</button>
         <button class="xh-ignore" data-sig="${escapeHtml(sig)}" title="忽略此条（不再自动识别）">忽略</button>
       </label>`;
     }).join('');
@@ -389,6 +423,12 @@ function buildPanel() {
       const sig = b.dataset.sig;
       if (sig) { IGNORED.add(sig); chrome.storage.local.set({ xhIgnore: [...IGNORED] }); }
       renderList();
+    }));
+    // 单条「复制链接」：点该按钮复制对应商品详情链接（不触发 checkbox 切换）
+    list.querySelectorAll('.xh-copy').forEach((b) => b.addEventListener('click', (e) => {
+      e.preventDefault(); e.stopPropagation();
+      const it = items[+b.dataset.i];
+      if (it) copyItemLink(it, b);
     }));
     status(`已识别 ${items.length} 条商品` + (st.junk ? `（已过滤 ${st.junk} 个无效项）` : ''));
     bindClearIgnored();
@@ -493,6 +533,24 @@ function buildPanel() {
     }
   });
 
+  // 复制选中商品链接：把勾选商品（带链接者）的详情链接按行拼成文本复制到剪贴板
+  $('xhCopyLinks').addEventListener('click', async () => {
+    const items = window.__xhItems || [];
+    const picked = [...$('xhList').querySelectorAll('input[type=checkbox]:checked')]
+      .map((c) => items[+c.dataset.i]).filter(Boolean)
+      .filter((p) => p.link);
+    if (!picked.length) { status('请先勾选带链接的商品（或重新识别本页）。'); return; }
+    const text = picked.map((p) => p.link).join('\n');
+    const ok = await copyText(text);
+    if (ok) {
+      status(`已复制 ${picked.length} 条商品链接到剪贴板`);
+      toast(`已复制 ${picked.length} 条商品链接`, 'ok');
+    } else {
+      status('复制失败，请手动复制');
+      toast('复制失败', 'err');
+    }
+  });
+
   // 手动添加
   $('xmAdd').addEventListener('click', async () => {
     const name = $('xmName').value.trim();
@@ -556,6 +614,49 @@ function buildPanel() {
 
 function escapeHtml(s) {
   return String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+}
+
+// 复制到剪贴板：优先 navigator.clipboard（需 https + clipboardWrite 权限），
+// 兜底 textarea + execCommand（兼容非聚焦 / 旧环境）。返回是否成功。
+async function copyText(text) {
+  const v = String(text || '').trim();
+  if (!v) return false;
+  try {
+    if (navigator.clipboard && window.isSecureContext) {
+      await navigator.clipboard.writeText(v);
+      return true;
+    }
+  } catch (e) { /* 落到 execCommand 兜底 */ }
+  try {
+    const ta = document.createElement('textarea');
+    ta.value = v;
+    ta.setAttribute('readonly', '');
+    ta.style.position = 'fixed';
+    ta.style.top = '-9999px';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.focus();
+    ta.select();
+    ta.setSelectionRange(0, ta.value.length);
+    const ok = document.execCommand('copy');
+    ta.remove();
+    return ok;
+  } catch (e) {
+    return false;
+  }
+}
+
+// 复制单条商品链接，并给按钮一个「✓」瞬时反馈
+async function copyItemLink(it, btn) {
+  const link = (it && it.link) || '';
+  if (!link) { toast('该商品无可用链接（页面未提供详情链接）', 'err'); return; }
+  const ok = await copyText(link);
+  if (ok) {
+    toast('已复制链接：' + ((it.productName || it.itemId || '商品').slice(0, 12)), 'ok');
+    if (btn) { const old = btn.textContent; btn.textContent = '✓'; setTimeout(() => { if (btn.parentNode) btn.textContent = old; }, 1200); }
+  } else {
+    toast('复制失败，请手动复制', 'err');
+  }
 }
 
 // 轻量 in-page Toast（不依赖浏览器通知权限）：在面板左侧滑入，自动消失
