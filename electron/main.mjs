@@ -23,6 +23,29 @@ const userDataDir = app.getPath('userData');
 // 打包后 asar 内不可写，把数据目录迁到系统用户目录
 process.env.XHS_DATA_DIR = userDataDir;
 
+// 启动自愈：若当前 userData 缺少授权/核心数据（多为从旧开发态目录 heimao-ai-note-assistant
+// 升级或切换运行方式而来），自动把 license.json 等从遗留目录迁移过来，避免「明明激活过却进不去」。
+function migrateLegacyUserData() {
+  try {
+    const legacy = path.join(app.getPath('appData'), 'heimao-ai-note-assistant');
+    if (legacy === userDataDir || !fs.existsSync(legacy)) return;
+    const files = ['license.json', 'settings.json', 'products.json', 'tasks.json', 'account.json', 'agreement.json', 'history.json', 'importedFolders.json'];
+    let moved = 0;
+    for (const f of files) {
+      const src = path.join(legacy, f);
+      const dst = path.join(userDataDir, f);
+      if (fs.existsSync(src) && !fs.existsSync(dst)) {
+        fs.copyFileSync(src, dst);
+        moved++;
+      }
+    }
+    if (moved) console.log(`[migrate] 从遗留目录迁移 ${moved} 个文件到 ${userDataDir}`);
+  } catch (e) {
+    console.warn('[migrate] 迁移失败（可忽略，不影响启动）：', e.message);
+  }
+}
+migrateLegacyUserData();
+
 const MAIN_URL = `http://127.0.0.1:${PORT}`;
 const ACTIVATION_FILE = path.join(__dirname, 'activation.html');
 const PRELOAD = path.join(__dirname, 'preload.cjs');
