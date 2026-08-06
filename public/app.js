@@ -59,6 +59,7 @@ const thumbStrip = (imgs) => (imgs && imgs.length)
 let pollTimer = null;
 let nextPublishAtAt = 0; // 插件上报的「下一篇最早发布时刻(ms)」，用于批量发布页倒计时
 let queueHasPending = false; // 队列是否还有 queued/picked 待发任务（用于决定是否显示倒计时）
+let _lastQueueHash = ''; // 队列上次渲染的内容指纹，用于跳过无变化时的 DOM 重建（防闪烁）
 let SETTINGS = null; // 最近一次 /api/settings 响应，供「关于」页读取版本号等
 
 // ---- 标签页 ----
@@ -274,10 +275,11 @@ async function loadQueue() {
   const tasks = data && data.tasks ? data.tasks : [];
   const accMap = {};
   ((accData && accData.accounts) || []).forEach((a) => { accMap[a.id] = a.name; });
-  queueHasPending = !!(tasks.some((t) => t.status === 'queued' || t.status === 'picked'));
+  queueHasPending = !!(tasks.some((t) => t.status === 'queued' || t.status === 'picked' || t.status === 'publishing' || t.status === 'verifying'));
   nextPublishAtAt = (data && data.nextPublishAt) || 0;
   renderCountdown();
-  $('#queueList').innerHTML = tasks.length ? tasks.map((t) => `
+  // 构建渲染内容，用轻量指纹跳过无变化时的 innerHTML 重建（消除每 2s 闪烁）
+  const html = tasks.length ? tasks.map((t) => `
     <div class="qitem">
       <span class="badge ${t.status}">${esc(t.status)}</span>
       ${t.accountId ? `<span class="badge acc">${esc(accMap[t.accountId] || t.accountId)}</span>` : ''}
@@ -287,6 +289,12 @@ async function loadQueue() {
       <span class="qdetail">${esc(t.statusDetail || '')}</span>
       ${t.status === 'queued' ? `<button class="mini cancel" data-id="${t.id}">取消</button>` : ''}
     </div>`).join('') : '<div class="empty"><span class="em">🚀</span>队列为空。<br/>去「素材库」页的本地图片文件夹扫描并导入生成笔记。</div>';
+  const hash = html.length + '|' + html.slice(0, 60) + '|' + html.slice(-40);
+  if (hash === _lastQueueHash) return; // 数据没变，跳过 DOM 重建
+  _lastQueueHash = hash;
+  const el = $('#queueList');
+  if (!el) return;
+  el.innerHTML = html;
   $$('#queueList .cancel').forEach((b) => b.addEventListener('click', async () => {
     await callApi('POST', `/api/batch/${b.dataset.id}/cancel`); loadQueue();
   }));
@@ -303,23 +311,18 @@ function fmtCountdown(ms) {
 function renderCountdown() {
   const el = document.getElementById('nextCountdown');
   if (!el) return;
-  if (nextPublishAtAt && nextPublishAtAt > Date.now()) {
-    // 插件/调度器已上报「下一篇最早发布时刻」：正常读秒。
-    // 不再以 queueHasPending 为门槛 —— 否则插件上报后调度器一旦判队列空会把倒计时瞬间清掉，两侧都看不到。
-    el.style.display = '';
-    el.textContent = '⏳ 距下一篇发布：' + fmtCountdown(nextPublishAtAt);
-    el.classList.add('active');
-  } else if (queueHasPending) {
-    // 队列在跑但还没拿到下一篇的具体时刻：显示「到点即发布」
-    el.style.display = '';
-    el.textContent = '⏳ 距下一篇发布：—（到点即发布）';
-    el.classList.remove('active');
-  } else {
-    // 完全空闲：隐藏
-    el.style.display = 'none';
-    el.textContent = '';
-    el.classList.remove('active');
+  // 队列已无待发/进行中任务 → 始终隐藏倒计时（无论 nextPublishAt 是否残留过期时间戳）
+  if (!queueHasPending) {
+    if (el.style.display !== 'none') { el.style.display = 'none'; el.textContent = ''; el.classList.remove('active'); }
+    return;
   }
+  const newText = (nextPublishAtAt && nextPublishAtAt > Date.now())
+    ? '⏳ 距下一篇发布：' + fmtCountdown(nextPublishAtAt)
+    : '⏳ 距下一篇发布：—（到点即发布）';
+  // 仅在文本变化时才写 DOM，减少每秒无谓回流
+  if (el.textContent !== newText) { el.textContent = newText; }
+  el.style.display = '';
+  if (nextPublishAtAt && nextPublishAtAt > Date.now()) el.classList.add('active'); else el.classList.remove('active');
 }
 setInterval(renderCountdown, 1000); // 每秒走字，loadQueue 每 2s 刷新数据源
 

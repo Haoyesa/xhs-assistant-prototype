@@ -173,7 +173,7 @@ button.danger:hover { background: #d33a3f; }
 .hint { color: var(--faint); font-size: 12px; line-height: 1.5; }
 .next-countdown { margin-top: 10px; padding: 8px 12px; border-radius: 10px; background: rgba(255,209,102,.08);
   border: 1px solid rgba(255,209,102,.25); color: #b9bdc7; font-size: 14px; font-variant-numeric: tabular-nums;
-  font-weight: 600; letter-spacing: .3px; }
+  font-weight: 600; letter-spacing: .3px; contain: content; will-change: contents; }
 .next-countdown.active { color: #ffd166; border-color: rgba(255,209,102,.5);
   box-shadow: 0 0 0 1px rgba(255,209,102,.15), 0 4px 14px rgba(255,209,102,.08); }
 details { margin-top: 10px; }
@@ -213,7 +213,7 @@ summary:hover { color: #7aa6ff; }
 .chip { display: inline-block; background: var(--accent2-soft); color: var(--accent2); border-radius: 999px; padding: 3px 11px; margin: 3px 3px 0 0; font-size: 12px; }
 
 /* ---------- 队列 / 历史 ---------- */
-.qitem { display: flex; align-items: center; gap: 11px; padding: 11px 2px; border-bottom: 1px solid var(--border); flex-wrap: wrap; }
+.qitem { display: flex; align-items: center; gap: 11px; padding: 11px 2px; border-bottom: 1px solid var(--border); flex-wrap: wrap; contain: content; }
 .qitem:last-child { border-bottom: 0; }
 .qname { font-weight: 700; }
 .qstep { color: var(--accent2); font-size: 12px; }
