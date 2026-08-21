@@ -330,6 +330,7 @@ const DEFAULT_SETTINGS = {
   randomEmoji: 30,
   autoSubmit: true,
   humanTyping: true,
+  typingSpeed: 'normal', // 拟人输入速度档：normal=常速，cautious=缓行（更慢、停顿更多，更不易被识别）
   publishIntervalSeconds: 500,
   publishIntervalRandomDelaySeconds: 200,
   singleProductRepeatLimit: 0,
@@ -1339,6 +1340,7 @@ const server = http.createServer((req, res) => reqScope.run(req, async () => {
         serverUrl: `http://127.0.0.1:${PORT}`,
         autoSubmit: effAuto,
         humanTyping: settings.humanTyping,
+        typingSpeed: settings.typingSpeed || 'normal',
         qianfanUrl: settings.qianfanUrl,
         // 发布间隔沿用用户设置（套餐只规定最短下限），账号专属间隔可低于全局但不可低于套餐下限
         publishIntervalSeconds: ivSec,

@@ -581,6 +581,7 @@ async function loadSettings() {
   $('#setEmoji').value = s.randomEmoji ?? 30;
   $('#setAutoSubmit').checked = !!s.autoSubmit;
   $('#setHumanTyping').checked = !!s.humanTyping;
+  $('#setTypingSpeed').value = s.typingSpeed || 'normal';
   $('#setInterval').value = s.userPublishIntervalSeconds ?? s.publishIntervalSeconds ?? 500;
   $('#setRandomDelay').value = s.userPublishIntervalRandomDelaySeconds ?? s.publishIntervalRandomDelaySeconds ?? 200;
   $('#setRepeat').value = s.singleProductRepeatLimit ?? 0;
@@ -604,7 +605,7 @@ $('#saveSetBtn').addEventListener('click', async () => {
     publishMode: $('#setPublish').value, qianfanUrl: $('#setQianfanUrl').value, qianfanChromeUrl: $('#setQianfanChrome').value,
     bitApiHost: $('#setBitHost').value, bitApiKey: $('#setBitKey').value,
     generateTitle: $('#setGenTitle').checked, generateContent: $('#setGenContent').checked, enableAiTopics: $('#setGenTopics').checked,
-    topicsCount: +$('#setTopicsCount').value, randomEmoji: +$('#setEmoji').value, autoSubmit: $('#setAutoSubmit').checked, humanTyping: $('#setHumanTyping').checked,
+    topicsCount: +$('#setTopicsCount').value, randomEmoji: +$('#setEmoji').value, autoSubmit: $('#setAutoSubmit').checked, humanTyping: $('#setHumanTyping').checked, typingSpeed: $('#setTypingSpeed').value,
     publishIntervalSeconds: +$('#setInterval').value, publishIntervalRandomDelaySeconds: +$('#setRandomDelay').value, singleProductRepeatLimit: +$('#setRepeat').value,
     titlePrompt: $('#setTitlePrompt').value, contentPrompt: $('#setContentPrompt').value, topicsPrompt: $('#setTopicsPrompt').value,
     imagesRoot: $('#setImagesRoot').value, csvExportDir: $('#setCsvExportDir').value,

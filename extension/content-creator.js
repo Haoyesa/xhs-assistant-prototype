@@ -275,8 +275,11 @@ async function typeText(el, text, opts = {}) {
   const rnd = (a, b) => a + Math.random() * (b - a);
   const isEditable = el.contentEditable === 'true' || el.isContentEditable || el.classList.contains('ql-editor') || el.getAttribute('role') === 'textbox';
   const newlineIsParagraph = opts.newlineIsParagraph ?? false; // 正文用：\n 用真实 Enter 键断成段落（ProseMirror 不吃 insertText('\n')）
-  const perCharMin = opts.perCharMin ?? 28, perCharMax = opts.perCharMax ?? 68;
-  const pauseEvery = opts.pauseEvery ?? 18, pauseMin = opts.pauseMin ?? 130, pauseMax = opts.pauseMax ?? 380;
+  // 速度档：外部传入 profile（来自 typingSpeed 设置）时优先使用；否则回退默认常速
+  const pf = opts.profile || { perCharMin: 28, perCharMax: 68, pauseEvery: 18, pauseMin: 130, pauseMax: 380, newlineDelay: 220 };
+  const perCharMin = opts.perCharMin ?? pf.perCharMin, perCharMax = opts.perCharMax ?? pf.perCharMax;
+  const pauseEvery = opts.pauseEvery ?? pf.pauseEvery, pauseMin = opts.pauseMin ?? pf.pauseMin, pauseMax = opts.pauseMax ?? pf.pauseMax;
+  const newlineDelay = opts.newlineDelay ?? pf.newlineDelay;
   const rndType = () => rnd(perCharMin, perCharMax);
   // 清空旧内容
   el.focus(); el.click();
@@ -300,7 +303,7 @@ async function typeText(el, text, opts = {}) {
       try { el.dispatchEvent(new InputEvent('input', { inputType: 'insertParagraph', bubbles: true })); } catch (e) {}
       el.dispatchEvent(new KeyboardEvent('keyup', evOpts));
       // 给 ProseMirror 较长时间处理断段，再继续下一字符
-      await new Promise((r) => setTimeout(r, 220));
+      await new Promise((r) => setTimeout(r, newlineDelay));
       i++;
       if (i % pauseEvery === 0) await sleep(rnd(pauseMin, pauseMax));
       continue;
@@ -1065,7 +1068,7 @@ async function insertBlankParagraph(el) {
 // 填话题（适配新平台：话题是「话题」按钮，不能直接键盘输入 #）。
 // 流程：聚焦正文 → 点「话题」按钮（平台插入 # 并弹出搜索下拉）→ 逐字输入关键词 → 等下拉 → 点第一个建议变蓝 chip。
 // 默认补齐到 6 个话题，并在话题与正文之间留一个空行。
-async function injectTopics(task, humanTyping, status, bodyEl) {
+async function injectTopics(task, humanTyping, status, bodyEl, profile) {
   let topics = Array.isArray(task.topics) ? task.topics.slice() : [];
   topics = topics.map((s) => String(s || '').replace(/^#+/, '').replace(/#+$/, '').trim()).filter(Boolean);
   // 默认 6 个话题：不足则派生补齐
@@ -1077,6 +1080,9 @@ async function injectTopics(task, humanTyping, status, bodyEl) {
   if (!topics.length) return { ok: true, skipped: true };
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   const rnd = (a, b) => a + Math.random() * (b - a);
+  // 话题关键词打字速度也跟随档位（缓行更慢，更拟人）
+  const tpf = profile || { perCharMin: 40, perCharMax: 90 };
+  const perCharMin = tpf.perCharMin ?? 40, perCharMax = tpf.perCharMax ?? 90;
   let added = 0;
 
   // 正文编辑器（话题会作为内联 chip 插入正文），优先用 fillTask 已定位到的真实 body，
@@ -1150,7 +1156,7 @@ async function injectTopics(task, humanTyping, status, bodyEl) {
           if (desc && desc.set) desc.set.call(ti, ti.value + ch); else ti.value = ti.value + ch;
           ti.dispatchEvent(new Event('input', { bubbles: true }));
         }
-        await sleep(rnd(40, 90));
+        await sleep(rnd(perCharMin, perCharMax));
       }
     } else {
       if (ti.isContentEditable || ti.getAttribute('role') === 'textbox') {
@@ -1742,10 +1748,22 @@ async function autoPublish(status, summary, task) {
   return { clicked: true, published };
 }
 
-async function fillTask(task, autoSubmit, serverUrl, humanTyping = true) {
+async function fillTask(task, autoSubmit, serverUrl, humanTyping = true, typingSpeed = 'normal') {
   const status = (window.__xhsHelper?.status) || (() => {});
-  console.log('[黑猫] fillTask 开始 task=', (task.title || '').slice(0, 24), 'bodyLen=', (task.body || '').length, 'autoSubmit=', autoSubmit, 'humanTyping=', humanTyping, 'images=', Array.isArray(task.images) ? task.images.length : 0, 'firstImg=', Array.isArray(task.images) && task.images[0] ? String(task.images[0]).slice(0, 80) : '-', 'serverUrl=', serverUrl || '-');
-  const FILL_TOTAL_MS = 150 * 1000;
+  // 拟人输入速度档：normal=常速；cautious=缓行（更慢、停顿更多，更不易被平台识别）
+  const TYPING_PROFILES = {
+    normal:   { perCharMin: 28, perCharMax: 68, pauseEvery: 18, pauseMin: 130, pauseMax: 380, newlineDelay: 220 },
+    cautious: { perCharMin: 55, perCharMax: 150, pauseEvery: 12, pauseMin: 350, pauseMax: 900, newlineDelay: 360 },
+  };
+  const profile = TYPING_PROFILES[typingSpeed] || TYPING_PROFILES.normal;
+  console.log('[黑猫] fillTask 开始 task=', (task.title || '').slice(0, 24), 'bodyLen=', (task.body || '').length, 'autoSubmit=', autoSubmit, 'humanTyping=', humanTyping, 'typingSpeed=', typingSpeed, 'images=', Array.isArray(task.images) ? task.images.length : 0, 'firstImg=', Array.isArray(task.images) && task.images[0] ? String(task.images[0]).slice(0, 80) : '-', 'serverUrl=', serverUrl || '-');
+  // 自适应总超时：缓行档正文耗时长，按正文长度×档位速度估算后额外留余量，避免误判超时
+  const bodyText = task.body || '';
+  const bodyNewlines = (bodyText.match(/\n/g) || []).length;
+  const estBodyMs = bodyText.length * ((profile.perCharMin + profile.perCharMax) / 2)
+    + bodyNewlines * profile.newlineDelay
+    + Math.ceil(bodyText.length / profile.pauseEvery) * ((profile.pauseMin + profile.pauseMax) / 2);
+  const FILL_TOTAL_MS = Math.max(150 * 1000, Math.round(estBodyMs * 2.2 + 90 * 1000));
   const withDeadline = (p, ms, label) => Promise.race([
     p,
     new Promise((_, rej) => setTimeout(() => rej(new Error(`${label}超时（${Math.round(ms / 1000)}s）`)), ms)),
@@ -1781,7 +1799,7 @@ async function fillTask(task, autoSubmit, serverUrl, humanTyping = true) {
       if (t) {
         const title = fitTitle(task.title || '');
         status(`正在填标题（${title.length}字 / 上限约20中文字）…`);
-        if (humanTyping) await withDeadline(typeText(t, title), 30000, '填标题');
+        if (humanTyping) await withDeadline(typeText(t, title, { profile }), 30000, '填标题');
         else writeEditable(t, title);
         const written = t.value != null ? t.value : (t.textContent || '').trim();
         if (!written) throw new Error('标题输入框未写入内容');
@@ -1795,14 +1813,12 @@ async function fillTask(task, autoSubmit, serverUrl, humanTyping = true) {
       const b = await locateField('body', 20000, t || undefined);
       console.log('[黑猫] 正文元素:', b ? (b.tagName + ' .' + (b.getAttribute('class') || '').slice(0, 30)) : '未找到', 'ph=', b ? phOf(b) : '');
       if (b) {
-        const bodyText = task.body || '';
-        const bodyNewlines = (bodyText.match(/\n/g) || []).length;
-        const isLongBody = bodyText.length > 180 || bodyNewlines > 3;
-        // 长正文走快速段落写入，避免 typeText 逐字超时；短正文保留拟人输入
-        const useFastBody = !humanTyping || isLongBody;
-        status(`正在填正文（${bodyText.length}字${isLongBody ? '，长文快速写入' : ''}）…`);
-        if (useFastBody) await withDeadline(writeEditableParagraphs(b, bodyText), 90000, '填正文');
-        else await withDeadline(typeText(b, bodyText, { newlineIsParagraph: true }), 90000, '填正文');
+        const bodyText2 = task.body || '';
+        // 全程拟人逐字输入（默认），缓行档更慢更不易被识别；正文超时按档位+长度自适应，避免误超时
+        const bodyTimeout = Math.max(90000, Math.round(estBodyMs * 1.6));
+        status(`正在填正文（${bodyText2.length}字，拟人中…）…`);
+        if (humanTyping) await withDeadline(typeText(b, bodyText2, { newlineIsParagraph: true, profile }), bodyTimeout, '填正文');
+        else await withDeadline(writeEditableParagraphs(b, bodyText2), bodyTimeout, '填正文');
         const isEditable = b.contentEditable === 'true' || b.isContentEditable || b.classList.contains('ql-editor') || b.getAttribute('role') === 'textbox';
         const written = isEditable ? (b.textContent || '').trim() : (b.value || '');
         if (!written) throw new Error('正文编辑器未写入内容');
@@ -1814,7 +1830,7 @@ async function fillTask(task, autoSubmit, serverUrl, humanTyping = true) {
 
       // 话题（点击「话题」按钮 → 逐字输入关键词 → 下拉选第一个变蓝 chip；默认补齐到 6 个）
       status('正在填话题（6个）…');
-      const tpRes = await injectTopics(task, humanTyping, status, b);
+      const tpRes = await injectTopics(task, humanTyping, status, b, profile);
       if (tpRes.ok && tpRes.count) filled.push(tpRes.count + '个话题');
       else if (tpRes.detail) status('⚠ ' + tpRes.detail);
 
@@ -1999,9 +2015,9 @@ async function reportSchedule(at) {
 // 统一执行：校验挑战 → 填表 → 回报结果。供 background 下发调用。
 // 同一任务在 30s 内的重复下发直接跳过（防止 MV3 重复注入 content script 导致 onMessage 监听器注册两遍、一次下发触发两次填充/重复传图）。
 const __fillLock = (window.__xhsFillLock = window.__xhsFillLock || new Set());
-async function runFill(task, autoSubmit, serverUrl, humanTyping) {
+async function runFill(task, autoSubmit, serverUrl, humanTyping, typingSpeed = 'normal') {
   const status = (window.__xhsHelper?.status) || (() => {});
-  console.log('[黑猫] runFill', (task.title || '').slice(0, 24), 'autoSubmit=', autoSubmit, 'humanTyping=', humanTyping);
+  console.log('[黑猫] runFill', (task.title || '').slice(0, 24), 'autoSubmit=', autoSubmit, 'humanTyping=', humanTyping, 'typingSpeed=', typingSpeed);
   startTaskHeartbeat(task.id);
   // 取真实间隔并回报后台调度器（手动拉取路径没走 fillTab，不回报就会用默认 ~11.6 分钟）
   const __delayMs = await getIntervalMs();
@@ -2024,7 +2040,7 @@ async function runFill(task, autoSubmit, serverUrl, humanTyping) {
   window.__xhsPublish.publishing = true;
   updateStartBtn();
   try {
-    const r = await fillTask(task, autoSubmit, serverUrl, humanTyping);
+    const r = await fillTask(task, autoSubmit, serverUrl, humanTyping, typingSpeed);
     console.log('[黑猫] fillTask 结果:', JSON.stringify(r));
     if (r.hold) {
       // 验证挑战：转人工（合规红线，绝不自动破解）。挂接监听，用户解决并手动发布后回报 published，恢复队列。
@@ -2095,8 +2111,8 @@ if (!window.__xhsBound) {
       // 立即同步回复，避免 Chrome MV3 消息通道在长时间异步操作中断开；
       // 填充结果通过 reportDone 主动回报（已改为直连后端，不受 service worker 回收影响）。
       sendResponse({ ok: true, detail: 'started' });
-      console.log('[黑猫] 收到 fillTask，autoSubmit=', msg.autoSubmit, 'humanTyping=', msg.humanTyping, 'title=', (msg.task.title || '').slice(0, 24));
-      runFill(msg.task, msg.autoSubmit, msg.serverUrl, msg.humanTyping);
+      console.log('[黑猫] 收到 fillTask，autoSubmit=', msg.autoSubmit, 'humanTyping=', msg.humanTyping, 'typingSpeed=', msg.typingSpeed, 'title=', (msg.task.title || '').slice(0, 24));
+      runFill(msg.task, msg.autoSubmit, msg.serverUrl, msg.humanTyping, msg.typingSpeed || 'normal');
       return; // 已同步回复，不需要 return true
     }
   });

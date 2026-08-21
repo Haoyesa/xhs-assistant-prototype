@@ -276,7 +276,7 @@ async function fillTab(tabId) {
     // 转发给创作者页 content script 填充+自动发布
     let sendErr = null;
     const sendOnce = (cb) => new Promise((resolve) => {
-      chrome.tabs.sendMessage(tabId, { type: 'fillTask', task: next.task, autoSubmit: next.autoSubmit, serverUrl: next.serverUrl, humanTyping: next.humanTyping }, (resp) => {
+      chrome.tabs.sendMessage(tabId, { type: 'fillTask', task: next.task, autoSubmit: next.autoSubmit, serverUrl: next.serverUrl, humanTyping: next.humanTyping, typingSpeed: next.typingSpeed || 'normal' }, (resp) => {
         if (chrome.runtime.lastError) sendErr = chrome.runtime.lastError.message;
         resolve();
       });

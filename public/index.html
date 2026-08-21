@@ -273,6 +273,14 @@
               </details>
               <label class="set-line"><input type="checkbox" id="setAutoSubmit" /> 自动提交（否则填好待人工点）</label>
               <label class="set-line"><input type="checkbox" id="setHumanTyping" /> 模拟真人打字（逐字输入标题/正文/话题）</label>
+              <div class="set-line">
+                <span class="set-label">打字速度</span>
+                <select id="setTypingSpeed">
+                  <option value="normal">常速（推荐）</option>
+                  <option value="cautious">缓行（更慢更不易被识别）</option>
+                </select>
+                <span class="hint">缓行档每字更慢、停顿更多，长正文耗时更长但仍保证拟人</span>
+              </div>
               <div class="set-grid">
                 <div class="sf-field"><label for="setEmoji">随机表情比例(%)</label><input type="number" id="setEmoji" value="30" /></div>
                 <div class="sf-field"><label for="setInterval">发布间隔(秒)</label><input type="number" id="setInterval" value="500" /></div>
