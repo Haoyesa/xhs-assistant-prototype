@@ -154,6 +154,28 @@ function writeEditable(el, text) {
   }
 }
 
+// 快速写入正文（contenteditable/ProseMirror），保留 \n 分段为真实 <p> 段落。
+// 用于长正文避免 typeText 逐字超时；标题/短文本仍可走人工逐字输入。
+function writeEditableParagraphs(el, text) {
+  if (!el) return;
+  const raw = text || '';
+  if (el.tagName === 'TEXTAREA' || el.tagName === 'INPUT') {
+    setNativeValue(el, raw);
+    return;
+  }
+  el.focus();
+  try { document.execCommand('selectAll', false, null); } catch (e) {}
+  try { document.execCommand('insertText', false, ''); } catch (e) {}
+  if (!raw) { syncContentEditable(el); return; }
+  const esc = (s) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  const html = raw.split('\n').map((p) => {
+    const c = p.replace(/\r/g, '').trim();
+    return c ? `<p>${esc(c)}</p>` : '<p><br></p>';
+  }).join('');
+  try { document.execCommand('insertHTML', false, html); } catch (e) {}
+  syncContentEditable(el);
+}
+
 
 // 按选择器列表查找第一个匹配的元素
 function qAny(selList) {
@@ -1773,9 +1795,14 @@ async function fillTask(task, autoSubmit, serverUrl, humanTyping = true) {
       const b = await locateField('body', 20000, t || undefined);
       console.log('[黑猫] 正文元素:', b ? (b.tagName + ' .' + (b.getAttribute('class') || '').slice(0, 30)) : '未找到', 'ph=', b ? phOf(b) : '');
       if (b) {
-        status('正在填正文…');
-        if (humanTyping) await withDeadline(typeText(b, task.body || '', { newlineIsParagraph: true }), 60000, '填正文');
-        else writeEditable(b, task.body || '');
+        const bodyText = task.body || '';
+        const bodyNewlines = (bodyText.match(/\n/g) || []).length;
+        const isLongBody = bodyText.length > 180 || bodyNewlines > 3;
+        // 长正文走快速段落写入，避免 typeText 逐字超时；短正文保留拟人输入
+        const useFastBody = !humanTyping || isLongBody;
+        status(`正在填正文（${bodyText.length}字${isLongBody ? '，长文快速写入' : ''}）…`);
+        if (useFastBody) await withDeadline(writeEditableParagraphs(b, bodyText), 90000, '填正文');
+        else await withDeadline(typeText(b, bodyText, { newlineIsParagraph: true }), 90000, '填正文');
         const isEditable = b.contentEditable === 'true' || b.isContentEditable || b.classList.contains('ql-editor') || b.getAttribute('role') === 'textbox';
         const written = isEditable ? (b.textContent || '').trim() : (b.value || '');
         if (!written) throw new Error('正文编辑器未写入内容');
