@@ -81,17 +81,18 @@ async function feishuApi(token, method, apiPath, body) {
   return j;
 }
 
-// 列出表已存在的字段名（用于比对缺失字段后自动补建）。失败抛错（不再静默吞掉，便于定位）
+// 列出表已存在的字段（name+type，用于比对缺失字段并识别附件等特殊类型）。失败抛错
 async function listFieldNames(token, appToken, tableId) {
   const j = await feishuApi(token, 'GET', `/open-apis/bitable/v1/apps/${appToken}/tables/${tableId}/fields?page_size=100`);
-  return ((j.data && j.data.items) || []).map((f) => f.field_name).filter(Boolean);
+  return ((j.data && j.data.items) || []).map((f) => ({ field_name: f.field_name, type: f.type })).filter((f) => f.field_name);
 }
 
 // 补齐缺失字段：飞书「字段」没有 batch_create 接口，只有单条 POST /tables/{id}/fields，
 // 逐个补建（缺失一般 ≤9 个，9 次请求可接受）。失败抛错并明确提示。
+// 返回 { added, existing: [{field_name,type}] }
 async function ensureTableFields(token, appToken, tableId, wantFields) {
   const existing = await listFieldNames(token, appToken, tableId);
-  const existSet = new Set(existing);
+  const existSet = new Set(existing.map((f) => f.field_name));
   const missing = (wantFields || []).filter((f) => !existSet.has(f.field_name));
   if (!missing.length) return { added: 0, existing };
   const added = [];
@@ -109,7 +110,14 @@ async function ensureTableFields(token, appToken, tableId, wantFields) {
     }
   }
   console.log('[feishu] 已自动补字段', added.join(', '));
-  return { added: added.length, existing: [...existing, ...added] };
+  return { added: added.length, existing: [...existing, ...missing.map((f) => ({ field_name: f.field_name, type: f.type }))] };
+}
+
+// 构造写入 records 前，把「表里是附件类型(type=17)」的字段名剔除——
+// 飞书默认表自带「附件」列，若我们的字段恰好同名且被设成附件类型，赋字符串会报 AttachFieldConvFail。
+// 返回字段名集合（写入 fields 时对这些 key 置空不传）。
+function attachmentFieldNames(existing) {
+  return new Set((existing || []).filter((f) => f.type === 17).map((f) => f.field_name));
 }
 
 // 由 app_token 拼出多维表格网页地址（用于前端展示「打开表格」链接）
@@ -189,13 +197,19 @@ export async function writeProductsToFeishu(settings, items) {
 
   let written = 0;
   // 写入前先确保表的字段齐全（用户用自建表时常缺字段，缺什么自动补什么）
-  await ensureTableFields(token, appToken, tableId, PRODUCT_FIELDS);
+  const { existing } = await ensureTableFields(token, appToken, tableId, PRODUCT_FIELDS);
+  // 表里附件类型(type=17)的字段名：写入时剔除，避免 AttachFieldConvFail
+  const attachNames = attachmentFieldNames(existing);
   for (let i = 0; i < records.length; i += 500) {
-    const chunk = records.slice(i, i + 500);
-    const r = await feishuApi(token, 'POST', `/open-apis/bitable/v1/apps/${appToken}/tables/${tableId}/records/batch_create`, {
+    const chunk = records.slice(i, i + 500).map((r) => {
+      const fields = { ...r.fields };
+      for (const k of attachNames) delete fields[k];
+      return { fields };
+    });
+    const rr = await feishuApi(token, 'POST', `/open-apis/bitable/v1/apps/${appToken}/tables/${tableId}/records/batch_create`, {
       records: chunk,
     });
-    written += (r.data && Array.isArray(r.data.records) ? r.data.records.length : chunk.length);
+    written += (rr.data && Array.isArray(rr.data.records) ? rr.data.records.length : chunk.length);
   }
   return { count: written, appToken, tableId, url: feishuTableUrl(appToken, tableId) };
 }
@@ -256,13 +270,19 @@ export async function writeNotesToFeishu(settings, items) {
 
   let written = 0;
   // 写入前先确保表的字段齐全（缺什么自动补什么）
-  await ensureTableFields(token, appToken, noteTableId, NOTE_FIELDS);
+  const { existing } = await ensureTableFields(token, appToken, noteTableId, NOTE_FIELDS);
+  // 表里附件类型(type=17)的字段名：写入时剔除，避免 AttachFieldConvFail
+  const attachNames = attachmentFieldNames(existing);
   for (let i = 0; i < records.length; i += 500) {
-    const chunk = records.slice(i, i + 500);
-    const r = await feishuApi(token, 'POST', `/open-apis/bitable/v1/apps/${appToken}/tables/${noteTableId}/records/batch_create`, {
+    const chunk = records.slice(i, i + 500).map((r) => {
+      const fields = { ...r.fields };
+      for (const k of attachNames) delete fields[k];
+      return { fields };
+    });
+    const rr = await feishuApi(token, 'POST', `/open-apis/bitable/v1/apps/${appToken}/tables/${noteTableId}/records/batch_create`, {
       records: chunk,
     });
-    written += (r.data && Array.isArray(r.data.records) ? r.data.records.length : chunk.length);
+    written += (rr.data && Array.isArray(rr.data.records) ? rr.data.records.length : chunk.length);
   }
   return { count: written, appToken, tableId: noteTableId, url: feishuTableUrl(appToken, noteTableId) };
 }
