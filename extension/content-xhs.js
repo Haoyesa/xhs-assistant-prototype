@@ -557,8 +557,11 @@
             }
           }
         }
-        // 互动数：先关键词（数字+词 / 词+数字 双向），再「底部位置兜底」——
-        // 小红书详情页互动区是「icon+数字」无文字，只能按底部数字序列顺序映射 赞/藏/评/转
+        // 互动数三段式抓取：
+        //   1) 关键词双向匹配（数字+词 / 词+数字）
+        //   2) 互动区 DOM 抓取：找含 interaction/engage/action/bottom/toolbar 的容器，
+        //      提取纯数字 leaf span 按 DOM 顺序映射 赞/藏/评/转
+        //   3) 最后才用 bodyText 尾部 500 字符位置兜底（不可靠，仅兜底）
         const countMap = { 点赞: 'likes', 赞: 'likes', 收藏: 'collects', 藏: 'collects', 评论: 'comments', 回复: 'comments', 转发: 'shares', 分享: 'shares' };
         const interactions = {};
         for (const [word, key] of Object.entries(countMap)) {
@@ -566,7 +569,29 @@
           if (!m) m = bodyText.match(new RegExp(word + '\\s*(\\d+(?:\\.\\d+)?\\s*[万wWkK]?)'));
           if (m) interactions[key] = toCount(m[1].trim());
         }
-        // 底部位置兜底：取 bodyText 尾部 500 字符内的数字序列（互动区一般在作者/评论区下方）
+        // 互动区 DOM 抓取（推荐）：小红书 class 混淆，遍历多个候选选择器
+        const allFilled = interactions.likes && interactions.collects && interactions.comments;
+        if (!allFilled) {
+          const interactEl = document.querySelector(
+            '[class*="interaction"], [class*="interact"], [class*="engage"], [class*="action-bar"], ' +
+            '[class*="toolbar"], [class*="bottom-bar"], [class*="count-bar"], ' +
+            '.note-interact, .interaction-info, .engage-bar, aside[class*="action"]'
+          );
+          if (interactEl) {
+            const nums = [];
+            const tw = document.createTreeWalker(interactEl, NodeFilter.SHOW_TEXT, null);
+            let n;
+            while ((n = tw.nextNode())) {
+              const v = clean(n.textContent);
+              if (/^[\d.]+[万wWkK]?$/.test(v)) nums.push(toCount(v));
+            }
+            if (!interactions.likes && nums[0]) interactions.likes = nums[0];
+            if (!interactions.collects && nums[1]) interactions.collects = nums[1];
+            if (!interactions.comments && nums[2]) interactions.comments = nums[2];
+            if (!interactions.shares && nums[3]) interactions.shares = nums[3];
+          }
+        }
+        // 最后兜底（仅前两步都没抓到时用）
         if (!(interactions.likes && interactions.collects && interactions.comments)) {
           const tail = bodyText.slice(-500);
           const nums = [...tail.matchAll(/(\d+(?:\.\d+)?[万wWkK]?)/g)].map((m) => toCount(m[1])).filter(Boolean);
