@@ -331,6 +331,7 @@
           <div class="xh-sechead">
             <span>本页识别 <b id="xhCount" class="xh-count">0</b> <em id="xhType" style="font-style:normal;color:#9aa3b2;font-size:11px"></em></span>
             <span class="xh-secact">
+              <label class="xh-all" title="全选/取消全选"><input type="checkbox" id="xhAll" checked/> 全选</label>
               <button class="xh-iconbtn" id="xhRescan" title="重新识别本页">🔄</button>
             </span>
           </div>
@@ -378,7 +379,7 @@
         return;
       }
       list.innerHTML = items.map((it, i) => `
-        <label class="xh-item">
+        <label class="xh-item" title="点击切换选中">
           <input type="checkbox" data-i="${i}" checked/>
           ${it.image ? `<img src="${esc(it.image)}" onerror="this.style.display='none'"/>` : '<span class="xh-noimg">无图</span>'}
           <span class="xh-meta">
@@ -386,8 +387,27 @@
             <span class="xh-sub">${it.type === 'product' ? '商品 ' + esc(it.price ? '¥' + it.price : '') : '笔记 ' + esc(it.likes ? '赞' + it.likes : '')} ${it.link ? '' : '· 无链接'}</span>
           </span>
         </label>`).join('');
-      list.querySelectorAll('input[type=checkbox]').forEach((c) => c.addEventListener('change', () => {}));
+      // 勾选联动：单个变化同步全选框状态
+      list.querySelectorAll('input[type=checkbox]').forEach((c) => c.addEventListener('change', () => {
+        const boxes = [...list.querySelectorAll('input[type=checkbox]')];
+        const all = $id('xhAll');
+        if (all) all.checked = boxes.every((b) => b.checked);
+      }));
+      syncAllState();
     };
+    // 全选/取消全选
+    const syncAllState = () => {
+      const all = $id('xhAll');
+      if (!all) return;
+      const boxes = [...$id('xhList').querySelectorAll('input[type=checkbox]')];
+      all.checked = boxes.length > 0 && boxes.every((b) => b.checked);
+      all.indeterminate = boxes.some((b) => b.checked) && !all.checked;
+    };
+    const allEl = $id('xhAll');
+    if (allEl) allEl.addEventListener('change', () => {
+      $id('xhList').querySelectorAll('input[type=checkbox]').forEach((c) => (c.checked = allEl.checked));
+      syncAllState();
+    });
 
     const doScan = () => {
       status('正在识别本页…');

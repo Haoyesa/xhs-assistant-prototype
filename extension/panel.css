@@ -56,6 +56,14 @@
 .xh-sechead { display: flex !important; align-items: center !important; justify-content: space-between !important; font-size: 12px !important; color: #9aa3b2 !important; margin-bottom: 6px !important; }
 .xh-sechead b { color: #e6e8eb !important; }
 .xh-all { display: flex !important; align-items: center !important; gap: 4px !important; color: #9aa3b2 !important; font-size: 12px !important; }
+/* 强制复选框显示：部分站点全局 CSS 会隐藏 input[type=checkbox]（appearance:none 或 display:none） */
+.xh-list input[type=checkbox], .xh-all input[type=checkbox] {
+  appearance: auto !important; -webkit-appearance: checkbox !important; -moz-appearance: checkbox !important;
+  display: inline-block !important; width: 14px !important; height: 14px !important;
+  min-width: 14px !important; min-height: 14px !important; opacity: 1 !important;
+  margin: 0 !important; padding: 0 !important; position: static !important;
+  accent-color: #2a6cff !important; pointer-events: auto !important; cursor: pointer !important;
+}
 
 .xh-list { max-height: 220px !important; overflow-y: auto !important; display: flex !important; flex-direction: column !important; gap: 6px !important; margin-bottom: 8px !important; }
 .xh-item { display: flex !important; align-items: center !important; gap: 8px !important; padding: 6px !important; border: 1px solid #232833 !important; border-radius: 8px !important; cursor: pointer !important; }
