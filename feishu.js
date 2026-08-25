@@ -204,7 +204,8 @@ export async function writeNotesToFeishu(settings, items) {
   const pad = (n) => String(n).padStart(2, '0');
   const ts = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
   const records = (items || [])
-    .filter((it) => it && (it.title || it.link))
+    // 强制详情链接：头像/icon/用户主页等无 explore/item/goods 链接的条目一律不写
+    .filter((it) => it && (it.link || '').trim() && (it.title || '').trim())
     .map((it) => ({
       fields: {
         笔记标题: String(it.title || ''),

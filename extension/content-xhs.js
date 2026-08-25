@@ -308,26 +308,16 @@
       $id('xhCollapse').textContent = c ? '▴' : '▾';
     });
 
-  // 把 items 同步到 page world（DevTools console 默认在 page world，能直接 __xhsItems.slice(0,3) 读）
-  // 注入一次同步脚本到 page world，content script 通过 document 上的 CustomEvent 推数据
-  (function injectSyncBridge() {
-    if (document.getElementById('__xhs_helper_sync')) return;
-    const s = document.createElement('script');
-    s.id = '__xhs_helper_sync';
-    s.textContent = `
-      window.__xhsItems = [];
-      document.addEventListener('__xhs_helper_sync', function(e) {
-        window.__xhsItems = (e && e.detail) || [];
-      });
-    `;
-    (document.head || document.documentElement).appendChild(s);
-  })();
+  // 调试通道：把 items 序列化到 <html data-xhs-items="..."> 属性上
+  // （isolated world 与 page world 共享同一个 DOM，CSP 免疫，无需注入脚本）。
+  // DevTools 控制台读取：JSON.parse(document.documentElement.dataset.xhsItems || '[]')
   function syncItems() {
-    document.dispatchEvent(new CustomEvent('__xhs_helper_sync', { detail: items }));
+    try {
+      document.documentElement.setAttribute('data-xhs-items', JSON.stringify(items));
+    } catch (e) { /* JSON 过大或含循环引用时忽略，仅影响调试 */ }
   }
 
   let items = [];
-  // 调试钩子：F12 控制台执行 `__xhsItems.slice(0,3)` 看实际抽到的字段
   syncItems();
   const render = () => {
       const list = $id('xhList');
