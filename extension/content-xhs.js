@@ -481,7 +481,7 @@
       try {
         const ta = document.createElement('textarea');
         ta.value = text;
-        ta.style.cssText = 'position:fixed;opacity:0;left:-9999px';
+        ta.style.cssText ='position:fixed;opacity:0;left:-9999px';
         document.body.appendChild(ta);
         ta.select();
         const ok = document.execCommand('copy');
@@ -489,6 +489,24 @@
         return ok;
       } catch { return false; }
     }
+  }
+
+  // 简易 toast：3 秒后自动消失，多个叠加（顶部右上）
+  function toast(msg, kind) {
+    const host = document.getElementById('__xhs_toast_host') || (() => {
+      const h = document.createElement('div');
+      h.id = '__xhs_toast_host';
+      h.style.cssText = 'position:fixed;top:20px;right:20px;z-index:2147483647;display:flex;flex-direction:column;gap:6px;pointer-events:none';
+      document.body.appendChild(h);
+      return h;
+    })();
+    const el = document.createElement('div');
+    const bg = kind === 'err' ? 'rgba(232,76,76,.92)' : kind === 'ok' ? 'rgba(46,160,67,.92)' : 'rgba(0,0,0,.78)';
+    el.style.cssText = `background:${bg};color:#fff;padding:8px 14px;border-radius:8px;font-size:13px;line-height:1.4;max-width:340px;box-shadow:0 4px 12px rgba(0,0,0,.25);animation:xhsToastIn .25s ease`;
+    el.textContent = msg;
+    host.appendChild(el);
+    setTimeout(() => { el.style.opacity = '0'; el.style.transition = 'opacity .25s'; }, 2700);
+    setTimeout(() => el.remove(), 3100);
   }
 
   // ---- 笔记详情页模式：抓正文图片/发布时间/精确赞藏评转/封面图/正文，POST 后端缓存（按 noteId 覆盖）----
