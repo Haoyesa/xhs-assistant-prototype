@@ -87,19 +87,29 @@ async function listFieldNames(token, appToken, tableId) {
   return ((j.data && j.data.items) || []).map((f) => f.field_name).filter(Boolean);
 }
 
-// 补齐缺失字段（fields/batch_create）。失败抛错并明确提示
+// 补齐缺失字段：飞书「字段」没有 batch_create 接口，只有单条 POST /tables/{id}/fields，
+// 逐个补建（缺失一般 ≤9 个，9 次请求可接受）。失败抛错并明确提示。
 async function ensureTableFields(token, appToken, tableId, wantFields) {
   const existing = await listFieldNames(token, appToken, tableId);
   const existSet = new Set(existing);
   const missing = (wantFields || []).filter((f) => !existSet.has(f.field_name));
   if (!missing.length) return { added: 0, existing };
-  try {
-    await feishuApi(token, 'POST', `/open-apis/bitable/v1/apps/${appToken}/tables/${tableId}/fields/batch_create`, { fields: missing });
-    console.log('[feishu] 已自动补字段', missing.map((f) => f.field_name).join(', '));
-    return { added: missing.length, existing: [...existing, ...missing.map((f) => f.field_name)] };
-  } catch (e) {
-    throw new Error(`自动补齐表格字段失败（缺 ${missing.map((f) => f.field_name).join('、')}）：${e.message}`);
+  const added = [];
+  for (const f of missing) {
+    try {
+      await feishuApi(token, 'POST', `/open-apis/bitable/v1/apps/${appToken}/tables/${tableId}/fields`, {
+        field_name: f.field_name,
+        type: f.type,
+      });
+      added.push(f.field_name);
+    } catch (e) {
+      // 字段已存在（并发/重复建）视为成功
+      if (/FieldNameDuplicated|1254014/i.test(e.message)) { added.push(f.field_name); continue; }
+      throw new Error(`自动补齐表格字段失败（${f.field_name}）：${e.message}`);
+    }
   }
+  console.log('[feishu] 已自动补字段', added.join(', '));
+  return { added: added.length, existing: [...existing, ...added] };
 }
 
 // 由 app_token 拼出多维表格网页地址（用于前端展示「打开表格」链接）
