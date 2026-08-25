@@ -23,6 +23,7 @@
       "sensitive-words.mjs",
       "qianfan-scraper.js",
       "image-util.js",
+      "feishu.js",
       "cdp-config.json",
       "public/**/*",
       "data/**/*",
