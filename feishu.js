@@ -81,18 +81,13 @@ async function feishuApi(token, method, apiPath, body) {
   return j;
 }
 
-// 列出表已存在的字段名（用于比对缺失字段后自动补建）。失败返回 []，不阻塞主流程
+// 列出表已存在的字段名（用于比对缺失字段后自动补建）。失败抛错（不再静默吞掉，便于定位）
 async function listFieldNames(token, appToken, tableId) {
-  try {
-    const j = await feishuApi(token, 'GET', `/open-apis/bitable/v1/apps/${appToken}/tables/${tableId}/fields?page_size=100`);
-    return ((j.data && j.data.items) || []).map((f) => f.field_name).filter(Boolean);
-  } catch (e) {
-    console.warn('[feishu] listFieldNames failed:', e.message);
-    return [];
-  }
+  const j = await feishuApi(token, 'GET', `/open-apis/bitable/v1/apps/${appToken}/tables/${tableId}/fields?page_size=100`);
+  return ((j.data && j.data.items) || []).map((f) => f.field_name).filter(Boolean);
 }
 
-// 补齐缺失字段（fields/batch_create）。失败仅警告，不阻塞主流程
+// 补齐缺失字段（fields/batch_create）。失败抛错并明确提示
 async function ensureTableFields(token, appToken, tableId, wantFields) {
   const existing = await listFieldNames(token, appToken, tableId);
   const existSet = new Set(existing);
@@ -103,8 +98,7 @@ async function ensureTableFields(token, appToken, tableId, wantFields) {
     console.log('[feishu] 已自动补字段', missing.map((f) => f.field_name).join(', '));
     return { added: missing.length, existing: [...existing, ...missing.map((f) => f.field_name)] };
   } catch (e) {
-    console.warn('[feishu] 补字段失败:', e.message);
-    return { added: 0, existing };
+    throw new Error(`自动补齐表格字段失败（缺 ${missing.map((f) => f.field_name).join('、')}）：${e.message}`);
   }
 }
 
