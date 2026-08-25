@@ -512,32 +512,40 @@
   // ---- 笔记详情页模式：抓正文图片/发布时间/精确赞藏评转/封面图/正文，POST 后端缓存（按 noteId 覆盖）----
   // 卡片级拿不到/拿不准的字段都在这里补救（搜索结果页卡片不显示评论/不显示封面大图 → 必须详情深采）
   if (DETAIL) {
-    setTimeout(() => {
+    // 自动滚动触发懒加载（正文图片多为懒加载，不滚动可能拿不到）
+    try {
+      const scrollPass = () => {
+        window.scrollTo(0, document.body.scrollHeight);
+        setTimeout(() => window.scrollTo(0, 0), 600);
+      };
+      setTimeout(scrollPass, 600);
+    } catch (e) {}
+    // 多轮抓取（2s 首屏 + 5s 懒加载后），合并结果幂等覆盖；background 约 6~8.5s 后关标签
+    const grab = () => {
       try {
         const imgs = [];
         const seen = new Set();
         let cover = '';
         let coverW = 0;
         for (const im of document.querySelectorAll('img')) {
-          const src = im.getAttribute('src') || im.getAttribute('data-src') || '';
+          // 懒加载图常在 data-src / data-xhs-img-src
+          const src = im.getAttribute('data-xhs-img-src') || im.getAttribute('data-src') || im.getAttribute('src') || '';
           if (!src || src.length < 20 || isAvatar(src)) continue;
           if (seen.has(src)) continue;
           seen.add(src);
-          // 取最大图作为封面（详情页封面通常在头部，是最大图）
           const w = im.naturalWidth || im.offsetWidth || 0;
           const h = im.naturalHeight || im.offsetHeight || 0;
           if (w * h > coverW) { coverW = w * h; cover = src; }
           imgs.push(src);
         }
         const bodyText = document.body.innerText || '';
+        // 发布时间（详情页顶部绝对时间优先）
         let publishTime = '';
-        // 详情页常见「2023-05-01」/「2023年5月1日 10:30」绝对时间
         const pm = bodyText.match(/(20\d{2})[-/年.](\d{1,2})[-/月.](\d{1,2})日?\s*(\d{1,2})?:?(\d{1,2})?/);
         if (pm) {
           const p = (n) => String(n || 0).padStart(2, '0');
           publishTime = `${pm[1]}-${p(pm[2])}-${p(pm[3])} ${p(pm[4])}:${p(pm[5] || '00')}`;
         } else {
-          // 兼容「3 天前」「2 周前」等相对时间
           const rel = bodyText.match(/(\d+)\s*(分钟|小时|天|周|个月)前/);
           if (rel) {
             const n = +rel[1];
@@ -549,15 +557,26 @@
             }
           }
         }
-        // 精确赞藏评转：详情页常用「数字+空格+词」格式
+        // 互动数：先关键词（数字+词 / 词+数字 双向），再「底部位置兜底」——
+        // 小红书详情页互动区是「icon+数字」无文字，只能按底部数字序列顺序映射 赞/藏/评/转
         const countMap = { 点赞: 'likes', 赞: 'likes', 收藏: 'collects', 藏: 'collects', 评论: 'comments', 回复: 'comments', 转发: 'shares', 分享: 'shares' };
         const interactions = {};
         for (const [word, key] of Object.entries(countMap)) {
-          const m = bodyText.match(new RegExp('(\\d+(?:\\.\\d+)?\\s*[万wWkK]?)\\s*' + word));
+          let m = bodyText.match(new RegExp('(\\d+(?:\\.\\d+)?\\s*[万wWkK]?)\\s*' + word));
+          if (!m) m = bodyText.match(new RegExp(word + '\\s*(\\d+(?:\\.\\d+)?\\s*[万wWkK]?)'));
           if (m) interactions[key] = toCount(m[1].trim());
         }
+        // 底部位置兜底：取 bodyText 尾部 500 字符内的数字序列（互动区一般在作者/评论区下方）
+        if (!(interactions.likes && interactions.collects && interactions.comments)) {
+          const tail = bodyText.slice(-500);
+          const nums = [...tail.matchAll(/(\d+(?:\.\d+)?[万wWkK]?)/g)].map((m) => toCount(m[1])).filter(Boolean);
+          if (!interactions.likes && nums[0]) interactions.likes = nums[0];
+          if (!interactions.collects && nums[1]) interactions.collects = nums[1];
+          if (!interactions.comments && nums[2]) interactions.comments = nums[2];
+          if (!interactions.shares && nums[3]) interactions.shares = nums[3];
+        }
         // 正文前 500 字
-        const noteEl = document.querySelector('#note-desc, .note-content, [class*="desc"]') || document.body;
+        const noteEl = document.querySelector('#note-desc, .note-content, [class*="desc"], [class*="content"]') || document.body;
         const body = clean(noteEl.innerText || '').slice(0, 500);
         if (imgs.length || publishTime || cover || body || Object.keys(interactions).length) {
           window.XhsCommon.xhsFetch('/api/feishu/note-detail', {
@@ -577,7 +596,9 @@
           }).catch(() => {});
         }
       } catch (e) { /* 抓取失败不影响页面 */ }
-    }, 1500);
+    };
+    setTimeout(grab, 2000); // 首屏
+    setTimeout(grab, 5000); // 懒加载后再抓一次（幂等覆盖）
     return; // 详情页不注入面板
   }
 

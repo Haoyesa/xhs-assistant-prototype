@@ -49,8 +49,26 @@ export const NOTE_FIELDS = [
 ];
 
 // 详情深采缓存：noteId -> { bodyImages, publishTime, title, cover, body, likes, collects, comments, shares }
-// （内存，进程重启清空，够用）
+// 落盘 data/feishu-detail.json，重启 exe 不丢（内存 + 磁盘双写，防抖保存）
+import fs from 'node:fs';
+import path from 'node:path';
 const detailCache = new Map();
+const detailFile = () => path.join(process.env.XHS_DATA_DIR || process.cwd(), 'feishu-detail.json');
+try {
+  const j = JSON.parse(fs.readFileSync(detailFile(), 'utf8'));
+  if (Array.isArray(j)) for (const [k, v] of j) detailCache.set(String(k), v);
+} catch { /* 首次运行无缓存文件 */ }
+let detailSaveTimer = null;
+function persistDetail() {
+  clearTimeout(detailSaveTimer);
+  detailSaveTimer = setTimeout(() => {
+    try {
+      const f = detailFile();
+      fs.mkdirSync(path.dirname(f), { recursive: true });
+      fs.writeFileSync(f, JSON.stringify([...detailCache.entries()]), 'utf8');
+    } catch (e) { /* 落盘失败不影响主流程 */ }
+  }, 800);
+}
 export function saveNoteDetail(d) {
   if (!d || !d.noteId) return;
   const cur = detailCache.get(String(d.noteId)) || {};
@@ -65,6 +83,7 @@ export function saveNoteDetail(d) {
     comments: d.comments || cur.comments || '',
     shares: d.shares || cur.shares || '',
   });
+  persistDetail();
 }
 export function getNoteDetail(noteId) {
   return detailCache.get(String(noteId || ''));
