@@ -461,9 +461,9 @@
       status(ok ? `已复制 ${picked.length} 条链接` : '复制失败，请手动复制');
     });
 
-    // 采集详情（深采）：对勾选笔记逐个后台打开详情页（串行、间隔防风控），
-    // 详情页 content script 抓正文图片/发布时间/精确赞藏评转/封面图/正文 并 POST 后端缓存，
-    // 「写入飞书」时自动合并覆盖卡片级不准的字段。
+    // 采集详情：当前标签 SPA 切换逐个打开详情页（带登录态，避开小红书「匿名+扫码」风控）
+    //   → background chrome.tabs.update 切到详情 → 等 4s 让详情页 content-xhs 抓取+POST
+    //   → 切回搜索页 → 下一篇。用户会看到当前标签在「搜索页↔详情」间自动闪烁。
     $id('xhDetail').addEventListener('click', async () => {
       const picked = [...$id('xhList').querySelectorAll('input[type=checkbox]:checked')]
         .map((c) => items[+c.dataset.i]).filter(Boolean)
@@ -473,19 +473,19 @@
       const btn = $id('xhDetail');
       const old = btn.textContent;
       btn.disabled = true; btn.textContent = '采集中…';
-      dot('wait'); status(`采集详情中 0/${picked.length}…`);
+      dot('wait'); status(`采集详情中 0/${picked.length}（当前标签会自动跳到详情再跳回）…`);
       let okCount = 0;
       for (let i = 0; i < picked.length; i++) {
         const p = picked[i];
         try {
-          const r = await chrome.runtime.sendMessage({ type: 'openDetail', url: p.link });
+          const r = await chrome.runtime.sendMessage({ type: 'openDetailInPlace', url: p.link });
           if (r && r.ok) okCount++;
         } catch (e) { /* 单个失败继续 */ }
         status(`采集详情中 ${i + 1}/${picked.length}（成功 ${okCount}）…`);
       }
       btn.disabled = false; btn.textContent = old;
       dot('ok');
-      status(`详情采集完成：${okCount}/${picked.length} 篇（每篇约 6~8s）`);
+      status(`详情采集完成：${okCount}/${picked.length} 篇（写入飞书时自动带上）`);
       toast(`详情采集完成 ${okCount}/${picked.length} 篇，写入飞书时带上`, 'ok');
     });
 
