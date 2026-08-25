@@ -113,11 +113,36 @@ async function ensureTableFields(token, appToken, tableId, wantFields) {
   return { added: added.length, existing: [...existing, ...missing.map((f) => ({ field_name: f.field_name, type: f.type }))] };
 }
 
-// 构造写入 records 前，把「表里是附件类型(type=17)」的字段名剔除——
-// 飞书默认表自带「附件」列，若我们的字段恰好同名且被设成附件类型，赋字符串会报 AttachFieldConvFail。
-// 返回字段名集合（写入 fields 时对这些 key 置空不传）。
-function attachmentFieldNames(existing) {
-  return new Set((existing || []).filter((f) => f.type === 17).map((f) => f.field_name));
+// 构造写入 records 时按表内实际字段类型转换值，避免类型不匹配报错：
+//   type=1 文本 → 字符串；type=2 数字 → 纯数字（"1.2万"→12000，"224"→224）；
+//   type=17 附件 / 日期(5) / 单选(3) / 多选(4) / 其他 → 跳过不写（飞书自动留空）
+// existing: [{field_name, type}]；fields: 我们要写入的 {key:value}
+function coerceFields(fields, existing) {
+  const map = new Map((existing || []).map((f) => [f.field_name, f.type]));
+  const out = {};
+  for (const [k, v] of Object.entries(fields || {})) {
+    const t = map.get(k);
+    if (t === undefined) { out[k] = v; continue; }        // 表里没有 → 我们刚补建的文本字段
+    if (t === 1) { out[k] = v; continue; }                 // 文本
+    if (t === 2) {                                          // 数字
+      const n = parseCountNum(v);
+      if (n !== null && Number.isFinite(n)) out[k] = n;    // 转不了就跳过
+      continue;
+    }
+    // 附件(17)/日期(5)/单选(3)/多选(4)/人员(11)/超链接(15) 等：跳过
+  }
+  return out;
+}
+
+// 字符串数量 → 纯数字：「1.2万」→12000，「3k」→3000，「224」→224；解析失败返回 null
+function parseCountNum(s) {
+  if (s === null || s === undefined || s === '') return null;
+  const m = String(s).trim().match(/^([\d.]+)\s*([万wWkK]?)/);
+  if (!m) return null;
+  let n = parseFloat(m[1]);
+  if (/[万wW]/.test(m[2] || '')) n *= 10000;
+  else if (/k/i.test(m[2] || '')) n *= 1000;
+  return Number.isFinite(n) ? n : null;
 }
 
 // 由 app_token 拼出多维表格网页地址（用于前端展示「打开表格」链接）
@@ -198,14 +223,9 @@ export async function writeProductsToFeishu(settings, items) {
   let written = 0;
   // 写入前先确保表的字段齐全（用户用自建表时常缺字段，缺什么自动补什么）
   const { existing } = await ensureTableFields(token, appToken, tableId, PRODUCT_FIELDS);
-  // 表里附件类型(type=17)的字段名：写入时剔除，避免 AttachFieldConvFail
-  const attachNames = attachmentFieldNames(existing);
+  // 按表内实际字段类型转换值（数字→数字、附件/日期/单选→跳过），避免 AttachFieldConvFail / NumberFieldConvFail
   for (let i = 0; i < records.length; i += 500) {
-    const chunk = records.slice(i, i + 500).map((r) => {
-      const fields = { ...r.fields };
-      for (const k of attachNames) delete fields[k];
-      return { fields };
-    });
+    const chunk = records.slice(i, i + 500).map((r) => ({ fields: coerceFields(r.fields, existing) }));
     const rr = await feishuApi(token, 'POST', `/open-apis/bitable/v1/apps/${appToken}/tables/${tableId}/records/batch_create`, {
       records: chunk,
     });
@@ -271,14 +291,9 @@ export async function writeNotesToFeishu(settings, items) {
   let written = 0;
   // 写入前先确保表的字段齐全（缺什么自动补什么）
   const { existing } = await ensureTableFields(token, appToken, noteTableId, NOTE_FIELDS);
-  // 表里附件类型(type=17)的字段名：写入时剔除，避免 AttachFieldConvFail
-  const attachNames = attachmentFieldNames(existing);
+  // 按表内实际字段类型转换值（数字→数字、附件/日期/单选→跳过），避免 AttachFieldConvFail / NumberFieldConvFail
   for (let i = 0; i < records.length; i += 500) {
-    const chunk = records.slice(i, i + 500).map((r) => {
-      const fields = { ...r.fields };
-      for (const k of attachNames) delete fields[k];
-      return { fields };
-    });
+    const chunk = records.slice(i, i + 500).map((r) => ({ fields: coerceFields(r.fields, existing) }));
     const rr = await feishuApi(token, 'POST', `/open-apis/bitable/v1/apps/${appToken}/tables/${noteTableId}/records/batch_create`, {
       records: chunk,
     });
