@@ -22,6 +22,38 @@
     return 'note';
   })();
 
+  // 笔记详情页：/explore/{id} 或 /search_result/{id}（第二段为纯 id）。搜索列表页是 /search_result?keyword=（无 id 段）
+  const DETAIL = (() => {
+    const m = location.pathname.match(/^\/(explore|search_result)\/([\w-]+)/);
+    return m ? { noteId: m[2] } : null;
+  })();
+
+  // 当前搜索关键词（搜索页 URL ?keyword=xxx）
+  function pageKeyword() {
+    try {
+      const k = new URLSearchParams(location.search).get('keyword');
+      return k ? decodeURIComponent(k).trim() : '';
+    } catch { return ''; }
+  }
+
+  // 抽发布时间：卡片相对时间（「5天前」「3小时前」「刚刚」等）→ 绝对时间 YYYY-MM-DD HH:mm
+  function pickPublishTime(card) {
+    const now = Date.now();
+    const fmt = (ms) => {
+      const d = new Date(ms);
+      const p = (n) => String(n).padStart(2, '0');
+      return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
+    };
+    const txt = clean(card.innerText || '');
+    let m = txt.match(/(\d+)\s*分钟前/); if (m) return fmt(now - +m[1] * 60000);
+    m = txt.match(/(\d+)\s*小时前/); if (m) return fmt(now - +m[1] * 3600000);
+    m = txt.match(/(\d+)\s*天前/); if (m) return fmt(now - +m[1] * 86400000);
+    m = txt.match(/(\d+)\s*周前/); if (m) return fmt(now - +m[1] * 7 * 86400000);
+    m = txt.match(/(\d+)\s*个月前/); if (m) return fmt(now - +m[1] * 30 * 86400000);
+    if (/刚刚/.test(txt)) return fmt(now);
+    return '';
+  }
+
   // 数字归一化：「1.2万」→ 12000，「3.4k」→ 3400；无则空串
   function toCount(s) {
     const m = String(s || '').match(/([\d.]+)\s*([万wWkK]?)/);
@@ -229,6 +261,8 @@
       collects: ia.collects,
       comments: ia.comments,
       shares: ia.shares,
+      publishTime: pickPublishTime(card),
+      keyword: pageKeyword(),
       image,
       link,
     };
@@ -303,6 +337,7 @@
           <div class="xh-list" id="xhList"></div>
           <div class="xh-btnrow">
             <button class="xh-btn xh-export" id="xhFeishu">写入飞书</button>
+            <button class="xh-btn" id="xhDetail">采集正文图片</button>
             <button class="xh-btn" id="xhCopy">复制链接</button>
           </div>
         </div>
@@ -406,6 +441,33 @@
       status(ok ? `已复制 ${picked.length} 条链接` : '复制失败，请手动复制');
     });
 
+    // 采集正文图片：对勾选的笔记逐个后台打开详情页（串行、间隔防风控），
+    // 详情页 content script 抓正文图片/发布时间并 POST 后端缓存，之后「写入飞书」自动带上。
+    $id('xhDetail').addEventListener('click', async () => {
+      const picked = [...$id('xhList').querySelectorAll('input[type=checkbox]:checked')]
+        .map((c) => items[+c.dataset.i]).filter(Boolean)
+        .filter((p) => p.type === 'note' && p.link && p.noteId);
+      if (!picked.length) { status('请先勾选要采集正文图片的笔记。'); return; }
+      if (!chrome.runtime || !chrome.runtime.sendMessage) { status('当前环境不支持后台开标签（请用浏览器加载扩展）。'); return; }
+      const btn = $id('xhDetail');
+      const old = btn.textContent;
+      btn.disabled = true; btn.textContent = '采集中…';
+      dot('wait'); status(`采集正文图片中 0/${picked.length}…`);
+      let okCount = 0;
+      for (let i = 0; i < picked.length; i++) {
+        const p = picked[i];
+        try {
+          const r = await chrome.runtime.sendMessage({ type: 'openDetail', url: p.link });
+          if (r && r.ok) okCount++;
+        } catch (e) { /* 单个失败继续 */ }
+        status(`采集正文图片中 ${i + 1}/${picked.length}（成功 ${okCount}）…`);
+      }
+      btn.disabled = false; btn.textContent = old;
+      dot('ok');
+      status(`正文图片采集完成：${okCount}/${picked.length} 篇（每篇约 6~8s）`);
+      toast(`正文图片采集完成 ${okCount}/${picked.length} 篇，写入飞书时自动带上`, 'ok');
+    });
+
     // 首次自动识别
     doScan();
   }
@@ -426,6 +488,38 @@
         return ok;
       } catch { return false; }
     }
+  }
+
+  // ---- 笔记详情页模式：抓正文图片 + 发布时间，POST 后端缓存（幂等覆盖，按 noteId）----
+  if (DETAIL) {
+    setTimeout(() => {
+      try {
+        const imgs = [];
+        const seen = new Set();
+        for (const im of document.querySelectorAll('img')) {
+          const src = im.getAttribute('src') || im.getAttribute('data-src') || '';
+          if (!src || src.length < 20 || isAvatar(src)) continue; // 排除头像/icon
+          if (seen.has(src)) continue;
+          seen.add(src);
+          imgs.push(src);
+        }
+        const bodyText = document.body.innerText || '';
+        let publishTime = '';
+        // 详情页常见「2023-05-01」/「2023年5月1日 10:30」格式
+        const pm = bodyText.match(/(20\d{2})[-/年.](\d{1,2})[-/月.](\d{1,2})日?\s*(\d{1,2})?:?(\d{1,2})?/);
+        if (pm) {
+          const p = (n) => String(n || 0).padStart(2, '0');
+          publishTime = `${pm[1]}-${p(pm[2])}-${p(pm[3])} ${p(pm[4])}:${p(pm[5] || '00')}`;
+        }
+        if (imgs.length || publishTime) {
+          window.XhsCommon.xhsFetch('/api/feishu/note-detail', {
+            method: 'POST',
+            body: { noteId: DETAIL.noteId, bodyImages: imgs.slice(0, 30), publishTime, title: document.title },
+          }).catch(() => {});
+        }
+      } catch (e) { /* 抓取失败不影响页面 */ }
+    }, 1500);
+    return; // 详情页不注入面板
   }
 
   // 注入面板（document_idle 已过，直接构建；延迟一小段确保 DOM 就绪）

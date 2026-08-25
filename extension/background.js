@@ -606,6 +606,24 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           await chrome.storage.local.set({ csLogBuf: cur });
         } catch (e) {}
         sendResponse({ ok: true });
+      } else if (msg.type === 'openDetail') {
+        // 前台热点采集「采集正文图片」：后台打开笔记详情页 → 详情页 content script 抓正文图片并
+        // POST 后端缓存 → 等待加载+抓取完成后关闭标签。串行由调用方（列表页）逐个 await 保证。
+        // 每次最多打开一个详情标签（防标签堆积），用 sendResponse 回执完成。
+        try {
+          const tab = await chrome.tabs.create({ url: msg.url, active: false });
+          if (!tab || tab.id == null) { sendResponse({ ok: false, error: 'tabs.create 失败' }); return; }
+          const tid = tab.id;
+          // 等页面加载 + JS 渲染 + 抓取回报（详情页一般 2~4s；留足余量 + 随机抖动更拟人）
+          const wait = 6000 + Math.floor(Math.random() * 2500);
+          await new Promise((r) => setTimeout(r, wait));
+          try { await chrome.tabs.remove(tid); } catch (e) {}
+          console.log('[黑猫][BG] openDetail done:', msg.url);
+          sendResponse({ ok: true, tabId: tid });
+        } catch (e) {
+          sendResponse({ ok: false, error: e.message });
+        }
+        return true; // 异步 sendResponse，保持消息通道
       } else if (msg.type === 'getLogs') {
         try {
           const buf = (await chrome.storage.local.get('csLogBuf')).csLogBuf || [];

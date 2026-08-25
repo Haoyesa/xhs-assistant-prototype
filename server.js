@@ -10,7 +10,7 @@ import { AsyncLocalStorage } from 'node:async_hooks';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { scrapeQianfanProducts } from './qianfan-scraper.js';
 import { downloadOne, downloadToLocal, primeImages } from './image-util.js';
-import { ensureFeishuBitable, writeProductsToFeishu, writeNotesToFeishu, feishuTableUrl } from './feishu.js';
+import { ensureFeishuBitable, writeProductsToFeishu, writeNotesToFeishu, saveNoteDetail, getNoteDetail, feishuTableUrl } from './feishu.js';
 // 门禁决策（autoSubmit / 频率 / 账号配额）抽到 electron/gating.mjs，单独混淆以提升逆向门槛
 import { resolvedPlan, planIntervalSeconds, effectiveAutoSubmit, maxAccounts } from './electron/gating.mjs';
 import { SENSITIVE_CATEGORIES } from './sensitive-words.mjs';
@@ -1297,6 +1297,19 @@ const server = http.createServer((req, res) => reqScope.run(req, async () => {
         noteTableId: settings.feishuNoteTableId || '',
         url: feishuTableUrl(settings.feishuAppToken),
       });
+    }
+    // 详情深采回报：详情页 content script 把正文图片/发布时间 POST 到内存缓存（按 noteId 覆盖）
+    if (p === '/api/feishu/note-detail' && method === 'POST') {
+      const body = await readBody(req);
+      if (!body || !body.noteId) return sendJSON(res, 400, { ok: false, error: '缺少 noteId' });
+      saveNoteDetail(body);
+      return sendJSON(res, 200, { ok: true });
+    }
+    // 详情深采查询：批量查某个 noteId 的缓存（供插件「采集正文图片」确认结果）
+    if (p === '/api/feishu/note-detail' && method === 'GET') {
+      const id = (url.searchParams.get('noteId') || '').trim();
+      if (!id) return sendJSON(res, 200, { ok: true, detail: null });
+      return sendJSON(res, 200, { ok: true, detail: getNoteDetail(id) });
     }
     // 飞书多维表格：把采集的商品/笔记数据写入（自动建表/复用；手动一键触发）
     // body.type: 'note' → 热点笔记表；缺省/其它 → 商品数据表

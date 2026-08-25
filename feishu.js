@@ -31,7 +31,7 @@ export const PRODUCT_FIELDS = [
   { field_name: '采集时间', type: 1 },
 ];
 
-// 多维表格「热点笔记」字段（前台探索/搜索页采的热门笔记，卡片级数据）
+// 多维表格「热点笔记」字段（前台探索/搜索页采的热门笔记，卡片级 + 详情深采补充）
 export const NOTE_FIELDS = [
   { field_name: '笔记标题', type: 1 },
   { field_name: '作者', type: 1 },
@@ -39,10 +39,27 @@ export const NOTE_FIELDS = [
   { field_name: '收藏', type: 1 },
   { field_name: '评论', type: 1 },
   { field_name: '转发', type: 1 },
+  { field_name: '发布时间', type: 1 },
+  { field_name: '关键词', type: 1 },
   { field_name: '封面图', type: 1 },
+  { field_name: '正文图片', type: 1 },
   { field_name: '笔记链接', type: 1 },
   { field_name: '采集时间', type: 1 },
 ];
+
+// 详情深采缓存：noteId -> { bodyImages:[], publishTime, title }（内存，进程重启清空，够用）
+const detailCache = new Map();
+export function saveNoteDetail(d) {
+  if (!d || !d.noteId) return;
+  detailCache.set(String(d.noteId), {
+    bodyImages: Array.isArray(d.bodyImages) ? d.bodyImages : [],
+    publishTime: d.publishTime || '',
+    title: d.title || '',
+  });
+}
+export function getNoteDetail(noteId) {
+  return detailCache.get(String(noteId || ''));
+}
 
 // tenant_access_token 缓存：expire - 5min 提前刷新
 let cachedToken = { value: '', expireAt: 0 };
@@ -273,19 +290,26 @@ export async function writeNotesToFeishu(settings, items) {
   const records = (items || [])
     // 强制详情链接：头像/icon/用户主页等无 explore/item/goods 链接的条目一律不写
     .filter((it) => it && (it.link || '').trim() && (it.title || '').trim())
-    .map((it) => ({
-      fields: {
-        笔记标题: String(it.title || ''),
-        作者: String(it.author || ''),
-        点赞: String(it.likes || ''),
-        收藏: String(it.collects || ''),
-        评论: String(it.comments || ''),
-        转发: String(it.shares || ''),
-        封面图: String(it.image || ''),
-        笔记链接: String(it.link || ''),
-        采集时间: ts,
-      },
-    }));
+    .map((it) => {
+      // 合并详情深采缓存（正文图片/发布时间/标题）
+      const det = getNoteDetail(it.noteId || '') || {};
+      return {
+        fields: {
+          笔记标题: String(it.title || det.title || ''),
+          作者: String(it.author || ''),
+          点赞: String(it.likes || ''),
+          收藏: String(it.collects || ''),
+          评论: String(it.comments || ''),
+          转发: String(it.shares || ''),
+          发布时间: String(it.publishTime || det.publishTime || ''),
+          关键词: String(it.keyword || ''),
+          封面图: String(it.image || ''),
+          正文图片: Array.isArray(det.bodyImages) && det.bodyImages.length ? det.bodyImages.join('\n') : '',
+          笔记链接: String(it.link || ''),
+          采集时间: ts,
+        },
+      };
+    });
   if (!records.length) return { count: 0, appToken, tableId: noteTableId, url, error: '没有可写入的笔记记录' };
 
   let written = 0;
