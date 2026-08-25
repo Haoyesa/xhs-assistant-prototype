@@ -308,10 +308,28 @@
       $id('xhCollapse').textContent = c ? '▴' : '▾';
     });
 
-    let items = [];
-    // 调试钩子：F12 控制台执行 `__xhsItems.slice(0,3)` 看实际抽到的字段
-    window.__xhsItems = items;
-    const render = () => {
+  // 把 items 同步到 page world（DevTools console 默认在 page world，能直接 __xhsItems.slice(0,3) 读）
+  // 注入一次同步脚本到 page world，content script 通过 document 上的 CustomEvent 推数据
+  (function injectSyncBridge() {
+    if (document.getElementById('__xhs_helper_sync')) return;
+    const s = document.createElement('script');
+    s.id = '__xhs_helper_sync';
+    s.textContent = `
+      window.__xhsItems = [];
+      document.addEventListener('__xhs_helper_sync', function(e) {
+        window.__xhsItems = (e && e.detail) || [];
+      });
+    `;
+    (document.head || document.documentElement).appendChild(s);
+  })();
+  function syncItems() {
+    document.dispatchEvent(new CustomEvent('__xhs_helper_sync', { detail: items }));
+  }
+
+  let items = [];
+  // 调试钩子：F12 控制台执行 `__xhsItems.slice(0,3)` 看实际抽到的字段
+  syncItems();
+  const render = () => {
       const list = $id('xhList');
       $id('xhCount').textContent = items.length;
       if (!items.length) {
@@ -335,7 +353,7 @@
       setTimeout(() => {
         try {
           items = scanPage();
-          window.__xhsItems = items; // 暴露给 DevTools：`__xhsItems.slice(0,3)` 看样本
+          syncItems(); // 同步到 page world（DevTools 可读）
           render();
           status(`识别到 ${items.length} 条（${items.filter((x) => x.type === 'note').length} 笔记 / ${items.filter((x) => x.type === 'product').length} 商品）`);
         } catch (e) {
