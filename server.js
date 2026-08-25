@@ -10,7 +10,7 @@ import { AsyncLocalStorage } from 'node:async_hooks';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { scrapeQianfanProducts } from './qianfan-scraper.js';
 import { downloadOne, downloadToLocal, primeImages } from './image-util.js';
-import { ensureFeishuBitable, writeProductsToFeishu, feishuTableUrl } from './feishu.js';
+import { ensureFeishuBitable, writeProductsToFeishu, writeNotesToFeishu, feishuTableUrl } from './feishu.js';
 // 门禁决策（autoSubmit / 频率 / 账号配额）抽到 electron/gating.mjs，单独混淆以提升逆向门槛
 import { resolvedPlan, planIntervalSeconds, effectiveAutoSubmit, maxAccounts } from './electron/gating.mjs';
 import { SENSITIVE_CATEGORIES } from './sensitive-words.mjs';
@@ -342,6 +342,7 @@ const DEFAULT_SETTINGS = {
   feishuAppSecret: '',
   feishuAppToken: '',  // 已创建/复用的多维表格 app_token（首次导出自动建表后回填）
   feishuTableId: '',   // 已创建/复用的数据表 table_id
+  feishuNoteTableId: '', // 「热点笔记」数据表 table_id（前台笔记写入后回填）
 };
 
 // 下一篇发布时间由浏览器插件通过 /api/ext/schedule 上报维护
@@ -1293,24 +1294,31 @@ const server = http.createServer((req, res) => reqScope.run(req, async () => {
         configured: !!(settings.feishuAppId && settings.feishuAppSecret),
         appToken: settings.feishuAppToken || '',
         tableId: settings.feishuTableId || '',
+        noteTableId: settings.feishuNoteTableId || '',
         url: feishuTableUrl(settings.feishuAppToken),
       });
     }
-    // 飞书多维表格：把千帆采集的商品数据写入（自动建表/复用；手动一键触发）
+    // 飞书多维表格：把采集的商品/笔记数据写入（自动建表/复用；手动一键触发）
+    // body.type: 'note' → 热点笔记表；缺省/其它 → 商品数据表
     if (p === '/api/feishu/export' && method === 'POST') {
       try {
         const body = await readBody(req);
         const items = Array.isArray(body.items) ? body.items.slice(0, 5000) : [];
-        if (!items.length) return sendJSON(res, 400, { ok: false, error: '没有要写入飞书的商品数据' });
+        if (!items.length) return sendJSON(res, 400, { ok: false, error: '没有要写入飞书的数据' });
         const s = await readStore(stores.settings, {});
         const settings = { ...DEFAULT_SETTINGS, ...s };
         if (!settings.feishuAppId || !settings.feishuAppSecret) {
           return sendJSON(res, 400, { ok: false, error: 'feishu-not-configured', msg: '请先在设置页填写飞书 App ID 与 App Secret' });
         }
-        const r = await writeProductsToFeishu(settings, items);
+        const isNote = body.type === 'note' || (body.items[0] && body.items[0].type === 'note');
+        const r = isNote ? await writeNotesToFeishu(settings, items) : await writeProductsToFeishu(settings, items);
         // 首次自动建表后回填定位，避免下次重复建表
-        if (r.appToken && r.tableId && !(s.feishuAppToken && s.feishuTableId)) {
-          await writeStore(stores.settings, { ...DEFAULT_SETTINGS, ...s, feishuAppToken: r.appToken, feishuTableId: r.tableId });
+        if (r.appToken) {
+          const patch = {};
+          if (!s.feishuAppToken) patch.feishuAppToken = r.appToken;
+          if (isNote) { if (!s.feishuNoteTableId && r.tableId) patch.feishuNoteTableId = r.tableId; }
+          else if (!s.feishuTableId && r.tableId) patch.feishuTableId = r.tableId;
+          if (Object.keys(patch).length) await writeStore(stores.settings, { ...DEFAULT_SETTINGS, ...s, ...patch });
         }
         return sendJSON(res, 200, { ok: true, count: r.count, url: r.url, appToken: r.appToken, tableId: r.tableId });
       } catch (err) {

@@ -31,6 +31,19 @@ export const PRODUCT_FIELDS = [
   { field_name: '采集时间', type: 1 },
 ];
 
+// 多维表格「热点笔记」字段（前台探索/搜索页采的热门笔记，卡片级数据）
+export const NOTE_FIELDS = [
+  { field_name: '笔记标题', type: 1 },
+  { field_name: '作者', type: 1 },
+  { field_name: '点赞', type: 1 },
+  { field_name: '收藏', type: 1 },
+  { field_name: '评论', type: 1 },
+  { field_name: '转发', type: 1 },
+  { field_name: '封面图', type: 1 },
+  { field_name: '笔记链接', type: 1 },
+  { field_name: '采集时间', type: 1 },
+];
+
 // tenant_access_token 缓存：expire - 5min 提前刷新
 let cachedToken = { value: '', expireAt: 0 };
 
@@ -148,4 +161,70 @@ export async function writeProductsToFeishu(settings, items) {
     written += (r.data && Array.isArray(r.data.records) ? r.data.records.length : chunk.length);
   }
   return { count: written, appToken, tableId, url };
+}
+
+// 确保「热点笔记」数据表就绪：复用已建的多维表格 App（appToken），在其下建/复用「热点笔记」表。
+// 返回 { appToken, noteTableId, url }
+export async function ensureFeishuNoteTable(settings) {
+  const appId = (settings.feishuAppId || '').trim();
+  const appSecret = (settings.feishuAppSecret || '').trim();
+  if (!appId || !appSecret) {
+    throw new Error('feishu-not-configured: 请先在设置页填写飞书 App ID 与 App Secret');
+  }
+  const token = await getTenantToken(appId, appSecret);
+  // 复用已建多维表格 App（商品表用的那个）；没有就先建一个
+  let appToken = (settings.feishuAppToken || '').trim();
+  let url = feishuTableUrl(appToken);
+  if (!appToken) {
+    const app = await feishuApi(token, 'POST', '/open-apis/bitable/v1/apps', { name: '小红书数据采集' });
+    appToken = app.data && app.data.app && app.data.app.app_token;
+    if (!appToken) throw new Error('飞书创建多维表格失败：响应缺少 app_token');
+    url = (app.data && app.data.app && app.data.app.url) || feishuTableUrl(appToken);
+  }
+  let noteTableId = (settings.feishuNoteTableId || '').trim();
+  if (!noteTableId) {
+    const tbl = await feishuApi(token, 'POST', `/open-apis/bitable/v1/apps/${appToken}/tables`, {
+      table: { name: '热点笔记', fields: NOTE_FIELDS },
+    });
+    noteTableId = tbl.data && tbl.data.table_id;
+    if (!noteTableId) throw new Error('飞书创建「热点笔记」表失败：响应缺少 table_id');
+  }
+  return { appToken, noteTableId, url, created: true };
+}
+
+// 把前台采集的热点笔记批量写入飞书「热点笔记」表
+// items: [{ title, author, likes, collects, comments, shares, image, link }]
+// 返回 { count, appToken, tableId, url }
+export async function writeNotesToFeishu(settings, items) {
+  const { appToken, noteTableId, url } = await ensureFeishuNoteTable(settings);
+  const token = await getTenantToken((settings.feishuAppId || '').trim(), (settings.feishuAppSecret || '').trim());
+  const now = new Date();
+  const pad = (n) => String(n).padStart(2, '0');
+  const ts = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
+  const records = (items || [])
+    .filter((it) => it && (it.title || it.link))
+    .map((it) => ({
+      fields: {
+        笔记标题: String(it.title || ''),
+        作者: String(it.author || ''),
+        点赞: String(it.likes || ''),
+        收藏: String(it.collects || ''),
+        评论: String(it.comments || ''),
+        转发: String(it.shares || ''),
+        封面图: String(it.image || ''),
+        笔记链接: String(it.link || ''),
+        采集时间: ts,
+      },
+    }));
+  if (!records.length) return { count: 0, appToken, tableId: noteTableId, url, error: '没有可写入的笔记记录' };
+
+  let written = 0;
+  for (let i = 0; i < records.length; i += 500) {
+    const chunk = records.slice(i, i + 500);
+    const r = await feishuApi(token, 'POST', `/open-apis/bitable/v1/apps/${appToken}/tables/${noteTableId}/records/batch_create`, {
+      records: chunk,
+    });
+    written += (r.data && Array.isArray(r.data.records) ? r.data.records.length : chunk.length);
+  }
+  return { count: written, appToken, tableId: noteTableId, url };
 }
