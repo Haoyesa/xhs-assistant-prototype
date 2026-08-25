@@ -430,24 +430,20 @@
 
   // ============ 弹窗采集（模拟真人点击卡片，在当前页浮层内抓取，不跳转不扫码）============
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-  // 真实鼠标事件序列（穿透 React 合成事件）；允许 React Router 的 pushState（弹窗靠它显示），
-  // 仅用 capture preventDefault 作为安全网阻止 <a> 原生跳转（合成事件本就不会触发默认行为）
-  function realClickInPage(el) {
+  // 真实鼠标点击：走 background + chrome.debugger CDP，让浏览器发 isTrusted=true 的真实事件
+  // React 会正常响应；capture preventDefault 阻止事件冒泡到 <a> 时触发原生导航（扫码）
+  async function realClickInPage(el) {
     try {
       const r = el.getBoundingClientRect();
       const x = Math.max(1, Math.min(window.innerWidth - 1, r.left + r.width / 2));
       const y = Math.max(1, Math.min(window.innerHeight - 1, r.top + r.height / 2));
-      const opt = { bubbles: true, cancelable: true, view: window, clientX: x, clientY: y, button: 0, buttons: 1, pointerId: 1, pointerType: 'mouse', isPrimary: true, screenX: x, screenY: y };
-      // 安全网：阻止可能的 <a> 默认跳转（点击目标本身是内部子元素，理论上不会触发；以防万一）
+      if (!chrome.runtime || !chrome.runtime.sendMessage) return false;
       const stopLink = (e) => { e.preventDefault(); };
       document.addEventListener('click', stopLink, { capture: true, once: true });
       const restore = () => { try { document.removeEventListener('click', stopLink, { capture: true }); } catch {} };
-      for (const t of ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click']) {
-        const ev = t.startsWith('pointer') ? new PointerEvent(t, opt) : new MouseEvent(t, opt);
-        el.dispatchEvent(ev);
-      }
-      setTimeout(restore, 80);
-      return true;
+      const res = await chrome.runtime.sendMessage({ type: 'xhs-real-click', x, y });
+      setTimeout(restore, 120);
+      return !!(res && res.ok);
     } catch (e) { return false; }
   }
   // 检测笔记详情弹窗（页面不重新加载的浮层）：取尺寸最大的候选容器
@@ -573,11 +569,16 @@
       }
       const card = nearestCard(aEl, 8);
       closeModal(); await sleep(350);
-      // 点击 <a> 内部的非链接子元素（封面图 / 第一个 div），让 React onClick 触发弹窗，
-      // 同时避免触发 <a> 原生导航（dispatch 合成事件不触发默认行为，且 target 非 <a>）
+      // 点击 <a> 内部的非链接子元素（封面图 / 第一个 div），触发 React onClick 弹窗，
+      // 真实 CDP 点击会让 React 正常响应；capture preventDefault 阻止 <a> 原生导航
       const inner = aEl.querySelector('img') || aEl.querySelector('div, section, span') || aEl;
-      realClickInPage(inner);
-      const modal = await waitForModal(4000);
+      const clicked = await realClickInPage(inner);
+      if (!clicked) {
+        const enriched = readCardDetail(card || document.body, { ...p, ...stateDet });
+        await postDetailCache(p, enriched, stateDet);
+        okCount++; continue;
+      }
+      const modal = await waitForModal(4500);
       if (modal) {
         modalCount++;
         await sleep(1200 + Math.floor(Math.random() * 800)); // 等弹窗渲染加载
