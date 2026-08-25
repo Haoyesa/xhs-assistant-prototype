@@ -120,19 +120,32 @@
     return null;
   }
 
+  // 头像图特征：CDN 域名 sns-avatar / 路径含 /avatar/ / 头像裁剪参数（w/80 等小尺寸）
+  const isAvatar = (src) => /sns-avatar|avatar\/|avatar\.|\/avatar\//i.test(src || '');
+
+  // 取卡片封面图：1) <img>（排除头像/占位）2) 兜底 div 背景图 / data-src（小红书封面常是 div 背景，非 img）
   function bestImg(card) {
     const imgs = $$('img', card).filter((im) => {
       const src = im.getAttribute('src') || im.getAttribute('data-src') || '';
       if (/^data:image\/(gif|png);base64,(R0lGOD|iVBOR)/.test(src)) return false; // 1x1 占位
+      if (isAvatar(src)) return false; // 头像图直接排除
       return src.length > 10;
     });
-    // 取「尺寸最大」的图（封面通常 100+，头像 24~48），避免 DOM 顺序里头像在前时抽到小头像
+    // 取「尺寸最大」的图（封面 100+，头像 24~48），避免 DOM 顺序里头像在前时抽到小头像
     imgs.sort((a, b) => {
       const sa = (a.naturalWidth || a.offsetWidth || 0) + (a.naturalHeight || a.offsetHeight || 0);
       const sb = (b.naturalWidth || b.offsetWidth || 0) + (b.naturalHeight || b.offsetHeight || 0);
       return sb - sa;
     });
-    return imgs[0] || null;
+    if (imgs[0]) return imgs[0];
+    // 兜底：找背景图 div（background-image 或 data-src），同样排除头像特征
+    for (const el of $$('[style*="background-image"], [data-src]', card)) {
+      let src = el.getAttribute('data-src') || '';
+      const bg = (el.getAttribute('style') || '').match(/url\(['"]?(.*?)['"]?\)/i);
+      if (!src && bg) src = bg[1];
+      if (src && !isAvatar(src) && src.length > 10) return { getAttribute: (k) => (k === 'src' ? src : null), src };
+    }
+    return null;
   }
 
   function linkOf(card) {
@@ -226,7 +239,10 @@
     const out = [];
     const seen = new Set();
     const push = (t) => {
-      const key = (t.link || t.image || t.title || t.productName || '') + '|' + t.type;
+      // 主键去重：同一 noteId/itemId 只保留一条（一张卡片有 explore/search_result 多个详情链接，
+      // 旧逻辑用 link+type 去重导致同一笔记重复识别）
+      const id = (t.type === 'note' ? t.noteId : t.itemId) || '';
+      const key = (id ? id + '|' + t.type : (t.link || t.image || '') + '|' + t.type);
       if (!key || seen.has(key)) return;
       seen.add(key);
       out.push(t);
