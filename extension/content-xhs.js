@@ -399,17 +399,34 @@
 
   // ============ 弹窗采集（模拟真人点击卡片，在当前页浮层内抓取，不跳转不扫码）============
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-  // 真实鼠标事件序列（穿透 React 合成事件）；手动 dispatch 的 click 不会触发 <a> 默认导航
+  // 真实鼠标事件序列（穿透 React 合成事件）；同时拦截 <a> 默认跳转 + history.pushState，避免扫码
   function realClickInPage(el) {
     try {
       const r = el.getBoundingClientRect();
       const x = Math.max(1, Math.min(window.innerWidth - 1, r.left + r.width / 2));
       const y = Math.max(1, Math.min(window.innerHeight - 1, r.top + r.height / 2));
       const opt = { bubbles: true, cancelable: true, view: window, clientX: x, clientY: y, button: 0, buttons: 1, pointerId: 1, pointerType: 'mouse', isPrimary: true, screenX: x, screenY: y };
+      // 1) capture 阶段阻止本次 click 的默认行为（防止 <a> 标签直接跳转）
+      const stopLink = (e) => { e.preventDefault(); };
+      document.addEventListener('click', stopLink, { capture: true, once: true });
+      // 2) 临时禁用 history.pushState/replaceState，防止 React Router 跳转
+      const origPush = window.history.pushState;
+      const origReplace = window.history.replaceState;
+      let restored = false;
+      const restore = () => {
+        if (restored) return;
+        restored = true;
+        try { document.removeEventListener('click', stopLink, { capture: true }); } catch {}
+        try { window.history.pushState = origPush; } catch {}
+        try { window.history.replaceState = origReplace; } catch {}
+      };
+      window.history.pushState = () => {};
+      window.history.replaceState = () => {};
       for (const t of ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click']) {
         const ev = t.startsWith('pointer') ? new PointerEvent(t, opt) : new MouseEvent(t, opt);
         el.dispatchEvent(ev);
       }
+      setTimeout(restore, 80);
       return true;
     } catch (e) { return false; }
   }
