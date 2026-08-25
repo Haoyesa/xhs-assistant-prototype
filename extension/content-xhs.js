@@ -32,16 +32,35 @@
     return n >= 10000 ? (Math.round((n / 10000) * 10) / 10) + '万' : String(Math.round(n));
   }
 
-  // 从卡片抽四个互动数（赞/藏/评/转）。
-  // 策略：先尝试「关键词 + 数字」模式（如「赞 1.2万」「收藏 224」）；
-  //       失败时按位置启发：找卡片底部所有「短数字 token」（如 "224"、"1.2万"、"9+"），
-  //       按出现顺序映射到 [赞, 藏, 评, 转]（小红书卡片底部常见顺序）。
-  // 返回 { likes, collects, comments, shares }
+  // 抽作者昵称：先用「作者:xx」「by xx」关键字；否则遍历 DOM 文本节点找
+  // 「2~20 字、不含数字/标点、像昵称」的候选（小红书作者区常在左下）
+  function pickAuthor(card) {
+    const txt = clean(card.innerText || '');
+    let m = txt.match(/(?:作者|by|@)\s*[:：]?\s*([^\s\n]{2,20})/i);
+    if (m) return m[1];
+    const UI_NOISE = /^(笔记|分享|收藏|点赞|评论|转发|已售|销量|月售|店铺|综合|免费|最新|最热|图文|视频|筛选|搜索|首页|发现|直播|发布)$/;
+    const candidates = [];
+    const tw = document.createTreeWalker(card, NodeFilter.SHOW_TEXT, null);
+    let n;
+    while ((n = tw.nextNode())) {
+      const v = clean(n.textContent);
+      if (v.length < 2 || v.length > 20) continue;
+      if (/^[\d\s¥￥.,，。、:：\-+#%年月日]+$/.test(v)) continue; // 纯数字/UI 词
+      if (UI_NOISE.test(v)) continue;
+      candidates.push(v);
+    }
+    // 取第一个像昵称的（短、含中文/英文/数字混合的纯文本）
+    return candidates[0] || '';
+  }
+
+  // 抽四个互动数（赞/藏/评/转）：
+  // 1) 优先 innerText「关键词+数字」模式
+  // 2) 失败时遍历 DOM 找「数字文本节点」（含「1.2万」/「224」/「9+」），按出现顺序映射
   function pickInteractions(card) {
     const out = { likes: '', collects: '', comments: '', shares: '' };
     const txt = clean(card.innerText || '');
     if (!txt) return out;
-    // 1) 关键词匹配（最稳）
+    // 1) 关键词匹配
     const keywordMap = [
       { key: 'likes', kws: ['点赞', '获赞', '赞'] },
       { key: 'collects', kws: ['收藏', '藏'] },
@@ -55,14 +74,18 @@
         if (m) { out[key] = toCount(m[1]); break; }
       }
     }
-    // 2) 位置兜底：抓所有「短数字」按出现顺序映射到 4 个槽位（未填的）
-    const shortNums = [...txt.matchAll(/\b(\d+(?:\.\d+)?[万wWkK]?|\d+\+)\b/g)].map((m) => toCount(m[1]));
-    if (shortNums.length) {
-      const slots = ['likes', 'collects', 'comments', 'shares'];
-      let idx = 0;
-      for (const s of slots) {
-        if (!out[s] && shortNums[idx]) { out[s] = shortNums[idx]; idx++; }
-      }
+    // 2) DOM 数字节点：抓所有 leaf 文本节点匹配「短数字」，按出现顺序补齐空槽
+    const numNodes = [];
+    const tw = document.createTreeWalker(card, NodeFilter.SHOW_TEXT, null);
+    let n;
+    while ((n = tw.nextNode())) {
+      const v = clean(n.textContent);
+      if (/^(\d+(?:\.\d+)?[万wWkK]?|\d+\+)$/.test(v)) numNodes.push(v);
+    }
+    const slots = ['likes', 'collects', 'comments', 'shares'];
+    let idx = 0;
+    for (const s of slots) {
+      if (!out[s] && numNodes[idx]) { out[s] = toCount(numNodes[idx]); idx++; }
     }
     return out;
   }
@@ -182,7 +205,7 @@
       type: 'note',
       noteId: (link.match(/\/(?:explore|search_result)\/([\w-]+)/) || [])[1] || '',
       title: pickTitle(card),
-      author: (card.innerText.match(/(?:作者|by)[:：]?\s*([^\s\n]{2,20})/) || [])[1] || '',
+      author: pickAuthor(card),
       likes: ia.likes,
       collects: ia.collects,
       comments: ia.comments,
@@ -278,6 +301,8 @@
     });
 
     let items = [];
+    // 调试钩子：F12 控制台执行 `__xhsItems.slice(0,3)` 看实际抽到的字段
+    window.__xhsItems = items;
     const render = () => {
       const list = $id('xhList');
       $id('xhCount').textContent = items.length;
@@ -302,6 +327,7 @@
       setTimeout(() => {
         try {
           items = scanPage();
+          window.__xhsItems = items; // 暴露给 DevTools：`__xhsItems.slice(0,3)` 看样本
           render();
           status(`识别到 ${items.length} 条（${items.filter((x) => x.type === 'note').length} 笔记 / ${items.filter((x) => x.type === 'product').length} 商品）`);
         } catch (e) {
