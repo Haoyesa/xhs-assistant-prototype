@@ -576,6 +576,16 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         // popup/页面查询本扩展绑定的账号身份
         const s = await storageGet();
         sendResponse({ ok: true, serverUrl: s.serverUrl, extAccount: s.extAccount || '', extProfile: s.extProfile || '', instanceId: s.instanceId || '' });
+      } else if (msg.type === 'xhsFetchProxy') {
+        // https 页面（如小红书详情页）→ http 后端的请求会被 Chrome mixed content 拦截，
+        // 这里由 background 直接 fetch 绕开限制。返回结构与 xhsFetch 一致 {ok,status,data}
+        try {
+          const r = await api(msg.path, msg.opts || {});
+          sendResponse(r);
+        } catch (e) {
+          sendResponse({ ok: false, status: 0, data: { _err: e.message } });
+        }
+        return true; // 异步 sendResponse
       } else if (msg.type === 'getQueue') {
         try {
           // 统计口径必须与服务端 /api/ext/next 的 taskMatchesAccount 完全一致：

@@ -19,10 +19,24 @@
   }
 
   // 直连本地后端（绕开 service worker）
+  // 注意：https 页面发 http 请求会被 Chrome mixed content 拦截 →
+  //   检测到 https 源 + http 后端时，自动走 background 中转（sendMessage 由 background 直接 fetch）
   async function xhsFetch(path, opts) {
     opts = opts || {};
     const base = await getXhsServerUrl();
     const url = base + path;
+    if (location.protocol === 'https:' && /^http:/i.test(url)) {
+      return new Promise((resolve) => {
+        try {
+          chrome.runtime.sendMessage({ type: 'xhsFetchProxy', path, opts }, (resp) => {
+            if (chrome.runtime.lastError) resolve({ ok: false, status: 0, data: { _err: 'proxy: ' + (chrome.runtime.lastError.message || 'no response') } });
+            else resolve(resp || { ok: false, status: 0, data: { _err: 'proxy: no response' } });
+          });
+        } catch (e) {
+          resolve({ ok: false, status: 0, data: { _err: 'proxy exception: ' + e.message } });
+        }
+      });
+    }
     const init = {
       method: opts.method || 'GET',
       headers: { 'Content-Type': 'application/json' },
