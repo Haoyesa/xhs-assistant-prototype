@@ -430,29 +430,18 @@
 
   // ============ 弹窗采集（模拟真人点击卡片，在当前页浮层内抓取，不跳转不扫码）============
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-  // 真实鼠标事件序列（穿透 React 合成事件）；同时拦截 <a> 默认跳转 + history.pushState，避免扫码
+  // 真实鼠标事件序列（穿透 React 合成事件）；允许 React Router 的 pushState（弹窗靠它显示），
+  // 仅用 capture preventDefault 作为安全网阻止 <a> 原生跳转（合成事件本就不会触发默认行为）
   function realClickInPage(el) {
     try {
       const r = el.getBoundingClientRect();
       const x = Math.max(1, Math.min(window.innerWidth - 1, r.left + r.width / 2));
       const y = Math.max(1, Math.min(window.innerHeight - 1, r.top + r.height / 2));
       const opt = { bubbles: true, cancelable: true, view: window, clientX: x, clientY: y, button: 0, buttons: 1, pointerId: 1, pointerType: 'mouse', isPrimary: true, screenX: x, screenY: y };
-      // 1) capture 阶段阻止本次 click 的默认行为（防止 <a> 标签直接跳转）
+      // 安全网：阻止可能的 <a> 默认跳转（点击目标本身是内部子元素，理论上不会触发；以防万一）
       const stopLink = (e) => { e.preventDefault(); };
       document.addEventListener('click', stopLink, { capture: true, once: true });
-      // 2) 临时禁用 history.pushState/replaceState，防止 React Router 跳转
-      const origPush = window.history.pushState;
-      const origReplace = window.history.replaceState;
-      let restored = false;
-      const restore = () => {
-        if (restored) return;
-        restored = true;
-        try { document.removeEventListener('click', stopLink, { capture: true }); } catch {}
-        try { window.history.pushState = origPush; } catch {}
-        try { window.history.replaceState = origReplace; } catch {}
-      };
-      window.history.pushState = () => {};
-      window.history.replaceState = () => {};
+      const restore = () => { try { document.removeEventListener('click', stopLink, { capture: true }); } catch {} };
       for (const t of ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click']) {
         const ev = t.startsWith('pointer') ? new PointerEvent(t, opt) : new MouseEvent(t, opt);
         el.dispatchEvent(ev);
@@ -584,8 +573,11 @@
       }
       const card = nearestCard(aEl, 8);
       closeModal(); await sleep(350);
-      realClickInPage(aEl);
-      const modal = await waitForModal(5000);
+      // 点击 <a> 内部的非链接子元素（封面图 / 第一个 div），让 React onClick 触发弹窗，
+      // 同时避免触发 <a> 原生导航（dispatch 合成事件不触发默认行为，且 target 非 <a>）
+      const inner = aEl.querySelector('img') || aEl.querySelector('div, section, span') || aEl;
+      realClickInPage(inner);
+      const modal = await waitForModal(4000);
       if (modal) {
         modalCount++;
         await sleep(1200 + Math.floor(Math.random() * 800)); // 等弹窗渲染加载
@@ -633,7 +625,7 @@
           <div class="xh-list" id="xhList"></div>
           <div class="xh-btnrow">
             <button class="xh-btn xh-export" id="xhFeishu">写入飞书</button>
-            <button class="xh-btn" id="xhDetail" title="不跳转不点击，从当前页脚本数据和卡片DOM中补全字段（避免扫码）">就地补全（避免扫码）</button>
+            <button class="xh-btn" id="xhDetail" title="模拟真人点击卡片内的封面图，在当前页弹窗内抓取详情（不跳转不扫码）">弹窗采集（真人点击）</button>
             <button class="xh-btn" id="xhCopy">复制链接</button>
           </div>
         </div>
@@ -756,52 +748,23 @@
       status(ok ? `已复制 ${picked.length} 条链接` : '复制失败，请手动复制');
     });
 
-    // 就地补全：不点击、不跳转，从当前页脚本数据 + 卡片 DOM 补全详情字段（避免扫码）
+    // 弹窗采集：模拟真人点击卡片内封面图，在当前页浮层内抓取详情（不跳转、不触发扫码），
+    // 优先用弹窗真实数据；弹窗未出现（如 web 未登录）则回退到当前页就地补全。
     $id('xhDetail').addEventListener('click', async () => {
       const picked = [...$id('xhList').querySelectorAll('input[type=checkbox]:checked')]
         .map((c) => items[+c.dataset.i]).filter(Boolean)
         .filter((p) => p.type === 'note' && p.noteId);
-      if (!picked.length) { status('请先勾选要补全详情的笔记。'); return; }
+      if (!picked.length) { status('请先勾选要采集详情的笔记。'); return; }
       const btn = $id('xhDetail');
       const old = btn.textContent;
-      btn.disabled = true; btn.textContent = '补全中…';
-      dot('wait'); status(`正在当前页补全详情 0/${picked.length}（不跳转，避免扫码）…`);
+      btn.disabled = true; btn.textContent = '采集中…';
+      dot('wait'); status(`弹窗采集中 0/${picked.length}（真人点击，不跳转）…`);
       const pageState = extractPageStateDetails();
-      let okCount = 0;
-      for (let i = 0; i < picked.length; i++) {
-        const p = picked[i];
-        try {
-          let card = null;
-          for (const a of $$('a[href]')) {
-            const href = a.getAttribute('href') || '';
-            if (href.includes(p.noteId)) { card = nearestCard(a, 8); break; }
-          }
-          const stateDet = pageState[p.noteId] || {};
-          let enriched = { ...p, ...stateDet };
-          if (card) enriched = readCardDetail(card, enriched);
-          await window.XhsCommon.xhsFetch('/api/feishu/note-detail', {
-            method: 'POST',
-            body: {
-              noteId: p.noteId,
-              bodyImages: Array.isArray(stateDet.bodyImages) ? stateDet.bodyImages : [],
-              publishTime: enriched.publishTime || '',
-              title: enriched.title || '',
-              cover: enriched.image || stateDet.cover || '',
-              body: stateDet.body || '',
-              likes: enriched.likes || '',
-              collects: enriched.collects || '',
-              comments: enriched.comments || '',
-              shares: enriched.shares || '',
-            },
-          }).catch(() => {});
-          okCount++;
-        } catch (e) { /* 单个失败继续 */ }
-        status(`正在当前页补全详情 ${i + 1}/${picked.length}（成功 ${okCount}）…`);
-      }
+      const { okCount, modalCount } = await collectByModal(picked, pageState);
       btn.disabled = false; btn.textContent = old;
       dot('ok');
-      status(`详情补全完成：${okCount}/${picked.length} 篇（写入飞书时自动带上）`);
-      toast(`详情补全完成 ${okCount}/${picked.length} 篇，写入飞书时带上`, 'ok');
+      status(`采集完成：${okCount}/${picked.length} 篇（弹窗抓取 ${modalCount} 篇，写入飞书时自动带上）`);
+      toast(`采集完成 ${okCount}/${picked.length} 篇（弹窗 ${modalCount}）`, 'ok');
     });
 
     // 首次自动识别
