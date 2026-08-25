@@ -587,28 +587,8 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         }
         return true; // 异步 sendResponse
       } else if (msg.type === 'openDetailInPlace') {
-        // 不再 background tabs.create 新标签（无登录态 → 小红书风控强制扫码），
-        // 改为在当前激活标签 SPA 切换：原 URL → 详情 → 抓 4s → 切回。保留登录态。
-        try {
-          const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
-          const tab = tabs && tabs[0];
-          if (!tab || tab.id == null) { sendResponse({ ok: false, error: 'no active tab' }); return; }
-          const originalUrl = tab.url || '';
-          const tabId = tab.id;
-          // 切到详情
-          await chrome.tabs.update(tabId, { url: msg.url });
-          // 等页面加载 + 详情页 content-xhs.js 抓取（约 2-5s 双轮抓取），给足 4s
-          await new Promise((r) => setTimeout(r, 4000));
-          // 切回原 URL（搜索页）
-          if (originalUrl && originalUrl !== msg.url) {
-            try { await chrome.tabs.update(tabId, { url: originalUrl }); } catch (e) {}
-          }
-          console.log('[黑猫][BG] openDetailInPlace done:', msg.url);
-          sendResponse({ ok: true });
-        } catch (e) {
-          sendResponse({ ok: false, error: e.message });
-        }
-        return true; // 异步 sendResponse
+        // 已弃用：前台详情深采改为在列表页就地补全，不再跳转详情页，避免触发小红书扫码风控。
+        sendResponse({ ok: false, error: '已改用当前页就地补全，请升级扩展前端' });
       } else if (msg.type === 'getQueue') {
         try {
           // 统计口径必须与服务端 /api/ext/next 的 taskMatchesAccount 完全一致：

@@ -307,6 +307,96 @@
     return out;
   }
 
+  // 从页面全局变量 / 脚本标签解析已加载的笔记详情数据（不依赖跳转详情页，避免扫码风控）
+  function extractPageStateDetails() {
+    const out = {};
+    try {
+      const globs = ['__INITIAL_STATE__', '__INITIAL_SSR_STATE__', '_SSR_HYDRATED_DATA', '__XHS_DATA__', '__NOTE_DATA__'];
+      let data = null;
+      for (const k of globs) {
+        if (window[k] && typeof window[k] === 'object') { data = window[k]; break; }
+      }
+      if (!data) {
+        for (const sc of $$('script')) {
+          const t = sc.textContent || '';
+          if (!/note|feed|search|explore/i.test(t)) continue;
+          const m = t.match(/window\.__INITIAL_STATE__\s*=\s*({[\s\S]+?});/)
+            || t.match(/window\.__INITIAL_SSR_STATE__\s*=\s*({[\s\S]+?});/)
+            || t.match(/window\._SSR_HYDRATED_DATA\s*=\s*({[\s\S]+?});/);
+          if (m) { try { data = JSON.parse(m[1]); break; } catch {} }
+        }
+      }
+      if (!data || typeof data !== 'object') return out;
+      const feeds = data.notes || data.feeds || data.searchList || data.noteList
+        || (data.data && (data.data.items || data.data.notes)) || data.items || [];
+      const arr = Array.isArray(feeds) ? feeds : Object.values(feeds);
+      for (const it of arr) {
+        const note = it.note || it.noteCard || it;
+        if (!note || (!note.noteId && !note.id && !note.note_id)) continue;
+        const id = String(note.noteId || note.id || note.note_id);
+        const coverRaw = note.cover || (note.imageList && note.imageList[0]) || (note.images && note.images[0]) || '';
+        const cover = typeof coverRaw === 'string' ? coverRaw : (coverRaw.url || coverRaw.link || '');
+        const imgs = (note.imageList || note.images || []).slice(0, 30).map((x) => typeof x === 'string' ? x : (x.url || x.link || '')).filter(Boolean);
+        out[id] = {
+          title: String(note.title || note.desc || ''),
+          cover,
+          bodyImages: imgs,
+          body: String(note.desc || note.content || ''),
+          likes: String(note.likes || note.likedCount || (note.interactInfo && note.interactInfo.likedCount) || ''),
+          collects: String(note.collectedCount || note.collects || (note.interactInfo && note.interactInfo.collectedCount) || ''),
+          comments: String(note.comments || note.commentCount || (note.interactInfo && note.interactInfo.commentCount) || ''),
+          shares: String(note.shares || note.shareCount || (note.interactInfo && note.interactInfo.shareCount) || ''),
+          publishTime: String(note.time || note.publishTime || note.createTime || ''),
+        };
+      }
+    } catch (e) { /* 解析失败不影响主流程 */ }
+    return out;
+  }
+
+  // 在当前卡片 DOM 内二次深度补全详情字段（不跳转详情页）
+  function readCardDetail(card, base) {
+    const out = { ...base };
+    const txt = clean(card.innerText || '');
+    // 更积极的交互数关键词匹配（支持前置/后置数字）
+    const keywordMap = [
+      { key: 'likes', kws: ['点赞', '获赞', '赞', '喜欢'] },
+      { key: 'collects', kws: ['收藏', '藏'] },
+      { key: 'comments', kws: ['评论', '留言', '回复'] },
+      { key: 'shares', kws: ['转发', '分享'] },
+    ];
+    for (const { key, kws } of keywordMap) {
+      if (out[key]) continue;
+      for (const kw of kws) {
+        const re = new RegExp(kw + '\\s*[:：]?\\s*(\\d+(?:\\.\\d+)?\\s*[万wWkK]?)');
+        const m = txt.match(re);
+        if (m) { out[key] = toCount(m[1]); break; }
+        const re2 = new RegExp('(\\d+(?:\\.\\d+)?\\s*[万wWkK]?)\\s*' + kw);
+        const m2 = txt.match(re2);
+        if (m2) { out[key] = toCount(m2[1]); break; }
+      }
+    }
+    // 按 DOM 顺序提取卡片内纯数字文本，优先补 likes/collects/comments/shares 空槽
+    const nums = [];
+    const tw = document.createTreeWalker(card, NodeFilter.SHOW_TEXT, null);
+    let n;
+    while ((n = tw.nextNode())) {
+      const v = clean(n.textContent);
+      if (/^[\d.]+[万wWkK]?$/.test(v)) nums.push(toCount(v));
+    }
+    const slots = ['likes', 'collects', 'comments', 'shares'];
+    let idx = 0;
+    for (const s of slots) {
+      if (!out[s] && nums[idx]) { out[s] = nums[idx]; idx++; }
+    }
+    // 封面图兜底：若 base.image 是头像/缺失，重新取卡片内最大图
+    if (!out.image || isAvatar(out.image)) {
+      const img = bestImg(card);
+      if (img) out.image = img.getAttribute('data-src') || img.getAttribute('src') || out.image;
+    }
+    if (!out.publishTime) out.publishTime = pickPublishTime(card);
+    return out;
+  }
+
   // ---- 面板 ----
   function buildPanel() {
     if (!document.getElementById('xhs-helper-css')) {
@@ -338,7 +428,7 @@
           <div class="xh-list" id="xhList"></div>
           <div class="xh-btnrow">
             <button class="xh-btn xh-export" id="xhFeishu">写入飞书</button>
-            <button class="xh-btn" id="xhDetail">采集详情（图文+互动数）</button>
+            <button class="xh-btn" id="xhDetail" title="不跳转详情页，避免扫码风控">补全详情（当前页）</button>
             <button class="xh-btn" id="xhCopy">复制链接</button>
           </div>
         </div>
@@ -461,32 +551,53 @@
       status(ok ? `已复制 ${picked.length} 条链接` : '复制失败，请手动复制');
     });
 
-    // 采集详情：当前标签 SPA 切换逐个打开详情页（带登录态，避开小红书「匿名+扫码」风控）
-    //   → background chrome.tabs.update 切到详情 → 等 4s 让详情页 content-xhs 抓取+POST
-    //   → 切回搜索页 → 下一篇。用户会看到当前标签在「搜索页↔详情」间自动闪烁。
+    // 补全详情：在当前页就地深度提取选中卡片，不跳转任何详情页，彻底避免扫码风控。
+    // 优先从页面初始数据脚本解析真实字段，再对每张卡片做 DOM 二次扫描补全，最后写入后端缓存。
     $id('xhDetail').addEventListener('click', async () => {
       const picked = [...$id('xhList').querySelectorAll('input[type=checkbox]:checked')]
         .map((c) => items[+c.dataset.i]).filter(Boolean)
-        .filter((p) => p.type === 'note' && p.link && p.noteId);
-      if (!picked.length) { status('请先勾选要采集详情的笔记。'); return; }
-      if (!chrome.runtime || !chrome.runtime.sendMessage) { status('当前环境不支持后台开标签（请用浏览器加载扩展）。'); return; }
+        .filter((p) => p.type === 'note' && p.noteId);
+      if (!picked.length) { status('请先勾选要补全详情的笔记。'); return; }
       const btn = $id('xhDetail');
       const old = btn.textContent;
-      btn.disabled = true; btn.textContent = '采集中…';
-      dot('wait'); status(`采集详情中 0/${picked.length}（当前标签会自动跳到详情再跳回）…`);
+      btn.disabled = true; btn.textContent = '补全中…';
+      dot('wait'); status(`正在当前页补全详情 0/${picked.length}（不跳转，避免扫码）…`);
+      const pageState = extractPageStateDetails();
       let okCount = 0;
       for (let i = 0; i < picked.length; i++) {
         const p = picked[i];
         try {
-          const r = await chrome.runtime.sendMessage({ type: 'openDetailInPlace', url: p.link });
-          if (r && r.ok) okCount++;
+          let card = null;
+          for (const a of $$('a[href]')) {
+            const href = a.getAttribute('href') || '';
+            if (href.includes(p.noteId)) { card = nearestCard(a, 8); break; }
+          }
+          const stateDet = pageState[p.noteId] || {};
+          let enriched = { ...p, ...stateDet };
+          if (card) enriched = readCardDetail(card, enriched);
+          await window.XhsCommon.xhsFetch('/api/feishu/note-detail', {
+            method: 'POST',
+            body: {
+              noteId: p.noteId,
+              bodyImages: Array.isArray(stateDet.bodyImages) ? stateDet.bodyImages : [],
+              publishTime: enriched.publishTime || '',
+              title: enriched.title || '',
+              cover: enriched.image || stateDet.cover || '',
+              body: stateDet.body || '',
+              likes: enriched.likes || '',
+              collects: enriched.collects || '',
+              comments: enriched.comments || '',
+              shares: enriched.shares || '',
+            },
+          }).catch(() => {});
+          okCount++;
         } catch (e) { /* 单个失败继续 */ }
-        status(`采集详情中 ${i + 1}/${picked.length}（成功 ${okCount}）…`);
+        status(`正在当前页补全详情 ${i + 1}/${picked.length}（成功 ${okCount}）…`);
       }
       btn.disabled = false; btn.textContent = old;
       dot('ok');
-      status(`详情采集完成：${okCount}/${picked.length} 篇（写入飞书时自动带上）`);
-      toast(`详情采集完成 ${okCount}/${picked.length} 篇，写入飞书时带上`, 'ok');
+      status(`详情补全完成：${okCount}/${picked.length} 篇（写入飞书时自动带上）`);
+      toast(`详情补全完成 ${okCount}/${picked.length} 篇，写入飞书时带上`, 'ok');
     });
 
     // 首次自动识别
