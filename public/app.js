@@ -588,6 +588,9 @@ async function loadSettings() {
   $('#setFeishuId').value = s.feishuAppId || '';
   // 密钥不回显明文：有值则显示占位掩码，保存时后端遇掩码自动保留原值
   $('#setFeishuSecret').value = s.feishuAppSecret ? '******' : '';
+  $('#setFeishuToken').value = s.feishuAppToken || '';
+  $('#setFeishuTableId').value = s.feishuTableId || '';
+  $('#setFeishuNoteTableId').value = s.feishuNoteTableId || '';
   $('#setTitlePrompt').value = s.titlePrompt || '';
   $('#setContentPrompt').value = s.contentPrompt || '';
   $('#setTopicsPrompt').value = s.topicsPrompt || '';
@@ -614,6 +617,9 @@ $('#saveSetBtn').addEventListener('click', async () => {
     imagesRoot: $('#setImagesRoot').value, csvExportDir: $('#setCsvExportDir').value,
     feishuAppId: $('#setFeishuId').value.trim(),
     feishuAppSecret: $('#setFeishuSecret').value.trim(), // 掩码 '******' 时后端保留原值
+    feishuAppToken: $('#setFeishuToken').value.trim(),   // 可空：空则首次写入自动建表
+    feishuTableId: $('#setFeishuTableId').value.trim(),
+    feishuNoteTableId: $('#setFeishuNoteTableId').value.trim(),
   });
   $('#setMsg').textContent = r && r.ok ? '✅ 已保存' : '❌ 保存失败：' + ((r && (r.detail || r.error)) || '后端未连接');
   setTimeout(() => ($('#setMsg').textContent = ''), 3000);

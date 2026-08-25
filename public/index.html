@@ -293,10 +293,21 @@
 
           <div class="card">
             <h3>飞书多维表格</h3>
-            <p class="hint">在千帆选品页点插件「写入飞书」按钮，把勾选的商品一键写入飞书多维表格。首次写入会自动建表（商品ID/名称/价格/图片/链接等字段），之后直接追加行。</p>
+            <p class="hint">在千帆选品页/小红书前台点插件「写入飞书」按钮，把勾选的商品、热点笔记一键写入飞书多维表格。默认首次写入自动建表，之后直接追加行。</p>
             <p class="hint">需要：飞书开放平台自建应用（应用凭证 App ID / App Secret），并给应用开通<b>多维表格读写</b>权限（bitable:app 等）后发布新版本。</p>
             <div class="sf-field"><label for="setFeishuId">飞书 App ID</label><input id="setFeishuId" placeholder="cli_xxxxxxxxxxxxxxxx" autocomplete="off" /></div>
             <div class="sf-field"><label for="setFeishuSecret">飞书 App Secret</label><input id="setFeishuSecret" type="password" placeholder="应用密钥（保存后不回显明文）" autocomplete="new-password" /></div>
+            <details class="set-prompt" style="margin-top:8px">
+              <summary>高级：用「你自己的表格」替换自动建表</summary>
+              <p class="hint" style="margin:6px 0">想让数据写进<b>你自己账号拥有</b>的表格（可随时编辑），就这样做：<br/>
+                ① 用你的飞书账号新建/打开一个多维表格，复制地址栏里 <code>/base/</code> 后的 <b>app_token</b>（形如 <code>LfytyT86Da6dX...</code>）<br/>
+                ② 表格右上角「···」→ 更多 → <b>添加文档应用</b> → 搜索你的应用名 → 授权<b>编辑</b>权限（让智能体可写）<br/>
+                ③ 把 app_token 填到下面「表格 App Token」并保存（Table ID 可空，首次写入会自动建表并回填）<br/>
+                ④ 已自动建的表想停用，把对应 Token 清空即可切回自动建表。</p>
+              <div class="sf-field"><label for="setFeishuToken">表格 App Token（你自己的表，可空）</label><input id="setFeishuToken" placeholder="自动建表后自动回填；或填你自建表格的 app_token" autocomplete="off" /></div>
+              <div class="sf-field"><label for="setFeishuTableId">商品表 Table ID（可空）</label><input id="setFeishuTableId" placeholder="tblxxxxxxxx" autocomplete="off" /></div>
+              <div class="sf-field"><label for="setFeishuNoteTableId">热点笔记表 Table ID（可空）</label><input id="setFeishuNoteTableId" placeholder="tblxxxxxxxx" autocomplete="off" /></div>
+            </details>
             <div class="row">
               <button id="feishuStatusBtn" class="secondary">查看飞书状态</button>
               <span id="feishuStatusMsg" class="msg"></span>
