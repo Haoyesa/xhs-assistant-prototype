@@ -81,6 +81,33 @@ async function feishuApi(token, method, apiPath, body) {
   return j;
 }
 
+// 列出表已存在的字段名（用于比对缺失字段后自动补建）。失败返回 []，不阻塞主流程
+async function listFieldNames(token, appToken, tableId) {
+  try {
+    const j = await feishuApi(token, 'GET', `/open-apis/bitable/v1/apps/${appToken}/tables/${tableId}/fields?page_size=100`);
+    return ((j.data && j.data.items) || []).map((f) => f.field_name).filter(Boolean);
+  } catch (e) {
+    console.warn('[feishu] listFieldNames failed:', e.message);
+    return [];
+  }
+}
+
+// 补齐缺失字段（fields/batch_create）。失败仅警告，不阻塞主流程
+async function ensureTableFields(token, appToken, tableId, wantFields) {
+  const existing = await listFieldNames(token, appToken, tableId);
+  const existSet = new Set(existing);
+  const missing = (wantFields || []).filter((f) => !existSet.has(f.field_name));
+  if (!missing.length) return { added: 0, existing };
+  try {
+    await feishuApi(token, 'POST', `/open-apis/bitable/v1/apps/${appToken}/tables/${tableId}/fields/batch_create`, { fields: missing });
+    console.log('[feishu] 已自动补字段', missing.map((f) => f.field_name).join(', '));
+    return { added: missing.length, existing: [...existing, ...missing.map((f) => f.field_name)] };
+  } catch (e) {
+    console.warn('[feishu] 补字段失败:', e.message);
+    return { added: 0, existing };
+  }
+}
+
 // 由 app_token 拼出多维表格网页地址（用于前端展示「打开表格」链接）
 // 由 app_token (+ table_id) 拼出多维表格网页地址（用于前端展示「打开表格」链接）
 // 带 tableId 时直接落到目标表，避免飞书网页默认跳到「数据表」让用户看到空表
@@ -157,6 +184,8 @@ export async function writeProductsToFeishu(settings, items) {
   if (!records.length) return { count: 0, appToken, tableId, url, error: '没有可写入的商品记录' };
 
   let written = 0;
+  // 写入前先确保表的字段齐全（用户用自建表时常缺字段，缺什么自动补什么）
+  await ensureTableFields(token, appToken, tableId, PRODUCT_FIELDS);
   for (let i = 0; i < records.length; i += 500) {
     const chunk = records.slice(i, i + 500);
     const r = await feishuApi(token, 'POST', `/open-apis/bitable/v1/apps/${appToken}/tables/${tableId}/records/batch_create`, {
@@ -222,6 +251,8 @@ export async function writeNotesToFeishu(settings, items) {
   if (!records.length) return { count: 0, appToken, tableId: noteTableId, url, error: '没有可写入的笔记记录' };
 
   let written = 0;
+  // 写入前先确保表的字段齐全（缺什么自动补什么）
+  await ensureTableFields(token, appToken, noteTableId, NOTE_FIELDS);
   for (let i = 0; i < records.length; i += 500) {
     const chunk = records.slice(i, i + 500);
     const r = await feishuApi(token, 'POST', `/open-apis/bitable/v1/apps/${appToken}/tables/${noteTableId}/records/batch_create`, {
