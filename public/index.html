@@ -292,6 +292,19 @@
           </div>
 
           <div class="card">
+            <h3>飞书多维表格</h3>
+            <p class="hint">在千帆选品页点插件「写入飞书」按钮，把勾选的商品一键写入飞书多维表格。首次写入会自动建表（商品ID/名称/价格/图片/链接等字段），之后直接追加行。</p>
+            <p class="hint">需要：飞书开放平台自建应用（应用凭证 App ID / App Secret），并给应用开通<b>多维表格读写</b>权限（bitable:app 等）后发布新版本。</p>
+            <div class="sf-field"><label for="setFeishuId">飞书 App ID</label><input id="setFeishuId" placeholder="cli_xxxxxxxxxxxxxxxx" autocomplete="off" /></div>
+            <div class="sf-field"><label for="setFeishuSecret">飞书 App Secret</label><input id="setFeishuSecret" type="password" placeholder="应用密钥（保存后不回显明文）" autocomplete="new-password" /></div>
+            <div class="row">
+              <button id="feishuStatusBtn" class="secondary">查看飞书状态</button>
+              <span id="feishuStatusMsg" class="msg"></span>
+            </div>
+            <div id="feishuStatusBox" class="hint" style="display:none"></div>
+          </div>
+
+          <div class="card">
             <h3>数据管理</h3>
             <p class="hint">清除「发布数据」会删除已采集的商品、发布任务队列、发布历史与已上传图片；<b>不影响</b> AI 配置与账号设置。</p>
             <div class="row">

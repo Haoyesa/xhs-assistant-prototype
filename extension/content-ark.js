@@ -321,6 +321,7 @@ function buildPanel() {
           <button class="xh-btn xh-export" id="xhExport">导出CSV</button>
         </div>
         <button class="xh-btn xh-copyall" id="xhCopyLinks">复制选中商品链接</button>
+        <button class="xh-btn xh-feishu" id="xhFeishu">写入飞书</button>
       </div>
       <details class="xh-manual">
         <summary>手动添加 / 批量粘贴</summary>
@@ -552,6 +553,44 @@ function buildPanel() {
     } else {
       status('复制失败，请手动复制');
       toast('复制失败', 'err');
+    }
+  });
+
+  // 写入飞书：把勾选商品一键写入飞书多维表格（后端自动建表/复用；凭证在桌面端设置页配置）
+  $('xhFeishu').addEventListener('click', async () => {
+    const items = window.__xhItems || [];
+    const picked = [...$('xhList').querySelectorAll('input[type=checkbox]:checked')]
+      .map((c) => items[+c.dataset.i]).filter(Boolean)
+      .filter((p) => p.productName || p.itemId || p.price);
+    if (!picked.length) { status('请先勾选商品（或用手动添加）。'); return; }
+    const btn = $('xhFeishu');
+    const oldLabel = btn.textContent;
+    btn.disabled = true; btn.textContent = '写入中…';
+    dot('wait'); status('正在写入飞书… ' + picked.length + ' 条');
+    try {
+      const r = await window.XhsCommon.xhsFetch('/api/feishu/export', { method: 'POST', body: { items: picked } });
+      if (!r.ok) {
+        const err = (r.data && (r.data.msg || r.data.error)) || ('HTTP ' + r.status);
+        if (/feishu-not-configured/.test(err)) {
+          status('未配置飞书凭证：请先到桌面端「设置 → 飞书多维表格」填写 App ID / Secret');
+          toast('请先在桌面端设置页配置飞书凭证', 'err');
+        } else {
+          status('写入失败：' + err);
+          toast('飞书写入失败：' + err, 'err');
+        }
+        dot('bad');
+        return;
+      }
+      const d = r.data || {};
+      dot('ok');
+      status(`已写入飞书 ${d.count ?? picked.length} 条` + (d.url ? `，表格：${d.url}` : ''));
+      toast(`已写入飞书 ${d.count ?? picked.length} 条` + (d.url ? '，点击查看表格' : ''), 'ok');
+    } catch (e) {
+      dot('bad'); status('写入失败：' + e.message);
+      toast('飞书写入失败：' + e.message, 'err');
+    } finally {
+      btn.disabled = false;
+      btn.textContent = oldLabel;
     }
   });
 

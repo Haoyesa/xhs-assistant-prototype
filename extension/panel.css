@@ -73,6 +73,8 @@
 /* 批量「复制选中商品链接」按钮：整行宽度的次级按钮 */
 .xh-btn.xh-copyall { background: #1f2733 !important; color: #cdd5e0 !important; font-weight: 500 !important; border: 1px solid #2a2f37 !important; margin-top: 0 !important; }
 .xh-btn.xh-copyall:hover { filter: brightness(1.12) !important; background: #29313d !important; }
+.xh-btn.xh-feishu { background: #14344b !important; color: #5ec8ff !important; font-weight: 500 !important; border: 1px solid #1e4a66 !important; margin-top: 8px !important; }
+.xh-btn.xh-feishu:hover { filter: brightness(1.15) !important; background: #1a425e !important; }
 .xh-clear { display: inline-block !important; margin: 2px 0 6px !important; font-size: 11px !important; color: #4f8cff !important; cursor: pointer !important; text-decoration: none !important; }
 
 .xh-manual { font-size: 12px !important; color: #9aa3b2 !important; }

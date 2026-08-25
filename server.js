@@ -10,6 +10,7 @@ import { AsyncLocalStorage } from 'node:async_hooks';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { scrapeQianfanProducts } from './qianfan-scraper.js';
 import { downloadOne, downloadToLocal, primeImages } from './image-util.js';
+import { ensureFeishuBitable, writeProductsToFeishu, feishuTableUrl } from './feishu.js';
 // 门禁决策（autoSubmit / 频率 / 账号配额）抽到 electron/gating.mjs，单独混淆以提升逆向门槛
 import { resolvedPlan, planIntervalSeconds, effectiveAutoSubmit, maxAccounts } from './electron/gating.mjs';
 import { SENSITIVE_CATEGORIES } from './sensitive-words.mjs';
@@ -166,7 +167,7 @@ function corsHeaders() {
 }
 
 // 敏感配置字段：仅在受信来源（回环页面/本机扩展）返回明文；跨域来源（小红书页面/隐私上下文 null）返回掩码。
-const SECRET_SETTING_KEYS = ['aiApiKey', 'imgAiApiKey', 'bitApiKey'];
+const SECRET_SETTING_KEYS = ['aiApiKey', 'imgAiApiKey', 'bitApiKey', 'feishuAppSecret'];
 const MASK = '******';
 function isTrustedSettingOrigin(req) {
   const origin = req && req.headers && req.headers.origin;
@@ -336,6 +337,11 @@ const DEFAULT_SETTINGS = {
   singleProductRepeatLimit: 0,
   imagesRoot: '',
   csvExportDir: '', // 商品 CSV 导出目录；空则默认 数据目录/csv
+  // 飞书多维表格（千帆商品一键写入飞书）：凭证 + 自动建表后回填的表格定位
+  feishuAppId: '',
+  feishuAppSecret: '',
+  feishuAppToken: '',  // 已创建/复用的多维表格 app_token（首次导出自动建表后回填）
+  feishuTableId: '',   // 已创建/复用的数据表 table_id
 };
 
 // 下一篇发布时间由浏览器插件通过 /api/ext/schedule 上报维护
@@ -1277,6 +1283,40 @@ const server = http.createServer((req, res) => reqScope.run(req, async () => {
         return sendJSON(res, 500, { ok: false, msg: '写入文件失败：' + e.message });
       }
       return sendJSON(res, 200, { ok: true, path: file, count: rows.length });
+    }
+    // 飞书多维表格：写入状态（配置是否完整、已建表格定位），供设置页与插件面板展示
+    if (p === '/api/feishu/status' && method === 'GET') {
+      const s = await readStore(stores.settings, {});
+      const settings = { ...DEFAULT_SETTINGS, ...s };
+      return sendJSON(res, 200, {
+        ok: true,
+        configured: !!(settings.feishuAppId && settings.feishuAppSecret),
+        appToken: settings.feishuAppToken || '',
+        tableId: settings.feishuTableId || '',
+        url: feishuTableUrl(settings.feishuAppToken),
+      });
+    }
+    // 飞书多维表格：把千帆采集的商品数据写入（自动建表/复用；手动一键触发）
+    if (p === '/api/feishu/export' && method === 'POST') {
+      try {
+        const body = await readBody(req);
+        const items = Array.isArray(body.items) ? body.items.slice(0, 5000) : [];
+        if (!items.length) return sendJSON(res, 400, { ok: false, error: '没有要写入飞书的商品数据' });
+        const s = await readStore(stores.settings, {});
+        const settings = { ...DEFAULT_SETTINGS, ...s };
+        if (!settings.feishuAppId || !settings.feishuAppSecret) {
+          return sendJSON(res, 400, { ok: false, error: 'feishu-not-configured', msg: '请先在设置页填写飞书 App ID 与 App Secret' });
+        }
+        const r = await writeProductsToFeishu(settings, items);
+        // 首次自动建表后回填定位，避免下次重复建表
+        if (r.appToken && r.tableId && !(s.feishuAppToken && s.feishuTableId)) {
+          await writeStore(stores.settings, { ...DEFAULT_SETTINGS, ...s, feishuAppToken: r.appToken, feishuTableId: r.tableId });
+        }
+        return sendJSON(res, 200, { ok: true, count: r.count, url: r.url, appToken: r.appToken, tableId: r.tableId });
+      } catch (err) {
+        console.error('[feishu/export]', err);
+        return sendJSON(res, 500, { ok: false, error: err.message || '飞书写入失败' });
+      }
     }
     // 拉待发笔记：扩展在创作者页取一条去填充（标记 picked 防重复）
     if (p === '/api/ext/next' && method === 'GET') {

@@ -585,6 +585,9 @@ async function loadSettings() {
   $('#setInterval').value = s.userPublishIntervalSeconds ?? s.publishIntervalSeconds ?? 500;
   $('#setRandomDelay').value = s.userPublishIntervalRandomDelaySeconds ?? s.publishIntervalRandomDelaySeconds ?? 200;
   $('#setRepeat').value = s.singleProductRepeatLimit ?? 0;
+  $('#setFeishuId').value = s.feishuAppId || '';
+  // 密钥不回显明文：有值则显示占位掩码，保存时后端遇掩码自动保留原值
+  $('#setFeishuSecret').value = s.feishuAppSecret ? '******' : '';
   $('#setTitlePrompt').value = s.titlePrompt || '';
   $('#setContentPrompt').value = s.contentPrompt || '';
   $('#setTopicsPrompt').value = s.topicsPrompt || '';
@@ -609,10 +612,42 @@ $('#saveSetBtn').addEventListener('click', async () => {
     publishIntervalSeconds: +$('#setInterval').value, publishIntervalRandomDelaySeconds: +$('#setRandomDelay').value, singleProductRepeatLimit: +$('#setRepeat').value,
     titlePrompt: $('#setTitlePrompt').value, contentPrompt: $('#setContentPrompt').value, topicsPrompt: $('#setTopicsPrompt').value,
     imagesRoot: $('#setImagesRoot').value, csvExportDir: $('#setCsvExportDir').value,
+    feishuAppId: $('#setFeishuId').value.trim(),
+    feishuAppSecret: $('#setFeishuSecret').value.trim(), // 掩码 '******' 时后端保留原值
   });
   $('#setMsg').textContent = r && r.ok ? '✅ 已保存' : '❌ 保存失败：' + ((r && (r.detail || r.error)) || '后端未连接');
   setTimeout(() => ($('#setMsg').textContent = ''), 3000);
 });
+
+// 飞书状态：配置是否完整 + 已建表格定位（供设置页确认与「打开表格」）
+async function refreshFeishuStatus() {
+  const msg = $('#feishuStatusMsg');
+  const box = $('#feishuStatusBox');
+  if (!msg) return;
+  msg.textContent = '查询中…';
+  try {
+    const r = await callApi('GET', '/api/feishu/status');
+    if (!r || r.ok === false) { msg.textContent = '❌ 查询失败'; return; }
+    msg.textContent = '';
+    box.style.display = '';
+    let html = '';
+    if (r.configured) {
+      html += '<span style="color:#3ddc84">✅ 凭证已配置</span>';
+      if (r.appToken) {
+        html += `<br/>已建表格：<a href="${esc(r.url)}" target="_blank" rel="noopener">${esc(r.url)}</a>`;
+      } else {
+        html += '<br/>尚未建表：在千帆选品页点「写入飞书」时会自动创建多维表格。';
+      }
+    } else {
+      html += '<span style="color:#ff9d5c">⚠️ 未配置飞书凭证</span> —— 填写上方 App ID / App Secret 并保存后再来查询。';
+    }
+    box.innerHTML = html;
+  } catch (e) {
+    msg.textContent = '❌ 查询失败：' + e.message;
+  }
+}
+const feishuStatusBtn = $('#feishuStatusBtn');
+if (feishuStatusBtn) feishuStatusBtn.addEventListener('click', refreshFeishuStatus);
 
 $('#clearDataBtn').addEventListener('click', async () => {
   if (!confirm('确定清除全部发布数据吗？\n将删除：素材库、发布任务、发布历史、已上传图片。\n（AI 配置与账号设置保留）')) return;
