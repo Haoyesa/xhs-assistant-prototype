@@ -114,6 +114,25 @@
     return '';
   }
 
+  // 过滤无效锚点：用户主页/直播/店铺/官方等非笔记商品链接，或包着「小尺寸图」（头像/icon/二维码）
+  function isJunkAnchor(a) {
+    const href = a.getAttribute('href') || '';
+    // 1) 非笔记/商品相关链接直接排除（user/live/shop/brand/topic/official/board 等）
+    if (/\/(user|live|shop|brand|topic|official|board|discover\/null)\//.test(href)) return true;
+    // 2) 锚点自身含图片：若最大图 < 60px（头像/icon 几乎都 24~48，封面通常 100+）则视为头像/icon
+    const imgs = a.querySelectorAll('img');
+    if (imgs.length) {
+      let maxDim = 0;
+      imgs.forEach((im) => {
+        const w = im.naturalWidth || im.offsetWidth || parseFloat(im.getAttribute('width') || 0) || 0;
+        const h = im.naturalHeight || im.offsetHeight || parseFloat(im.getAttribute('height') || 0) || 0;
+        maxDim = Math.max(maxDim, w, h);
+      });
+      if (maxDim < 60) return true;
+    }
+    return false;
+  }
+
   // 抽店铺名：尝试「店铺:xx」格式；否则取卡片末尾非数字短文本作为兜底
   function pickTitleShop(card) {
     const txt = clean(card.innerText || '');
@@ -196,6 +215,7 @@
       if (/(explore|search_result)\//.test(href) && !/(item|goods)\//.test(href)) type = 'note';
       else if (/(item|goods)\//.test(href) || /\/mall/.test(href)) type = 'product';
       if (!type) continue;
+      if (isJunkAnchor(a)) continue; // 头像/icon/用户主页等小图链接直接跳过
       if (PAGE_TYPE === 'note' && type === 'product') continue; // 探索页只认笔记
       const card = nearestCard(a, 8);
       if (!card) continue;
