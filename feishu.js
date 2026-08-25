@@ -82,8 +82,12 @@ async function feishuApi(token, method, apiPath, body) {
 }
 
 // 由 app_token 拼出多维表格网页地址（用于前端展示「打开表格」链接）
-export function feishuTableUrl(appToken) {
-  return appToken ? `https://feishu.cn/base/${appToken}` : '';
+// 由 app_token (+ table_id) 拼出多维表格网页地址（用于前端展示「打开表格」链接）
+// 带 tableId 时直接落到目标表，避免飞书网页默认跳到「数据表」让用户看到空表
+export function feishuTableUrl(appToken, tableId) {
+  if (!appToken) return '';
+  const base = `https://feishu.cn/base/${appToken}`;
+  return tableId ? `${base}?table=${tableId}` : base;
 }
 
 // 确保多维表格已就绪：已配置 appToken+tableId 则复用；否则自动创建（多维表格→数据表含全部字段）。
@@ -160,10 +164,8 @@ export async function writeProductsToFeishu(settings, items) {
     });
     written += (r.data && Array.isArray(r.data.records) ? r.data.records.length : chunk.length);
   }
-  return { count: written, appToken, tableId, url };
+  return { count: written, appToken, tableId, url: feishuTableUrl(appToken, tableId) };
 }
-
-// 确保「热点笔记」数据表就绪：复用已建的多维表格 App（appToken），在其下建/复用「热点笔记」表。
 // 返回 { appToken, noteTableId, url }
 export async function ensureFeishuNoteTable(settings) {
   const appId = (settings.feishuAppId || '').trim();
@@ -189,7 +191,7 @@ export async function ensureFeishuNoteTable(settings) {
     noteTableId = tbl.data && tbl.data.table_id;
     if (!noteTableId) throw new Error('飞书创建「热点笔记」表失败：响应缺少 table_id');
   }
-  return { appToken, noteTableId, url, created: true };
+  return { appToken, noteTableId, url: feishuTableUrl(appToken, noteTableId), created: true };
 }
 
 // 把前台采集的热点笔记批量写入飞书「热点笔记」表
@@ -226,5 +228,5 @@ export async function writeNotesToFeishu(settings, items) {
     });
     written += (r.data && Array.isArray(r.data.records) ? r.data.records.length : chunk.length);
   }
-  return { count: written, appToken, tableId: noteTableId, url };
+  return { count: written, appToken, tableId: noteTableId, url: feishuTableUrl(appToken, noteTableId) };
 }

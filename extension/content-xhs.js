@@ -32,23 +32,54 @@
     return n >= 10000 ? (Math.round((n / 10000) * 10) / 10) + '万' : String(Math.round(n));
   }
 
-  // 卡片文本里按关键词抓数值（用于赞/收藏/评论/销量等）：如「赞 1.2万」「已售 3万」
-  function pickCount(card, keywords) {
+  // 从卡片抽四个互动数（赞/藏/评/转）。
+  // 策略：先尝试「关键词 + 数字」模式（如「赞 1.2万」「收藏 224」）；
+  //       失败时按位置启发：找卡片底部所有「短数字 token」（如 "224"、"1.2万"、"9+"），
+  //       按出现顺序映射到 [赞, 藏, 评, 转]（小红书卡片底部常见顺序）。
+  // 返回 { likes, collects, comments, shares }
+  function pickInteractions(card) {
+    const out = { likes: '', collects: '', comments: '', shares: '' };
     const txt = clean(card.innerText || '');
-    if (!txt) return '';
-    for (const kw of keywords) {
-      const re = new RegExp(kw + '\\s*[:：]?\\s*([\\d.]+\\s*[万wWkK]?)');
-      const m = txt.match(re);
-      if (m) return toCount(m[1]);
+    if (!txt) return out;
+    // 1) 关键词匹配（最稳）
+    const keywordMap = [
+      { key: 'likes', kws: ['点赞', '获赞', '赞'] },
+      { key: 'collects', kws: ['收藏', '藏'] },
+      { key: 'comments', kws: ['评论', '留言'] },
+      { key: 'shares', kws: ['转发', '分享'] },
+    ];
+    for (const { key, kws } of keywordMap) {
+      for (const kw of kws) {
+        const re = new RegExp(kw + '\\s*[:：]?\\s*(\\d+(?:\\.\\d+)?\\s*[万wWkK]?)');
+        const m = txt.match(re);
+        if (m) { out[key] = toCount(m[1]); break; }
+      }
     }
-    return '';
+    // 2) 位置兜底：抓所有「短数字」按出现顺序映射到 4 个槽位（未填的）
+    const shortNums = [...txt.matchAll(/\b(\d+(?:\.\d+)?[万wWkK]?|\d+\+)\b/g)].map((m) => toCount(m[1]));
+    if (shortNums.length) {
+      const slots = ['likes', 'collects', 'comments', 'shares'];
+      let idx = 0;
+      for (const s of slots) {
+        if (!out[s] && shortNums[idx]) { out[s] = shortNums[idx]; idx++; }
+      }
+    }
+    return out;
   }
 
-  // 从卡片容器抽价格：¥ 或 元 后数字；无则 ''
+  // 抽价格：¥/￥/元 后数字
   function pickPrice(card) {
     const txt = clean(card.innerText || '');
     const m = txt.match(/[¥￥]\s*([\d,]+\.?\d*)/) || txt.match(/([\d,]+\.?\d*)\s*元/);
     return m ? m[1].replace(/,/g, '') : '';
+  }
+
+  // 抽销量/已售（商品专用）
+  function pickSales(card) {
+    const txt = clean(card.innerText || '');
+    const m = txt.match(/(?:已售|销量|月售)\s*[:：]?\s*(\d+(?:\.\d+)?\s*[万wWkK]?)/);
+    if (m) return toCount(m[1]);
+    return '';
   }
 
   // 向上找「最近的可读卡片容器」：含图 + 文本量适中（排除导航/页眉/整页壳）
@@ -83,6 +114,14 @@
     return '';
   }
 
+  // 抽店铺名：尝试「店铺:xx」格式；否则取卡片末尾非数字短文本作为兜底
+  function pickTitleShop(card) {
+    const txt = clean(card.innerText || '');
+    const m = txt.match(/店铺\s*[:：]?\s*([^\s\n]{2,20})/);
+    if (m) return m[1];
+    return '';
+  }
+
   // 抽标题：卡片内最长的非按钮/链接纯文本（2~60 字）
   function pickTitle(card) {
     let best = '';
@@ -113,21 +152,22 @@
         itemId: (link.match(/\/(?:item|goods)\/([\w-]+)/) || [])[1] || '',
         productName: pickTitle(card),
         price: pickPrice(card),
-        sales: pickCount(card, ['已售', '销量', '月销']) || pickCount(card, ['人付款']),
-        shop: pickCount(card, ['店铺']) ? '' : (card.innerText.match(/店铺[:：]\s*([^\s\n]{2,20})/) || [])[1] || '',
+        sales: pickSales(card),
+        shop: pickTitleShop(card),
         image,
         link,
       };
     }
+    const ia = pickInteractions(card);
     return {
       type: 'note',
       noteId: (link.match(/\/(?:explore|search_result)\/([\w-]+)/) || [])[1] || '',
       title: pickTitle(card),
       author: (card.innerText.match(/(?:作者|by)[:：]?\s*([^\s\n]{2,20})/) || [])[1] || '',
-      likes: pickCount(card, ['赞', '点赞']) || pickCount(card, ['获赞']),
-      collects: pickCount(card, ['收藏', '藏']),
-      comments: pickCount(card, ['评论', '留言']),
-      shares: pickCount(card, ['转发', '分享']),
+      likes: ia.likes,
+      collects: ia.collects,
+      comments: ia.comments,
+      shares: ia.shares,
       image,
       link,
     };
