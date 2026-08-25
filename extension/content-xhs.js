@@ -126,6 +126,12 @@
       if (/^data:image\/(gif|png);base64,(R0lGOD|iVBOR)/.test(src)) return false; // 1x1 占位
       return src.length > 10;
     });
+    // 取「尺寸最大」的图（封面通常 100+，头像 24~48），避免 DOM 顺序里头像在前时抽到小头像
+    imgs.sort((a, b) => {
+      const sa = (a.naturalWidth || a.offsetWidth || 0) + (a.naturalHeight || a.offsetHeight || 0);
+      const sb = (b.naturalWidth || b.offsetWidth || 0) + (b.naturalHeight || b.offsetHeight || 0);
+      return sb - sa;
+    });
     return imgs[0] || null;
   }
 
@@ -243,6 +249,8 @@
       const card = nearestCard(a, 8);
       if (!card) continue;
       const t = readCard(card, type);
+      // 必须带「详情链接」才是有效卡片：头像/icon/用户主页等容器无 explore/item/goods/search_result 链接
+      if (!t.link) continue;
       if (type === 'product' ? (t.productName || t.price) : (t.title || t.image || t.link)) push(t);
       if (out.length >= 120) break;
     }
