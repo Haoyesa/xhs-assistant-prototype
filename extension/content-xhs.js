@@ -397,6 +397,163 @@
     return out;
   }
 
+  // ============ 弹窗采集（模拟真人点击卡片，在当前页浮层内抓取，不跳转不扫码）============
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  // 真实鼠标事件序列（穿透 React 合成事件）；手动 dispatch 的 click 不会触发 <a> 默认导航
+  function realClickInPage(el) {
+    try {
+      const r = el.getBoundingClientRect();
+      const x = Math.max(1, Math.min(window.innerWidth - 1, r.left + r.width / 2));
+      const y = Math.max(1, Math.min(window.innerHeight - 1, r.top + r.height / 2));
+      const opt = { bubbles: true, cancelable: true, view: window, clientX: x, clientY: y, button: 0, buttons: 1, pointerId: 1, pointerType: 'mouse', isPrimary: true, screenX: x, screenY: y };
+      for (const t of ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click']) {
+        const ev = t.startsWith('pointer') ? new PointerEvent(t, opt) : new MouseEvent(t, opt);
+        el.dispatchEvent(ev);
+      }
+      return true;
+    } catch (e) { return false; }
+  }
+  // 检测笔记详情弹窗（页面不重新加载的浮层）：取尺寸最大的候选容器
+  function detectModal() {
+    const sels = [
+      '[class*="note-detail-mask"]', '[class*="note-detail"]', '[class*="detail-mask"]',
+      '[class*="noteModal"]', '[class*="note-modal"]', '.detail-container',
+      '[class*="modal"]', '[class*="dialog"]', '[class*="overlay"]', '[class*="popup"]',
+    ];
+    let best = null, bestScore = 0;
+    for (const sel of sels) {
+      for (const el of document.querySelectorAll(sel)) {
+        const h = el.offsetHeight || el.scrollHeight || 0;
+        const w = el.offsetWidth || el.scrollWidth || 0;
+        if (h < 200 || w < 200) continue;
+        const score = h * w;
+        if (score > bestScore) { bestScore = score; best = el; }
+      }
+    }
+    return best;
+  }
+  async function waitForModal(timeout) {
+    const t0 = Date.now();
+    while (Date.now() - t0 < timeout) {
+      const m = detectModal();
+      if (m) return m;
+      await sleep(200);
+    }
+    return null;
+  }
+  function closeModal() {
+    const closeSel = '[class*="close"], [class*="Cancel"], button[aria-label*="关闭"], [aria-label*="close"]';
+    for (const el of document.querySelectorAll(closeSel)) {
+      const label = (el.getAttribute('aria-label') || el.textContent || '');
+      if (el.offsetHeight > 0 && /关|close|cancel/i.test(label)) { try { el.click(); } catch {} return true; }
+    }
+    const mask = detectModal();
+    if (mask && mask.parentElement) { try { mask.parentElement.click(); } catch {} return true; }
+    return false;
+  }
+  // 从弹窗 DOM 抓取详情（标题/正文/互动数/图片/发布时间）
+  function readModalDetail(modal) {
+    const out = { title: '', body: '', likes: '', collects: '', comments: '', shares: '', cover: '', bodyImages: [], publishTime: '' };
+    try {
+      let coverW = 0;
+      for (const im of modal.querySelectorAll('img')) {
+        const src = im.getAttribute('data-xhs-img-src') || im.getAttribute('data-src') || im.getAttribute('src') || '';
+        if (!src || src.length < 20 || isAvatar(src)) continue;
+        const w = im.naturalWidth || im.offsetWidth || 0, h = im.naturalHeight || im.offsetHeight || 0;
+        out.bodyImages.push(src);
+        if (w * h > coverW) { coverW = w * h; out.cover = src; }
+      }
+      let titleBest = '', bodyBest = '';
+      const walk = (n) => {
+        if (n.nodeType === 3) {
+          const v = clean(n.textContent);
+          if (v.length >= 4 && v.length <= 60 && v.length > titleBest.length) titleBest = v;
+          if (v.length > bodyBest.length && v.length <= 2000) bodyBest = v;
+        } else if (n.nodeType === 1) {
+          const tag = n.tagName.toLowerCase();
+          if (tag === 'script' || tag === 'style' || tag === 'img' || tag === 'svg') return;
+          n.childNodes.forEach(walk);
+        }
+      };
+      walk(modal);
+      out.title = titleBest;
+      out.body = bodyBest.slice(0, 1000);
+      const txt = clean(modal.innerText || '');
+      const countMap = { 点赞: 'likes', 赞: 'likes', 收藏: 'collects', 藏: 'collects', 评论: 'comments', 回复: 'comments', 转发: 'shares', 分享: 'shares' };
+      for (const [word, key] of Object.entries(countMap)) {
+        let m = txt.match(new RegExp('(\\d+(?:\\.\\d+)?\\s*[万wWkK]?)\\s*' + word));
+        if (!m) m = txt.match(new RegExp(word + '\\s*(\\d+(?:\\.\\d+)?\\s*[万wWkK]?)'));
+        if (m) out[key] = toCount(m[1].trim());
+      }
+      const nums = [];
+      const tw = document.createTreeWalker(modal, NodeFilter.SHOW_TEXT, null);
+      let nd;
+      while ((nd = tw.nextNode())) { const v = clean(nd.textContent); if (/^[\d.]+[万wWkK]?$/.test(v)) nums.push(toCount(v)); }
+      const slots = ['likes', 'collects', 'comments', 'shares'];
+      let idx = 0;
+      for (const s of slots) { if (!out[s] && nums[idx]) { out[s] = nums[idx]; idx++; } }
+      const pm = txt.match(/(20\d{2})[-/年.](\d{1,2})[-/月.](\d{1,2})日?\s*(\d{1,2})?:?(\d{1,2})?/);
+      if (pm) { const p = (n) => String(n || 0).padStart(2, '0'); out.publishTime = `${pm[1]}-${p(pm[2])}-${p(pm[3])} ${p(pm[4])}:${p(pm[5] || '00')}`; }
+      else { const rel = txt.match(/(\d+)\s*(分钟|小时|天|周|个月)前/); if (rel) { const n = +rel[1]; const ms = { '分钟': 60000, '小时': 3600000, '天': 86400000, '周': 7 * 86400000, '个月': 30 * 86400000 }[rel[2]] || 0; if (ms) { const d = new Date(Date.now() - n * ms); const p = (x) => String(x).padStart(2, '0'); out.publishTime = `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`; } } }
+    } catch (e) { /* 抓取失败不影响主流程 */ }
+    return out;
+  }
+  async function postDetailCache(p, det, stateDet) {
+    const bodyImages = Array.isArray(det.bodyImages) ? det.bodyImages : [];
+    try {
+      await window.XhsCommon.xhsFetch('/api/feishu/note-detail', {
+        method: 'POST',
+        body: {
+          noteId: p.noteId,
+          bodyImages: bodyImages.slice(0, 30),
+          publishTime: det.publishTime || stateDet.publishTime || '',
+          title: det.title || stateDet.title || '',
+          cover: det.cover || stateDet.cover || '',
+          body: det.body || stateDet.body || '',
+          likes: det.likes || stateDet.likes || '',
+          collects: det.collects || stateDet.collects || '',
+          comments: det.comments || stateDet.comments || '',
+          shares: det.shares || stateDet.shares || '',
+        },
+      }).catch(() => {});
+    } catch (e) {}
+  }
+  // 主流程：逐个点击卡片 → 弹窗抓取 → 关闭 → 下一篇；弹窗未出现则就地补全
+  async function collectByModal(picked, pageState) {
+    let okCount = 0, modalCount = 0;
+    for (let i = 0; i < picked.length; i++) {
+      const p = picked[i];
+      let aEl = null;
+      for (const a of $$('a[href]')) {
+        const href = a.getAttribute('href') || '';
+        if (href.includes(p.noteId)) { aEl = a; break; }
+      }
+      const stateDet = pageState[p.noteId] || {};
+      if (!aEl) {
+        const enriched = readCardDetail(document.body, { ...p, ...stateDet });
+        await postDetailCache(p, enriched, stateDet);
+        okCount++; continue;
+      }
+      const card = nearestCard(aEl, 8);
+      closeModal(); await sleep(350);
+      realClickInPage(aEl);
+      const modal = await waitForModal(5000);
+      if (modal) {
+        modalCount++;
+        await sleep(1200 + Math.floor(Math.random() * 800)); // 等弹窗渲染加载
+        const det = readModalDetail(modal);
+        await postDetailCache(p, { ...det, ...stateDet }, stateDet);
+        closeModal();
+      } else {
+        const enriched = readCardDetail(card || document.body, { ...p, ...stateDet });
+        await postDetailCache(p, enriched, stateDet);
+      }
+      okCount++;
+      await sleep(700 + Math.floor(Math.random() * 600)); // 真人节奏
+    }
+    return { okCount, modalCount };
+  }
+
   // ---- 面板 ----
   function buildPanel() {
     if (!document.getElementById('xhs-helper-css')) {
@@ -428,7 +585,7 @@
           <div class="xh-list" id="xhList"></div>
           <div class="xh-btnrow">
             <button class="xh-btn xh-export" id="xhFeishu">写入飞书</button>
-            <button class="xh-btn" id="xhDetail" title="不跳转详情页，避免扫码风控">补全详情（当前页）</button>
+            <button class="xh-btn" id="xhDetail" title="模拟真人点击卡片，在当前页弹窗内抓取详情（不跳转不扫码）">弹窗采集（真人点击）</button>
             <button class="xh-btn" id="xhCopy">复制链接</button>
           </div>
         </div>
@@ -551,53 +708,23 @@
       status(ok ? `已复制 ${picked.length} 条链接` : '复制失败，请手动复制');
     });
 
-    // 补全详情：在当前页就地深度提取选中卡片，不跳转任何详情页，彻底避免扫码风控。
-    // 优先从页面初始数据脚本解析真实字段，再对每张卡片做 DOM 二次扫描补全，最后写入后端缓存。
+    // 弹窗采集：模拟真人点击卡片，在当前页浮层内抓取详情（不跳转、不触发扫码），
+    // 优先用弹窗真实数据；弹窗未出现（如 web 未登录）则回退到当前页就地补全。
     $id('xhDetail').addEventListener('click', async () => {
       const picked = [...$id('xhList').querySelectorAll('input[type=checkbox]:checked')]
         .map((c) => items[+c.dataset.i]).filter(Boolean)
         .filter((p) => p.type === 'note' && p.noteId);
-      if (!picked.length) { status('请先勾选要补全详情的笔记。'); return; }
+      if (!picked.length) { status('请先勾选要采集详情的笔记。'); return; }
       const btn = $id('xhDetail');
       const old = btn.textContent;
-      btn.disabled = true; btn.textContent = '补全中…';
-      dot('wait'); status(`正在当前页补全详情 0/${picked.length}（不跳转，避免扫码）…`);
+      btn.disabled = true; btn.textContent = '采集中…';
+      dot('wait'); status(`弹窗采集中 0/${picked.length}（真人点击，不跳转）…`);
       const pageState = extractPageStateDetails();
-      let okCount = 0;
-      for (let i = 0; i < picked.length; i++) {
-        const p = picked[i];
-        try {
-          let card = null;
-          for (const a of $$('a[href]')) {
-            const href = a.getAttribute('href') || '';
-            if (href.includes(p.noteId)) { card = nearestCard(a, 8); break; }
-          }
-          const stateDet = pageState[p.noteId] || {};
-          let enriched = { ...p, ...stateDet };
-          if (card) enriched = readCardDetail(card, enriched);
-          await window.XhsCommon.xhsFetch('/api/feishu/note-detail', {
-            method: 'POST',
-            body: {
-              noteId: p.noteId,
-              bodyImages: Array.isArray(stateDet.bodyImages) ? stateDet.bodyImages : [],
-              publishTime: enriched.publishTime || '',
-              title: enriched.title || '',
-              cover: enriched.image || stateDet.cover || '',
-              body: stateDet.body || '',
-              likes: enriched.likes || '',
-              collects: enriched.collects || '',
-              comments: enriched.comments || '',
-              shares: enriched.shares || '',
-            },
-          }).catch(() => {});
-          okCount++;
-        } catch (e) { /* 单个失败继续 */ }
-        status(`正在当前页补全详情 ${i + 1}/${picked.length}（成功 ${okCount}）…`);
-      }
+      const { okCount, modalCount } = await collectByModal(picked, pageState);
       btn.disabled = false; btn.textContent = old;
       dot('ok');
-      status(`详情补全完成：${okCount}/${picked.length} 篇（写入飞书时自动带上）`);
-      toast(`详情补全完成 ${okCount}/${picked.length} 篇，写入飞书时带上`, 'ok');
+      status(`采集完成：${okCount}/${picked.length} 篇（弹窗抓取 ${modalCount} 篇，写入飞书时自动带上）`);
+      toast(`采集完成 ${okCount}/${picked.length} 篇（弹窗 ${modalCount}）`, 'ok');
     });
 
     // 首次自动识别
