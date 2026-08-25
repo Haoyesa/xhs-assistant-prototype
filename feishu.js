@@ -43,18 +43,27 @@ export const NOTE_FIELDS = [
   { field_name: '关键词', type: 1 },
   { field_name: '封面图', type: 1 },
   { field_name: '正文图片', type: 1 },
+  { field_name: '正文', type: 1 },
   { field_name: '笔记链接', type: 1 },
   { field_name: '采集时间', type: 1 },
 ];
 
-// 详情深采缓存：noteId -> { bodyImages:[], publishTime, title }（内存，进程重启清空，够用）
+// 详情深采缓存：noteId -> { bodyImages, publishTime, title, cover, body, likes, collects, comments, shares }
+// （内存，进程重启清空，够用）
 const detailCache = new Map();
 export function saveNoteDetail(d) {
   if (!d || !d.noteId) return;
+  const cur = detailCache.get(String(d.noteId)) || {};
   detailCache.set(String(d.noteId), {
-    bodyImages: Array.isArray(d.bodyImages) ? d.bodyImages : [],
-    publishTime: d.publishTime || '',
-    title: d.title || '',
+    bodyImages: Array.isArray(d.bodyImages) ? d.bodyImages : (cur.bodyImages || []),
+    publishTime: d.publishTime || cur.publishTime || '',
+    title: d.title || cur.title || '',
+    cover: d.cover || cur.cover || '',
+    body: d.body || cur.body || '',
+    likes: d.likes || cur.likes || '',
+    collects: d.collects || cur.collects || '',
+    comments: d.comments || cur.comments || '',
+    shares: d.shares || cur.shares || '',
   });
 }
 export function getNoteDetail(noteId) {
@@ -291,20 +300,21 @@ export async function writeNotesToFeishu(settings, items) {
     // 强制详情链接：头像/icon/用户主页等无 explore/item/goods 链接的条目一律不写
     .filter((it) => it && (it.link || '').trim() && (it.title || '').trim())
     .map((it) => {
-      // 合并详情深采缓存（正文图片/发布时间/标题）
+      // 合并详情深采缓存（详情页抓的字段覆盖卡片级不准的值）
       const det = getNoteDetail(it.noteId || '') || {};
       return {
         fields: {
           笔记标题: String(it.title || det.title || ''),
           作者: String(it.author || ''),
-          点赞: String(it.likes || ''),
-          收藏: String(it.collects || ''),
-          评论: String(it.comments || ''),
-          转发: String(it.shares || ''),
+          点赞: String(it.likes || det.likes || ''),
+          收藏: String(it.collects || det.collects || ''),
+          评论: String(it.comments || det.comments || ''),
+          转发: String(it.shares || det.shares || ''),
           发布时间: String(it.publishTime || det.publishTime || ''),
           关键词: String(it.keyword || ''),
-          封面图: String(it.image || ''),
+          封面图: String(it.image || det.cover || ''),
           正文图片: Array.isArray(det.bodyImages) && det.bodyImages.length ? det.bodyImages.join('\n') : '',
+          正文: String(det.body || ''),
           笔记链接: String(it.link || ''),
           采集时间: ts,
         },
