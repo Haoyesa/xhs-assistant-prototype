@@ -317,7 +317,7 @@ const DEFAULT_SETTINGS = {
   // 比特浏览器本地 API（用于按指纹配置序号 seq 打开/关闭隔离窗口）
   bitApiHost: 'http://127.0.0.1:54345',
   bitApiKey: '',
-  qianfanUrl: 'https://channel.xiaohongshu.com/ark/product/list',
+  qianfanUrl: 'https://ark.xiaohongshu.com/ark/product/list',
   // 千帆爬虫连接已登录 Chrome 的 CDP 远程调试地址（留空则回退 cdp-config.json 的 browserURL，默认 127.0.0.1:9222）
   qianfanChromeUrl: '',
   // 发布设置（对齐原软件）

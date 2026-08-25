@@ -27,20 +27,19 @@
   ],
   "host_permissions": [
     "https://ark.xiaohongshu.com/*",
-    "https://channel.xiaohongshu.com/*",
     "https://pro.xiaohongshu.com/*",
     "https://creator.xiaohongshu.com/*",
     "http://127.0.0.1:5199/*"
   ],
   "content_scripts": [
     {
-      "matches": ["https://ark.xiaohongshu.com/*", "https://channel.xiaohongshu.com/*", "https://pro.xiaohongshu.com/*", "https://creator.xiaohongshu.com/*"],
+      "matches": ["https://ark.xiaohongshu.com/*", "https://pro.xiaohongshu.com/*", "https://creator.xiaohongshu.com/*"],
       "js": ["shadow-patch.js"],
       "run_at": "document_start",
       "world": "MAIN"
     },
     {
-      "matches": ["https://ark.xiaohongshu.com/*", "https://channel.xiaohongshu.com/*", "https://pro.xiaohongshu.com/*"],
+      "matches": ["https://ark.xiaohongshu.com/*", "https://pro.xiaohongshu.com/*"],
       "js": ["common.js", "content-ark.js"],
       "run_at": "document_idle"
     },
