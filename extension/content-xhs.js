@@ -311,7 +311,7 @@
   function extractPageStateDetails() {
     const out = {};
     try {
-      const globs = ['__INITIAL_STATE__', '__INITIAL_SSR_STATE__', '_SSR_HYDRATED_DATA', '__XHS_DATA__', '__NOTE_DATA__'];
+      const globs = ['__INITIAL_STATE__', '__INITIAL_SSR_STATE__', '_SSR_HYDRATED_DATA', '__XHS_DATA__', '__NOTE_DATA__', '__SEARCH_DATA__', '__FEED_DATA__'];
       let data = null;
       for (const k of globs) {
         if (window[k] && typeof window[k] === 'object') { data = window[k]; break; }
@@ -319,38 +319,69 @@
       if (!data) {
         for (const sc of $$('script')) {
           const t = sc.textContent || '';
-          if (!/note|feed|search|explore/i.test(t)) continue;
-          const m = t.match(/window\.__INITIAL_STATE__\s*=\s*({[\s\S]+?});/)
-            || t.match(/window\.__INITIAL_SSR_STATE__\s*=\s*({[\s\S]+?});/)
-            || t.match(/window\._SSR_HYDRATED_DATA\s*=\s*({[\s\S]+?});/);
-          if (m) { try { data = JSON.parse(m[1]); break; } catch {} }
+          if (t.length < 80) continue;
+          const patterns = [
+            /window\.__INITIAL_STATE__\s*=\s*({[\s\S]+?});/,
+            /window\.__INITIAL_SSR_STATE__\s*=\s*({[\s\S]+?});/,
+            /window\._SSR_HYDRATED_DATA\s*=\s*({[\s\S]+?});/,
+            /window\.__XHS_DATA__\s*=\s*({[\s\S]+?});/,
+            /window\.__NOTE_DATA__\s*=\s*({[\s\S]+?});/,
+          ];
+          for (const pat of patterns) {
+            const m = t.match(pat);
+            if (m) { try { data = JSON.parse(m[1]); break; } catch {} }
+          }
+          if (data) break;
         }
       }
       if (!data || typeof data !== 'object') return out;
+      extractNotesFromObj(data, out, new Set(), 0);
+      // 兜底：常见顶层字段
       const feeds = data.notes || data.feeds || data.searchList || data.noteList
         || (data.data && (data.data.items || data.data.notes)) || data.items || [];
       const arr = Array.isArray(feeds) ? feeds : Object.values(feeds);
       for (const it of arr) {
         const note = it.note || it.noteCard || it;
-        if (!note || (!note.noteId && !note.id && !note.note_id)) continue;
-        const id = String(note.noteId || note.id || note.note_id);
-        const coverRaw = note.cover || (note.imageList && note.imageList[0]) || (note.images && note.images[0]) || '';
-        const cover = typeof coverRaw === 'string' ? coverRaw : (coverRaw.url || coverRaw.link || '');
-        const imgs = (note.imageList || note.images || []).slice(0, 30).map((x) => typeof x === 'string' ? x : (x.url || x.link || '')).filter(Boolean);
-        out[id] = {
-          title: String(note.title || note.desc || ''),
-          cover,
-          bodyImages: imgs,
-          body: String(note.desc || note.content || ''),
-          likes: String(note.likes || note.likedCount || (note.interactInfo && note.interactInfo.likedCount) || ''),
-          collects: String(note.collectedCount || note.collects || (note.interactInfo && note.interactInfo.collectedCount) || ''),
-          comments: String(note.comments || note.commentCount || (note.interactInfo && note.interactInfo.commentCount) || ''),
-          shares: String(note.shares || note.shareCount || (note.interactInfo && note.interactInfo.shareCount) || ''),
-          publishTime: String(note.time || note.publishTime || note.createTime || ''),
-        };
+        mergeNote(out, note);
       }
     } catch (e) { /* 解析失败不影响主流程 */ }
     return out;
+  }
+  function mergeNote(out, note) {
+    if (!note || typeof note !== 'object') return;
+    const id = String(note.noteId || note.id || note.note_id || note.note_id || '');
+    if (!id) return;
+    const cur = out[id] || {};
+    const coverRaw = note.cover || note.coverUrl || note.coverUrlDefault || (note.imageList && note.imageList[0]) || (note.images && note.images[0]) || '';
+    const cover = typeof coverRaw === 'string' ? coverRaw : (coverRaw.url || coverRaw.link || coverRaw.fileId || '');
+    const imgs = (note.imageList || note.images || note.imageList || []).slice(0, 30).map((x) => typeof x === 'string' ? x : (x.url || x.link || x.fileId || '')).filter(Boolean);
+    const title = String(note.title || note.desc || cur.title || '');
+    out[id] = {
+      title,
+      cover: cover || cur.cover || '',
+      bodyImages: imgs.length ? imgs : (cur.bodyImages || []),
+      body: String(note.desc || note.content || note.text || cur.body || ''),
+      likes: String(note.likes || note.likedCount || (note.interactInfo && note.interactInfo.likedCount) || cur.likes || ''),
+      collects: String(note.collectedCount || note.collects || (note.interactInfo && note.interactInfo.collectedCount) || cur.collects || ''),
+      comments: String(note.comments || note.commentCount || note.comment_count || (note.interactInfo && note.interactInfo.commentCount) || cur.comments || ''),
+      shares: String(note.shares || note.shareCount || (note.interactInfo && note.interactInfo.shareCount) || cur.shares || ''),
+      publishTime: String(note.time || note.publishTime || note.publish_time || note.createTime || cur.publishTime || ''),
+    };
+  }
+  function extractNotesFromObj(obj, out, seen, depth) {
+    if (!obj || typeof obj !== 'object' || seen.has(obj) || depth > 8) return;
+    seen.add(obj);
+    if (Array.isArray(obj)) {
+      for (const it of obj) extractNotesFromObj(it, out, seen, depth + 1);
+      return;
+    }
+    // 若对象本身像笔记，合并
+    if ((obj.noteId || obj.id || obj.note_id) && (obj.title || obj.desc || obj.imageList || obj.images || obj.cover)) {
+      mergeNote(out, obj);
+    }
+    for (const v of Object.values(obj)) {
+      if (v && typeof v === 'object') extractNotesFromObj(v, out, seen, depth + 1);
+    }
   }
 
   // 在当前卡片 DOM 内二次深度补全详情字段（不跳转详情页）
@@ -602,7 +633,7 @@
           <div class="xh-list" id="xhList"></div>
           <div class="xh-btnrow">
             <button class="xh-btn xh-export" id="xhFeishu">写入飞书</button>
-            <button class="xh-btn" id="xhDetail" title="模拟真人点击卡片，在当前页弹窗内抓取详情（不跳转不扫码）">弹窗采集（真人点击）</button>
+            <button class="xh-btn" id="xhDetail" title="不跳转不点击，从当前页脚本数据和卡片DOM中补全字段（避免扫码）">就地补全（避免扫码）</button>
             <button class="xh-btn" id="xhCopy">复制链接</button>
           </div>
         </div>
@@ -725,23 +756,52 @@
       status(ok ? `已复制 ${picked.length} 条链接` : '复制失败，请手动复制');
     });
 
-    // 弹窗采集：模拟真人点击卡片，在当前页浮层内抓取详情（不跳转、不触发扫码），
-    // 优先用弹窗真实数据；弹窗未出现（如 web 未登录）则回退到当前页就地补全。
+    // 就地补全：不点击、不跳转，从当前页脚本数据 + 卡片 DOM 补全详情字段（避免扫码）
     $id('xhDetail').addEventListener('click', async () => {
       const picked = [...$id('xhList').querySelectorAll('input[type=checkbox]:checked')]
         .map((c) => items[+c.dataset.i]).filter(Boolean)
         .filter((p) => p.type === 'note' && p.noteId);
-      if (!picked.length) { status('请先勾选要采集详情的笔记。'); return; }
+      if (!picked.length) { status('请先勾选要补全详情的笔记。'); return; }
       const btn = $id('xhDetail');
       const old = btn.textContent;
-      btn.disabled = true; btn.textContent = '采集中…';
-      dot('wait'); status(`弹窗采集中 0/${picked.length}（真人点击，不跳转）…`);
+      btn.disabled = true; btn.textContent = '补全中…';
+      dot('wait'); status(`正在当前页补全详情 0/${picked.length}（不跳转，避免扫码）…`);
       const pageState = extractPageStateDetails();
-      const { okCount, modalCount } = await collectByModal(picked, pageState);
+      let okCount = 0;
+      for (let i = 0; i < picked.length; i++) {
+        const p = picked[i];
+        try {
+          let card = null;
+          for (const a of $$('a[href]')) {
+            const href = a.getAttribute('href') || '';
+            if (href.includes(p.noteId)) { card = nearestCard(a, 8); break; }
+          }
+          const stateDet = pageState[p.noteId] || {};
+          let enriched = { ...p, ...stateDet };
+          if (card) enriched = readCardDetail(card, enriched);
+          await window.XhsCommon.xhsFetch('/api/feishu/note-detail', {
+            method: 'POST',
+            body: {
+              noteId: p.noteId,
+              bodyImages: Array.isArray(stateDet.bodyImages) ? stateDet.bodyImages : [],
+              publishTime: enriched.publishTime || '',
+              title: enriched.title || '',
+              cover: enriched.image || stateDet.cover || '',
+              body: stateDet.body || '',
+              likes: enriched.likes || '',
+              collects: enriched.collects || '',
+              comments: enriched.comments || '',
+              shares: enriched.shares || '',
+            },
+          }).catch(() => {});
+          okCount++;
+        } catch (e) { /* 单个失败继续 */ }
+        status(`正在当前页补全详情 ${i + 1}/${picked.length}（成功 ${okCount}）…`);
+      }
       btn.disabled = false; btn.textContent = old;
       dot('ok');
-      status(`采集完成：${okCount}/${picked.length} 篇（弹窗抓取 ${modalCount} 篇，写入飞书时自动带上）`);
-      toast(`采集完成 ${okCount}/${picked.length} 篇（弹窗 ${modalCount}）`, 'ok');
+      status(`详情补全完成：${okCount}/${picked.length} 篇（写入飞书时自动带上）`);
+      toast(`详情补全完成 ${okCount}/${picked.length} 篇，写入飞书时带上`, 'ok');
     });
 
     // 首次自动识别
