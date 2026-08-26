@@ -432,19 +432,24 @@
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   // 真实鼠标点击：走 background + chrome.debugger CDP，让浏览器发 isTrusted=true 的真实事件
   // React 会正常响应；capture preventDefault 阻止事件冒泡到 <a> 时触发原生导航（扫码）
-  async function realClickInPage(el) {
+  async function realClickInPage(el, status) {
     try {
       const r = el.getBoundingClientRect();
       const x = Math.max(1, Math.min(window.innerWidth - 1, r.left + r.width / 2));
       const y = Math.max(1, Math.min(window.innerHeight - 1, r.top + r.height / 2));
-      if (!chrome.runtime || !chrome.runtime.sendMessage) return false;
+      if (!chrome.runtime || !chrome.runtime.sendMessage) return { ok: false, msg: 'no runtime' };
       const stopLink = (e) => { e.preventDefault(); };
       document.addEventListener('click', stopLink, { capture: true, once: true });
       const restore = () => { try { document.removeEventListener('click', stopLink, { capture: true }); } catch {} };
-      const res = await chrome.runtime.sendMessage({ type: 'xhs-real-click', x, y });
+      // 异步 handler 可能因未 return true 而永久挂起，加 6s 超时兜底
+      const res = await Promise.race([
+        chrome.runtime.sendMessage({ type: 'xhs-real-click', x, y }),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('click-timeout')), 6000))
+      ]).catch((e) => ({ ok: false, msg: e.message || 'sendMessage failed' }));
       setTimeout(restore, 120);
-      return !!(res && res.ok);
-    } catch (e) { return false; }
+      if (status && res && res.msg) status(`点击 ${Math.round(x)},${Math.round(y)} → ${res.ok ? '成功' : res.msg}`);
+      return { ok: !!(res && res.ok), msg: (res && res.msg) || '' };
+    } catch (e) { return { ok: false, msg: e.message || String(e) }; }
   }
   // 检测笔记详情弹窗（页面不重新加载的浮层）：取尺寸最大的候选容器
   function detectModal() {
@@ -552,10 +557,11 @@
     } catch (e) {}
   }
   // 主流程：逐个点击卡片 → 弹窗抓取 → 关闭 → 下一篇；弹窗未出现则就地补全
-  async function collectByModal(picked, pageState) {
+  async function collectByModal(picked, pageState, status, dot) {
     let okCount = 0, modalCount = 0;
     for (let i = 0; i < picked.length; i++) {
       const p = picked[i];
+      if (status) status(`弹窗采集 ${i + 1}/${picked.length}：查找卡片…`);
       let aEl = null;
       for (const a of $$('a[href]')) {
         const href = a.getAttribute('href') || '';
@@ -572,24 +578,31 @@
       // 点击 <a> 内部的非链接子元素（封面图 / 第一个 div），触发 React onClick 弹窗，
       // 真实 CDP 点击会让 React 正常响应；capture preventDefault 阻止 <a> 原生导航
       const inner = aEl.querySelector('img') || aEl.querySelector('div, section, span') || aEl;
-      const clicked = await realClickInPage(inner);
-      if (!clicked) {
+      if (status) status(`弹窗采集 ${i + 1}/${picked.length}：真实点击…`);
+      const clickRes = await realClickInPage(inner, status);
+      if (!clickRes.ok) {
+        if (status) status(`弹窗采集 ${i + 1}/${picked.length}：点击失败 ${clickRes.msg || ''}，回退就地补全`);
+        if (dot) dot('warn');
         const enriched = readCardDetail(card || document.body, { ...p, ...stateDet });
         await postDetailCache(p, enriched, stateDet);
         okCount++; continue;
       }
+      if (status) status(`弹窗采集 ${i + 1}/${picked.length}：等待弹窗…`);
       const modal = await waitForModal(4500);
       if (modal) {
         modalCount++;
+        if (status) status(`弹窗采集 ${i + 1}/${picked.length}：读取弹窗…`);
         await sleep(1200 + Math.floor(Math.random() * 800)); // 等弹窗渲染加载
         const det = readModalDetail(modal);
         await postDetailCache(p, { ...det, ...stateDet }, stateDet);
         closeModal();
       } else {
+        if (status) status(`弹窗采集 ${i + 1}/${picked.length}：弹窗未出现，回退就地补全`);
         const enriched = readCardDetail(card || document.body, { ...p, ...stateDet });
         await postDetailCache(p, enriched, stateDet);
       }
       okCount++;
+      if (status) status(`弹窗采集 ${i + 1}/${picked.length}：完成，等待下一篇…`);
       await sleep(700 + Math.floor(Math.random() * 600)); // 真人节奏
     }
     return { okCount, modalCount };
@@ -761,7 +774,7 @@
       btn.disabled = true; btn.textContent = '采集中…';
       dot('wait'); status(`弹窗采集中 0/${picked.length}（真人点击，不跳转）…`);
       const pageState = extractPageStateDetails();
-      const { okCount, modalCount } = await collectByModal(picked, pageState);
+      const { okCount, modalCount } = await collectByModal(picked, pageState, status, dot);
       btn.disabled = false; btn.textContent = old;
       dot('ok');
       status(`采集完成：${okCount}/${picked.length} 篇（弹窗抓取 ${modalCount} 篇，写入飞书时自动带上）`);

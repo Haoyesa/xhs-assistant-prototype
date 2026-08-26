@@ -726,7 +726,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       } else if (msg.type === 'getSched') {
         sendResponse({ ok: true, ...schedulerState() });
       } else if (msg.type === 'xhs-real-click') {
-        // 由创作者页 content script 调用：在发布按钮的计算坐标处发真实鼠标点击（穿透 closed shadow）
+        // 由创作者页 / 搜索页 content script 调用：发真实鼠标点击（CDP Input.dispatchMouseEvent）
         try {
           const tabId = (msg.tabId != null) ? msg.tabId : (sender.tab && sender.tab.id);
           const res = await realDebugClick(tabId, msg.x, msg.y);
@@ -734,6 +734,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         } catch (e) {
           sendResponse({ ok: false, msg: e.message });
         }
+        return true; // 异步 sendResponse
       } else {
         sendResponse({ ok: false, msg: 'unknown' });
       }
