@@ -538,8 +538,8 @@ async function generateImagesSuchuang(settings, prompt, count, size, extra) {
   const taskId = submitJson.data && (submitJson.data.id || submitJson.data.task_id || submitJson.data.taskId);
   if (!taskId) {
     // 若返回即结果（data 为 url / base64 / 数组），直接下载
-  const direct = await extractImagesFromSuchuang(submitJson);
-  if (direct.length) return direct;
+    const direct = await extractImagesFromSuchuang(submitJson);
+    if (direct.length) return direct;
     throw new Error('速创未返回任务ID，无法轮询结果：' + JSON.stringify(submitJson));
   }
   console.log('[ai-image] 速创任务已提交，taskId=' + taskId);
@@ -548,6 +548,7 @@ async function generateImagesSuchuang(settings, prompt, count, size, extra) {
   const resultPath = (extra && extra.resultPath) || 'data.images';
   const maxAttempts = (extra && extra.maxAttempts) || 30;
   const intervalMs = (extra && extra.intervalMs) || 2000;
+  const pollSnapshots = [];
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     await new Promise(r => setTimeout(r, intervalMs));
     const queryUrl = queryUrlTemplate
@@ -556,14 +557,31 @@ async function generateImagesSuchuang(settings, prompt, count, size, extra) {
     const qResp = await fetchWithTimeout(queryUrl, {
       method: 'GET',
       headers: { Authorization: apiKey }
-    }, 15000).catch(() => null);
-    if (!qResp || !qResp.ok) continue;
-    const qJson = await qResp.json().catch(() => ({}));
+    }, 15000).catch((e) => ({ __networkError: true, message: e && e.message }));
+    if (qResp && qResp.__networkError) {
+      pollSnapshots.push({ attempt, url: queryUrl, status: 'NETWORK_ERROR', body: qResp.message });
+      continue;
+    }
+    const status = qResp ? qResp.status : null;
+    const qText = qResp ? await qResp.text().catch(() => '') : '';
+    let qJson = {};
+    try { qJson = qText ? JSON.parse(qText) : {}; } catch {}
+    pollSnapshots.push({ attempt, url: queryUrl, status, body: qText.slice(0, 500) });
+    if (status !== 200) continue;
     if (qJson && qJson.code !== undefined && qJson.code !== 200) continue; // 任务仍在处理
     const imgs = await extractImagesFromSuchuang(qJson, resultPath);
     if (imgs.length) return imgs;
   }
-  throw new Error(`速创任务 ${taskId} 轮询 ${maxAttempts} 次仍未拿到图片，请检查余额/网络或调整轮询参数`);
+  // 轮询失败：把调试信息塞进 Error，让前端能看到 taskId 和最近几次响应
+  const debug = {
+    taskId,
+    submitResponse: submitJson,
+    lastPolls: pollSnapshots.slice(-5),
+    tip: '任务已提交成功并扣点，但轮询未拿到图片。可能原因：1) 查询结果接口路径不同；2) 结果在 data 其他字段；3) 任务需要更长时间。请在「附加请求体」中配置 queryUrl/resultPath，或去速创控制台查看结果。'
+  };
+  const err = new Error(`速创任务 ${taskId} 轮询 ${maxAttempts} 次仍未拿到图片。任务已提交成功（见控制台扣点记录）。调试信息：${JSON.stringify(debug)}`);
+  err.suchuangDebug = debug;
+  throw err;
 }
 
 // 从速创响应中提取图片 Buffer（支持 url / base64 / data[].url / data[].b64_json / data.images[].url 等）
@@ -925,7 +943,9 @@ const server = http.createServer((req, res) => reqScope.run(req, async () => {
         return sendJSON(res, 200, { ok: true, folderName, files });
       } catch (err) {
         console.error('[ai-image/generate]', err);
-        return sendJSON(res, 500, { ok: false, error: err.message || '生成失败' });
+        const payload = { ok: false, error: err.message || '生成失败' };
+        if (err.suchuangDebug) payload.suchuangDebug = err.suchuangDebug;
+        return sendJSON(res, 500, payload);
       }
     }
 

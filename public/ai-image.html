@@ -412,7 +412,21 @@ $('#genBtn').onclick = async () => {
     try {
       const r = await apiFetch('POST', '/api/ai-image/generate', { folderName: folder, prompt, title: item.title, count: $('#imgCount').value, size: $('#imgSize').value });
       if (r.ok) { okCount++; log('  ✓ 已保存 ' + (r.files || []).join(', '), 'ok'); }
-      else { failCount++; log('  ✗ ' + (r.error || '生成失败'), 'bad'); }
+      else {
+        failCount++;
+        log('  ✗ ' + (r.error || '生成失败'), 'bad');
+        if (r.suchuangDebug) {
+          try {
+            const dbg = typeof r.suchuangDebug === 'string' ? JSON.parse(r.suchuangDebug) : r.suchuangDebug;
+            log('  [调试] taskId=' + dbg.taskId, 'info');
+            if (dbg.lastPolls && dbg.lastPolls.length) {
+              for (const p of dbg.lastPolls) {
+                log(`    轮询#${p.attempt} ${p.status} ${p.url} → ${p.body.slice(0, 120)}`, 'info');
+              }
+            }
+          } catch {}
+        }
+      }
     } catch (e) { failCount++; log('  ✗ 请求异常：' + e.message, 'bad'); }
     $('#bar').style.width = Math.round(((i + 1) / selected.length) * 100) + '%';
   }
