@@ -543,10 +543,11 @@ async function generateImagesSuchuang(settings, prompt, count, size, extra) {
     throw new Error('速创未返回任务ID，无法轮询结果：' + JSON.stringify(submitJson));
   }
   console.log('[ai-image] 速创任务已提交，taskId=' + taskId);
-  // 轮询结果：默认用同一接口 GET ?key=&id=taskId；允许用户在 extra 里覆盖 queryUrl
-  const queryUrlTemplate = (extra && extra.queryUrl) || `${baseUrl}${SC_PATH}?key=${encodeURIComponent(apiKey)}&id=${encodeURIComponent(taskId)}`;
+  // 轮询结果：查询接口为 /api/async/detail（doc/47）：GET ?key=&id=taskId
+  const DETAIL_PATH = '/api/async/detail';
+  const queryUrlTemplate = (extra && extra.queryUrl) || `${baseUrl}${DETAIL_PATH}?key=${encodeURIComponent(apiKey)}&id=${encodeURIComponent(taskId)}`;
   const resultPath = (extra && extra.resultPath) || 'data.images';
-  const maxAttempts = (extra && extra.maxAttempts) || 30;
+  const maxAttempts = (extra && extra.maxAttempts) || 40;
   const intervalMs = (extra && extra.intervalMs) || 2000;
   const pollSnapshots = [];
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
@@ -556,7 +557,7 @@ async function generateImagesSuchuang(settings, prompt, count, size, extra) {
       .replace(/\{id\}/g, encodeURIComponent(taskId));
     const qResp = await fetchWithTimeout(queryUrl, {
       method: 'GET',
-      headers: { Authorization: apiKey }
+      headers: { 'Content-Type': 'application/json', Authorization: apiKey }
     }, 15000).catch((e) => ({ __networkError: true, message: e && e.message }));
     if (qResp && qResp.__networkError) {
       pollSnapshots.push({ attempt, url: queryUrl, status: 'NETWORK_ERROR', body: qResp.message });
@@ -566,11 +567,28 @@ async function generateImagesSuchuang(settings, prompt, count, size, extra) {
     const qText = qResp ? await qResp.text().catch(() => '') : '';
     let qJson = {};
     try { qJson = qText ? JSON.parse(qText) : {}; } catch {}
-    pollSnapshots.push({ attempt, url: queryUrl, status, body: qText.slice(0, 500) });
+    pollSnapshots.push({ attempt, url: queryUrl, status, body: qText.slice(0, 600) });
+    console.log(`[ai-image] 速创轮询#${attempt} status=${status} body=${qText.slice(0, 400)}`);
     if (status !== 200) continue;
-    if (qJson && qJson.code !== undefined && qJson.code !== 200) continue; // 任务仍在处理
-    const imgs = await extractImagesFromSuchuang(qJson, resultPath);
-    if (imgs.length) return imgs;
+    // 接口层：code !== 0/200 视为异常（成功返回 code=0），但仍尝试提取图片兜底
+    const dd = qJson.data || {};
+    const taskStatus = dd.status !== undefined ? dd.status
+      : (qJson.status !== undefined ? qJson.status : null);
+    if (taskStatus === 3) {
+      const msg = dd.message || qJson.msg || '未知错误';
+      const err = new Error(`速创任务 ${taskId} 执行失败：${msg}`);
+      err.suchuangDebug = { taskId, submitResponse: submitJson, lastPolls: pollSnapshots.slice(-5), tip: '任务执行失败（status=3），详见返回的 data.message。' };
+      throw err;
+    }
+    if (taskStatus === 0 || taskStatus === 1) continue; // 未就绪，继续等待
+    // 成功（status===2）或 status 缺失时尝试提取图片
+    let imgs = await extractImagesFromSuchuang(qJson, resultPath);
+    if (!imgs.length) imgs = await extractImagesFromSuchuang(qJson, 'data');
+    if (!imgs.length) imgs = await collectImageUrlsDeep(qJson);
+    if (imgs.length) {
+      console.log(`[ai-image] 速创任务 ${taskId} 成功，取到 ${imgs.length} 张图`);
+      return imgs;
+    }
   }
   // 轮询失败：把调试信息塞进 Error，让前端能看到 taskId 和最近几次响应
   const debug = {
@@ -582,6 +600,36 @@ async function generateImagesSuchuang(settings, prompt, count, size, extra) {
   const err = new Error(`速创任务 ${taskId} 轮询 ${maxAttempts} 次仍未拿到图片。任务已提交成功（见控制台扣点记录）。调试信息：${JSON.stringify(debug)}`);
   err.suchuangDebug = debug;
   throw err;
+}
+
+// 递归遍历整个响应对象，收集所有图片 URL（http(s) 链接，后缀为常见图片格式）以及 data:image base64。
+// 用于兜底提取，应对速创返回字段路径不固定（文档未明确图片 URL 所在字段）。
+async function collectImageUrlsDeep(obj, depth = 0, seen = new Set()) {
+  const urls = [];
+  const scan = (o, d) => {
+    if (!o || d > 8 || typeof o === 'function') return;
+    if (seen.has(o)) return;
+    if (typeof o === 'string') {
+      if (/^data:image\/[^;]+;base64,/.test(o)) urls.push(o);
+      else if (/^https?:\/\//.test(o) && /\.(jpe?g|png|webp|gif|bmp|avif)(\?|$)/i.test(o)) urls.push(o);
+      return;
+    }
+    if (Array.isArray(o)) { o.forEach((v) => scan(v, d + 1)); return; }
+    if (typeof o === 'object') {
+      seen.add(o);
+      Object.keys(o).forEach((k) => scan(o[k], d + 1));
+    }
+  };
+  scan(obj, 0);
+  const uniq = [...new Set(urls)].slice(0, 10);
+  const bufs = [];
+  for (const u of uniq) {
+    try {
+      if (/^data:image\/[^;]+;base64,/.test(u)) bufs.push(Buffer.from(u.split(',')[1], 'base64'));
+      else bufs.push(await downloadBuffer(u));
+    } catch (e) { /* 单个失败跳过 */ }
+  }
+  return bufs;
 }
 
 // 从速创响应中提取图片 Buffer（支持 url / base64 / data[].url / data[].b64_json / data.images[].url 等）
