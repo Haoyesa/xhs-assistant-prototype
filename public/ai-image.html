@@ -90,8 +90,8 @@
           </select>
         </div>
         <div>
-          <label>API Base URL</label>
-          <input id="imgBaseUrl" type="text" placeholder="https://api.aiyungc.cn/v1" />
+          <label>API Base URL <span class="hint">（由供应商固定，不可修改）</span></label>
+          <input id="imgBaseUrl" type="text" readonly style="cursor:not-allowed;opacity:.85" />
         </div>
         <div>
           <label>模型 Model</label>
@@ -215,10 +215,15 @@ function applyProviderUI(provider) {
   sizeSel.value = keep ? current : preset.size;
 }
 
+function setFixedBaseUrl(provider) {
+  const preset = PROVIDER_PRESETS[provider] || PROVIDER_PRESETS.ark;
+  $('#imgBaseUrl').value = preset.baseUrl;
+}
+
 function fillPreset() {
   const provider = $('#imgProvider').value;
   const preset = PROVIDER_PRESETS[provider] || PROVIDER_PRESETS.ark;
-  if (!$('#imgBaseUrl').value.trim()) $('#imgBaseUrl').value = preset.baseUrl;
+  setFixedBaseUrl(provider);
   if (!$('#imgModel').value.trim()) $('#imgModel').value = preset.model;
   $('#imgSize').value = preset.size;
   if (!$('#imgExtra').value.trim()) $('#imgExtra').value = preset.extra;
@@ -237,7 +242,7 @@ async function loadCfg() {
     const provider = s.imgAiProvider || 'ark';
     $('#imgProvider').value = provider;
     applyProviderUI(provider);
-    $('#imgBaseUrl').value = s.imgAiBaseUrl || '';
+    setFixedBaseUrl(provider);
     $('#imgApiKey').value = s.imgAiApiKey || '';
     $('#imgModel').value = s.imgAiModel || '';
     $('#imgSize').value = s.imgAiSize || PROVIDER_PRESETS[provider].size;

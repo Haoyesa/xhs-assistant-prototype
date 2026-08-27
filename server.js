@@ -453,7 +453,7 @@ async function generateImages(settings, prompt, count, size, extra) {
 
 // 方舟 / OpenAI 兼容：同步 /images/generations，兼容 b64_json 或 url
 async function generateImagesArk(settings, prompt, count, size, extra) {
-  const baseUrl = (settings.imgAiBaseUrl || '').trim().replace(/\/+$/, '');
+  const baseUrl = 'https://api.aiyungc.cn/v1';
   const apiKey = settings.imgAiApiKey || '';
   const model = settings.imgAiModel || '';
   // 仅当下载 URL 与图像 API 同源时才附带 Authorization，避免把 API Key 泄漏给第三方 CDN/URL
@@ -506,14 +506,10 @@ async function generateImagesArk(settings, prompt, count, size, extra) {
 
 // 速创：POST /api/async/image_gpt 提交异步任务，然后轮询结果
 async function generateImagesSuchuang(settings, prompt, count, size, extra) {
-  let baseUrl = (settings.imgAiBaseUrl || 'https://api.wuyinkeji.com').trim().replace(/\/+$/, '');
+  const baseUrl = 'https://api.wuyinkeji.com';
   const apiKey = settings.imgAiApiKey || '';
-  if (!apiKey || !baseUrl) throw new Error('未配置速创 AI 生图（缺 Key / BaseURL）');
-  // 兼容：用户可能把 BaseURL 填成完整接口路径（如 .../api/async/image_gpt），避免重复追加
+  if (!apiKey) throw new Error('未配置速创 AI 生图 Key');
   const SC_PATH = '/api/async/image_gpt';
-  if (baseUrl.toLowerCase().includes(SC_PATH)) {
-    baseUrl = baseUrl.slice(0, baseUrl.toLowerCase().indexOf(SC_PATH));
-  }
   const submitUrl = `${baseUrl}${SC_PATH}?key=${encodeURIComponent(apiKey)}`;
   // 文档参数：prompt（必填）、size（可选）、urls（可选）。不传 model（文档未定义）。
   const submitBody = {
