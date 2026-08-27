@@ -306,6 +306,8 @@ const DEFAULT_SETTINGS = {
   aiBaseUrl: '',
   // AI 生图（图像生成 API，单独配置，独立于上面的文本 AI）
   // 默认对接「方舟 gpt-image-2」接口（Apifox 文档 api-418255962），Key 由用户自配
+  // provider: ark=OpenAI风格 /images/generations; suchuang=速创 /api/async/image_gpt（异步轮询）
+  imgAiProvider: 'ark',
   imgAiBaseUrl: 'https://api.aiyungc.cn/v1',
   imgAiApiKey: '',
   imgAiModel: 'gpt-image-2',
@@ -440,9 +442,17 @@ async function callAI(settings, systemPrompt, userPrompt) {
   return (j.choices?.[0]?.message?.content || '').trim();
 }
 
-// ---- AI 生图适配器（OpenAI 风格 /images/generations，可配置 BaseURL/Key/Model）----
-// 兼容返回 b64_json（直接落盘）或 url（二次下载）。extra 为用户自定义附加请求体（JSON）。
+// ---- AI 生图适配器（多供应商：方舟 OpenAI 风格 / 速创异步）----
 async function generateImages(settings, prompt, count, size, extra) {
+  const provider = (settings.imgAiProvider || 'ark').toLowerCase();
+  if (provider === 'suchuang') {
+    return generateImagesSuchuang(settings, prompt, count, size, extra);
+  }
+  return generateImagesArk(settings, prompt, count, size, extra);
+}
+
+// 方舟 / OpenAI 兼容：同步 /images/generations，兼容 b64_json 或 url
+async function generateImagesArk(settings, prompt, count, size, extra) {
   const baseUrl = (settings.imgAiBaseUrl || '').trim().replace(/\/+$/, '');
   const apiKey = settings.imgAiApiKey || '';
   const model = settings.imgAiModel || '';
@@ -492,6 +502,115 @@ async function generateImages(settings, prompt, count, size, extra) {
     }
   }
   return bufs;
+}
+
+// 速创：POST /api/async/image_gpt 提交异步任务，然后轮询结果
+async function generateImagesSuchuang(settings, prompt, count, size, extra) {
+  const baseUrl = (settings.imgAiBaseUrl || 'https://api.wuyinkeji.com').trim().replace(/\/+$/, '');
+  const apiKey = settings.imgAiApiKey || '';
+  const model = settings.imgAiModel || 'gpt-image-2';
+  if (!apiKey || !baseUrl) throw new Error('未配置速创 AI 生图（缺 Key / BaseURL）');
+  const submitUrl = `${baseUrl}/api/async/image_gpt?key=${encodeURIComponent(apiKey)}`;
+  const submitBody = {
+    prompt,
+    model,
+    ...(size && size !== 'auto' ? { size } : {}),
+    ...(extra || {})
+  };
+  // 文档示例：?key= 鉴权；同时保留 Authorization 兼容
+  const submitResp = await fetchWithTimeout(submitUrl, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: apiKey },
+    body: JSON.stringify(submitBody),
+  }, 30000);
+  if (!submitResp.ok) {
+    const t = await submitResp.text().catch(() => '');
+    throw new Error(`速创提交任务失败 HTTP ${submitResp.status}: ${t.slice(0, 300)}`);
+  }
+  const submitJson = await submitResp.json().catch(() => ({}));
+  if (!submitJson || submitJson.code !== 200) {
+    throw new Error(`速创提交任务失败：${submitJson && submitJson.msg ? submitJson.msg : JSON.stringify(submitJson)}`);
+  }
+  const taskId = submitJson.data && (submitJson.data.id || submitJson.data.task_id || submitJson.data.taskId);
+  if (!taskId) {
+    // 若返回即结果（data 为 url / base64 / 数组），直接下载
+  const direct = await extractImagesFromSuchuang(submitJson);
+  if (direct.length) return direct;
+    throw new Error('速创未返回任务ID，无法轮询结果：' + JSON.stringify(submitJson));
+  }
+  console.log('[ai-image] 速创任务已提交，taskId=' + taskId);
+  // 轮询结果：默认用同一接口 GET ?key=&id=taskId；允许用户在 extra 里覆盖 queryUrl
+  const queryUrlTemplate = (extra && extra.queryUrl) || `${baseUrl}/api/async/image_gpt?key=${encodeURIComponent(apiKey)}&id=${encodeURIComponent(taskId)}`;
+  const resultPath = (extra && extra.resultPath) || 'data.images';
+  const maxAttempts = (extra && extra.maxAttempts) || 30;
+  const intervalMs = (extra && extra.intervalMs) || 2000;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    await new Promise(r => setTimeout(r, intervalMs));
+    const queryUrl = queryUrlTemplate
+      .replace(/\{key\}/g, encodeURIComponent(apiKey))
+      .replace(/\{id\}/g, encodeURIComponent(taskId));
+    const qResp = await fetchWithTimeout(queryUrl, {
+      method: 'GET',
+      headers: { Authorization: apiKey }
+    }, 15000).catch(() => null);
+    if (!qResp || !qResp.ok) continue;
+    const qJson = await qResp.json().catch(() => ({}));
+    if (qJson && qJson.code !== undefined && qJson.code !== 200) continue; // 任务仍在处理
+    const imgs = await extractImagesFromSuchuang(qJson, resultPath);
+    if (imgs.length) return imgs;
+  }
+  throw new Error(`速创任务 ${taskId} 轮询 ${maxAttempts} 次仍未拿到图片，请检查余额/网络或调整轮询参数`);
+}
+
+// 从速创响应中提取图片 Buffer（支持 url / base64 / data[].url / data[].b64_json / data.images[].url 等）
+async function extractImagesFromSuchuang(json, resultPath = 'data.images') {
+  const bufs = [];
+  const candidates = [];
+  // 1. 常见顶层字段
+  if (Array.isArray(json.data)) candidates.push(...json.data);
+  else if (json.data && typeof json.data === 'object') {
+    if (json.data.images) candidates.push(...json.data.images);
+    else if (json.data.url || json.data.b64_json || json.data.image_url) candidates.push(json.data);
+    else candidates.push(json.data);
+  }
+  // 2. 按 resultPath 解析（如 data.images）
+  try {
+    let cur = json;
+    for (const k of resultPath.split('.')) { cur = cur && cur[k]; }
+    if (cur) {
+      if (Array.isArray(cur)) candidates.push(...cur);
+      else candidates.push(cur);
+    }
+  } catch {}
+  // 3. 顶层数组 / 字符串
+  if (Array.isArray(json)) candidates.push(...json);
+  if (typeof json === 'string' && /^https?:\/\//.test(json)) candidates.push(json);
+
+  for (const item of candidates) {
+    if (!item) continue;
+    try {
+      if (typeof item === 'string') {
+        if (/^data:image\/[^;]+;base64,/.test(item)) {
+          bufs.push(Buffer.from(item.split(',')[1], 'base64'));
+        } else if (/^https?:\/\//.test(item)) {
+          bufs.push(await downloadBuffer(item));
+        }
+      } else if (item.b64_json || item.base64) {
+        bufs.push(Buffer.from(item.b64_json || item.base64, 'base64'));
+      } else if (item.url || item.image_url || item.imageUrl) {
+        bufs.push(await downloadBuffer(item.url || item.image_url || item.imageUrl));
+      }
+    } catch (e) {
+      console.error('[ai-image] 提取单张速创图片失败：', e && e.message);
+    }
+  }
+  return bufs;
+}
+
+async function downloadBuffer(url) {
+  const r = await fetchWithTimeout(url, {}, 30000);
+  if (!r.ok) throw new Error(`下载图像失败 HTTP ${r.status}`);
+  return Buffer.from(await r.arrayBuffer());
 }
 
 // 按图片魔数判断真实扩展名（避免 .png 写 jpeg 等错配）

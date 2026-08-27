@@ -83,19 +83,26 @@
       <h3>⚙️ 图像生成 API 配置 <span class="hint">（独立于文本 AI，单独配置）</span></h3>
       <div class="grid2">
         <div>
-          <label>API Base URL（到 /v1，不含 /images/generations）</label>
+          <label>图像 API 供应商</label>
+          <select id="imgProvider">
+            <option value="ark">方舟 API（OpenAI /images/generations）</option>
+            <option value="suchuang">速创 API（wuyinkeji /api/async/image_gpt）</option>
+          </select>
+        </div>
+        <div>
+          <label>API Base URL</label>
           <input id="imgBaseUrl" type="text" placeholder="https://api.aiyungc.cn/v1" />
+        </div>
+        <div>
+          <label>模型 Model</label>
+          <input id="imgModel" type="text" placeholder="gpt-image-2" />
         </div>
         <div>
           <label>API Key</label>
           <input id="imgApiKey" type="password" placeholder="sk-..." />
         </div>
         <div>
-          <label>模型 Model（默认 gpt-image-2，方舟接口）</label>
-          <input id="imgModel" type="text" placeholder="gpt-image-2" />
-        </div>
-        <div>
-          <label>尺寸 Size（auto=模型默认；默认 auto）</label>
+          <label>尺寸 Size</label>
           <select id="imgSize">
             <option value="auto">auto 默认</option>
             <option value="1024x1024">1024x1024 正方形</option>
@@ -111,10 +118,10 @@
           <label>每篇生成张数（1-8）</label>
           <input id="imgCount" type="number" min="1" max="8" value="1" />
         </div>
-        <div>
-          <label>附加请求体（可选 JSON，供应商特殊字段）</label>
-          <input id="imgExtra" type="text" placeholder='{"quality":"low","format":"jpeg"}' />
-        </div>
+      </div>
+      <div>
+        <label>附加请求体（可选 JSON，供应商特殊字段）</label>
+        <input id="imgExtra" type="text" placeholder='{"quality":"low","format":"jpeg"}' style="width:100%" />
       </div>
       <label>提示词模板（支持占位符 <code>{{标题}}</code> <code>{{商品ID}}</code> <code>{{内容}}</code>）</label>
       <textarea id="imgPrompt" rows="6"></textarea>
@@ -162,15 +169,78 @@ let rows = [];          // 解析出的 [{productId, title, content, selected}]
 let running = false;
 let stopFlag = false;
 
+// 供应商预设
+const PROVIDER_PRESETS = {
+  ark: {
+    baseUrl: 'https://api.aiyungc.cn/v1',
+    model: 'gpt-image-2',
+    size: '1024x1536',
+    extra: '{"quality":"low","format":"jpeg"}',
+    sizeOptions: [
+      { value: 'auto', text: 'auto 默认' },
+      { value: '1024x1024', text: '1024x1024 正方形' },
+      { value: '1536x1024', text: '1536x1024 横版' },
+      { value: '1024x1536', text: '1024x1536 竖版' },
+      { value: '2048x2048', text: '2048x2048 2K正方形' },
+      { value: '2048x1152', text: '2048x1152 2K横版' },
+      { value: '3840x2160', text: '3840x2160 4K横版' },
+      { value: '2160x3840', text: '2160x3840 4K竖版' }
+    ]
+  },
+  suchuang: {
+    baseUrl: 'https://api.wuyinkeji.com',
+    model: 'gpt-image-2',
+    size: '9:16',
+    extra: '',
+    sizeOptions: [
+      { value: 'auto', text: 'auto 默认' },
+      { value: '1:1', text: '1:1 正方形' },
+      { value: '3:2', text: '3:2 横版' },
+      { value: '2:3', text: '2:3 竖版' },
+      { value: '16:9', text: '16:9 横版' },
+      { value: '9:16', text: '9:16 竖版（小红书推荐）' },
+      { value: '4:3', text: '4:3 横版' },
+      { value: '3:4', text: '3:4 竖版' }
+    ]
+  }
+};
+
+function applyProviderUI(provider) {
+  const preset = PROVIDER_PRESETS[provider] || PROVIDER_PRESETS.ark;
+  const sizeSel = $('#imgSize');
+  const current = sizeSel.value;
+  sizeSel.innerHTML = preset.sizeOptions.map(o => `<option value="${o.value}">${o.text}</option>`).join('');
+  // 尽量保留已选值；新供应商不支持则回退预设
+  const keep = preset.sizeOptions.some(o => o.value === current);
+  sizeSel.value = keep ? current : preset.size;
+}
+
+function fillPreset() {
+  const provider = $('#imgProvider').value;
+  const preset = PROVIDER_PRESETS[provider] || PROVIDER_PRESETS.ark;
+  if (!$('#imgBaseUrl').value.trim()) $('#imgBaseUrl').value = preset.baseUrl;
+  if (!$('#imgModel').value.trim()) $('#imgModel').value = preset.model;
+  $('#imgSize').value = preset.size;
+  if (!$('#imgExtra').value.trim()) $('#imgExtra').value = preset.extra;
+}
+
+$('#imgProvider').addEventListener('change', () => {
+  applyProviderUI($('#imgProvider').value);
+  fillPreset();
+});
+
 // 读取配置回填
 async function loadCfg() {
   try {
     const r = await apiFetch('GET', '/api/settings');
     const s = r || {};
+    const provider = s.imgAiProvider || 'ark';
+    $('#imgProvider').value = provider;
+    applyProviderUI(provider);
     $('#imgBaseUrl').value = s.imgAiBaseUrl || '';
     $('#imgApiKey').value = s.imgAiApiKey || '';
     $('#imgModel').value = s.imgAiModel || '';
-    $('#imgSize').value = s.imgAiSize || 'auto';
+    $('#imgSize').value = s.imgAiSize || PROVIDER_PRESETS[provider].size;
     $('#imgCount').value = s.imgAiCount || 1;
     $('#imgExtra').value = s.imgAiExtra || '';
     $('#imgPrompt').value = s.imgAiPromptTemplate || '';
@@ -182,6 +252,7 @@ async function loadCfg() {
 
 $('#saveCfgBtn').onclick = async () => {
   const cfg = {
+    imgAiProvider: $('#imgProvider').value,
     imgAiBaseUrl: $('#imgBaseUrl').value.trim(),
     imgAiApiKey: $('#imgApiKey').value.trim(),
     imgAiModel: $('#imgModel').value.trim(),
