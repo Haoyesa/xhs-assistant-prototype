@@ -128,11 +128,12 @@ function createWindow() {
   });
 
   const licensed = loadLicense(userDataDir);
-  if (licensed) {
-    startHeartbeat({ userDataDir, win: mainWin });
-    mainWin.loadURL(MAIN_URL);
-  } else {
-    mainWin.loadFile(ACTIVATION_FILE);
+  // 临时隐藏激活步骤：个人使用场景下，即使授权校验失败/无网络也直接进入主界面。
+  // 授权文件若存在且有效仍会走心跳；不存在则静默跳过，不再弹 activation.html。
+  startHeartbeat({ userDataDir, win: mainWin });
+  mainWin.loadURL(MAIN_URL);
+  if (!licensed) {
+    console.log('[main] license 未通过/不存在，已临时跳过激活页，直接进入主界面');
   }
 
   if (isDev) mainWin.webContents.openDevTools({ mode: 'detach' });
