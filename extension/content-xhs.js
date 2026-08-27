@@ -434,7 +434,16 @@
   // React 会正常响应；capture preventDefault 阻止事件冒泡到 <a> 时触发原生导航（扫码）
   async function realClickInPage(el, status) {
     try {
-      const r = el.getBoundingClientRect();
+      if (!el || !el.getBoundingClientRect) return { ok: false, msg: 'no element' };
+      let r = el.getBoundingClientRect();
+      // 目标不在视口内（或在边缘外）→ 先滚动到视口中央，否则 CDP 坐标会被钳到屏幕边缘点空
+      const inView = r.top >= 0 && r.bottom <= window.innerHeight && r.width > 0 && r.height > 0;
+      if (!inView) {
+        try { el.scrollIntoView({ block: 'center', inline: 'center', behavior: 'instant' }); } catch {}
+        await sleep(450); // 等滚动稳定
+        r = el.getBoundingClientRect();
+      }
+      if (r.width <= 0 || r.height <= 0) return { ok: false, msg: 'element not visible' };
       const x = Math.max(1, Math.min(window.innerWidth - 1, r.left + r.width / 2));
       const y = Math.max(1, Math.min(window.innerHeight - 1, r.top + r.height / 2));
       if (!chrome.runtime || !chrome.runtime.sendMessage) return { ok: false, msg: 'no runtime' };
@@ -575,11 +584,11 @@
       }
       const card = nearestCard(aEl, 8);
       closeModal(); await sleep(350);
-      // 点击 <a> 内部的非链接子元素（封面图 / 第一个 div），触发 React onClick 弹窗，
-      // 真实 CDP 点击会让 React 正常响应；capture preventDefault 阻止 <a> 原生导航
-      const inner = aEl.querySelector('img') || aEl.querySelector('div, section, span') || aEl;
+      // 点卡片中央（大容器中心最稳，避开头像/标题等子链接），真实 CDP 点击让 React 正常响应；
+      // 真实点击冒泡到 <a> 时由 capture preventDefault 拦住原生导航（防扫码）
+      const clickTarget = card || aEl;
       if (status) status(`弹窗采集 ${i + 1}/${picked.length}：真实点击…`);
-      const clickRes = await realClickInPage(inner, status);
+      const clickRes = await realClickInPage(clickTarget, status);
       if (!clickRes.ok) {
         if (status) status(`弹窗采集 ${i + 1}/${picked.length}：点击失败 ${clickRes.msg || ''}，回退就地补全`);
         if (dot) dot('warn');
