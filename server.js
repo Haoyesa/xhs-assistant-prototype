@@ -167,7 +167,7 @@ function corsHeaders() {
 }
 
 // 敏感配置字段：仅在受信来源（回环页面/本机扩展）返回明文；跨域来源（小红书页面/隐私上下文 null）返回掩码。
-const SECRET_SETTING_KEYS = ['aiApiKey', 'imgAiApiKey', 'bitApiKey', 'feishuAppSecret'];
+const SECRET_SETTING_KEYS = ['aiApiKey', 'imgAiApiKey', 'imgAiApiKeyArk', 'imgAiApiKeySuchuang', 'bitApiKey', 'feishuAppSecret'];
 const MASK = '******';
 function isTrustedSettingOrigin(req) {
   const origin = req && req.headers && req.headers.origin;
@@ -309,6 +309,9 @@ const DEFAULT_SETTINGS = {
   // provider: ark=OpenAI风格 /images/generations; suchuang=速创 /api/async/image_gpt（异步轮询）
   imgAiProvider: 'ark',
   imgAiBaseUrl: 'https://api.aiyungc.cn/v1',
+  // 各供应商独立保存 Key（切换供应商时自动带出，无需重填）；imgAiApiKey 仅作旧配置兼容
+  imgAiApiKeyArk: '',
+  imgAiApiKeySuchuang: '',
   imgAiApiKey: '',
   imgAiModel: 'gpt-image-2',
   imgAiSize: 'auto',
@@ -454,7 +457,8 @@ async function generateImages(settings, prompt, count, size, extra) {
 // 方舟 / OpenAI 兼容：同步 /images/generations，兼容 b64_json 或 url
 async function generateImagesArk(settings, prompt, count, size, extra) {
   const baseUrl = 'https://api.aiyungc.cn/v1';
-  const apiKey = settings.imgAiApiKey || '';
+  // 优先用方舟专属 Key；旧配置只有 imgAiApiKey 时回退（老用户的方舟 Key 存在该字段）
+  const apiKey = settings.imgAiApiKeyArk || settings.imgAiApiKey || '';
   const model = settings.imgAiModel || '';
   // 仅当下载 URL 与图像 API 同源时才附带 Authorization，避免把 API Key 泄漏给第三方 CDN/URL
   const sameOriginAsApi = (u) => { try { return new URL(u).origin === new URL(baseUrl).origin; } catch { return false; } };
@@ -507,8 +511,9 @@ async function generateImagesArk(settings, prompt, count, size, extra) {
 // 速创：POST /api/async/image_gpt 提交异步任务，然后轮询结果
 async function generateImagesSuchuang(settings, prompt, count, size, extra) {
   const baseUrl = 'https://api.wuyinkeji.com';
-  const apiKey = settings.imgAiApiKey || '';
-  if (!apiKey) throw new Error('未配置速创 AI 生图 Key');
+  // 速创只用自己的专属 Key（不回退 imgAiApiKey，避免误用方舟 Key 导致鉴权失败）
+  const apiKey = settings.imgAiApiKeySuchuang || '';
+  if (!apiKey) throw new Error('未配置速创 AI 生图 Key（请在切换到「速创 API」后单独填写并保存）');
   const SC_PATH = '/api/async/image_gpt';
   const submitUrl = `${baseUrl}${SC_PATH}?key=${encodeURIComponent(apiKey)}`;
   // 文档参数：prompt（必填）、size（可选）、urls（可选）。不传 model（文档未定义）。
@@ -997,6 +1002,12 @@ const server = http.createServer((req, res) => reqScope.run(req, async () => {
     if (p === '/api/settings' && method === 'GET') {
       const s = await readStore(stores.settings, {});
       const merged = { ...DEFAULT_SETTINGS, ...s };
+      // 旧配置一次性迁移：历史上所有供应商共用 imgAiApiKey（实际是方舟 Key）。
+      // 现在按供应商拆分 Key，把旧值归入方舟专属字段并落盘，避免老用户切换后被清空。
+      if (!merged.imgAiApiKeyArk && merged.imgAiApiKey) {
+        merged.imgAiApiKeyArk = merged.imgAiApiKey;
+        await writeStore(stores.settings, { ...DEFAULT_SETTINGS, ...s, imgAiApiKeyArk: merged.imgAiApiKey });
+      }
       const plan = resolvedPlan(DATA);
       // 套餐只规定最短间隔下限；用户设置更大则取用户值（尊重设置），更小才用套餐下限兜底
       const eff = effectiveInterval(merged);

@@ -168,6 +168,8 @@ const apiFetch = (m, u, b) => fetch(u, { method: m, headers: { 'Content-Type': '
 let rows = [];          // 解析出的 [{productId, title, content, selected}]
 let running = false;
 let stopFlag = false;
+let keyCache = { ark: '', suchuang: '' };   // 各供应商独立 Key，切换时自动带出，无需重填
+let currentProvider = 'ark';                // 当前 Key 输入框归属的供应商
 
 // 供应商预设
 const PROVIDER_PRESETS = {
@@ -220,6 +222,11 @@ function setFixedBaseUrl(provider) {
   $('#imgBaseUrl').value = preset.baseUrl;
 }
 
+// 把 Key 输入框切换为指定供应商已保存的 Key
+function syncApiKey(provider) {
+  $('#imgApiKey').value = keyCache[provider] || '';
+}
+
 function fillPreset() {
   const provider = $('#imgProvider').value;
   const preset = PROVIDER_PRESETS[provider] || PROVIDER_PRESETS.ark;
@@ -230,8 +237,13 @@ function fillPreset() {
 }
 
 $('#imgProvider').addEventListener('change', () => {
-  applyProviderUI($('#imgProvider').value);
+  // 切换前先把当前输入框的 Key 存回原供应商，再带出新供应商的 Key
+  keyCache[currentProvider] = $('#imgApiKey').value.trim();
+  const provider = $('#imgProvider').value;
+  currentProvider = provider;
+  applyProviderUI(provider);
   fillPreset();
+  syncApiKey(provider);
 });
 
 // 读取配置回填
@@ -240,10 +252,14 @@ async function loadCfg() {
     const r = await apiFetch('GET', '/api/settings');
     const s = r || {};
     const provider = s.imgAiProvider || 'ark';
+    currentProvider = provider;
+    // 各供应商独立 Key；ark 回退旧字段 imgAiApiKey（老配置迁移前）
+    keyCache.ark = s.imgAiApiKeyArk || (provider === 'ark' ? (s.imgAiApiKey || '') : '');
+    keyCache.suchuang = s.imgAiApiKeySuchuang || '';
     $('#imgProvider').value = provider;
     applyProviderUI(provider);
     setFixedBaseUrl(provider);
-    $('#imgApiKey').value = s.imgAiApiKey || '';
+    syncApiKey(provider);
     $('#imgModel').value = s.imgAiModel || '';
     $('#imgSize').value = s.imgAiSize || PROVIDER_PRESETS[provider].size;
     $('#imgCount').value = s.imgAiCount || 1;
@@ -256,10 +272,16 @@ async function loadCfg() {
 }
 
 $('#saveCfgBtn').onclick = async () => {
+  const provider = $('#imgProvider').value;
+  const key = $('#imgApiKey').value.trim();
+  keyCache[provider] = key;             // 当前供应商的 Key 入缓存
   const cfg = {
-    imgAiProvider: $('#imgProvider').value,
+    imgAiProvider: provider,
     imgAiBaseUrl: $('#imgBaseUrl').value.trim(),
-    imgAiApiKey: $('#imgApiKey').value.trim(),
+    // 两个供应商的 Key 一起保存，切换时无需重填；imgAiApiKey 保留为旧字段兼容
+    imgAiApiKeyArk: keyCache.ark,
+    imgAiApiKeySuchuang: keyCache.suchuang,
+    imgAiApiKey: key,
     imgAiModel: $('#imgModel').value.trim(),
     imgAiSize: $('#imgSize').value.trim() || 'auto',
     imgAiCount: Math.max(1, Math.min(8, parseInt($('#imgCount').value, 10) || 1)),
